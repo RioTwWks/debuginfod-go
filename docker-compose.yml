@@ -4,9 +4,13 @@ services:
     build: .
     ports:
       - "8002:8002"
-    environment:
-      - DEBUGINFOD_DB_PATH=/data/debuginfod.sqlite
+    env_file:
+      - .env
     volumes:
       - ./data:/data
-      - /usr/lib/debug:/usr/lib/debug:ro   # монтируем отладочные файлы для индексации
-    command: ["-s", "/usr/lib/debug", "-p", "8002", "-d", "/data/debuginfod.sqlite"]
+      - ./.env:/app/.env:ro
+      - /usr/lib/debug:/usr/lib/debug:ro
+    environment:
+      - DEBUGINFOD_DB_PATH=/data/debuginfod.sqlite
+      - DEBUGINFOD_SCAN_PATH=/usr/lib/debug
+      - DEBUGINFOD_CACHE_DIR=/data/cache

@@ -17,6 +17,9 @@ test:
 run: build
 	./$(BINARY_NAME) -s /usr/lib/debug -p 8002
 
+run-env: build
+	./$(BINARY_NAME)
+
 lint:
 	golangci-lint run ./...
 

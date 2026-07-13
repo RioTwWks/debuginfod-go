@@ -1,6 +1,7 @@
 package webapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -28,10 +29,14 @@ func TestHandlerDebugInfoAndExecutable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := store.AddArtifact("deadbeef", execPath, "executable", 1); err != nil {
+	if err := store.AddArtifact(storage.ArtifactInput{
+		BuildID: "deadbeef", Type: "executable", FilePath: execPath,
+	}, 1); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.AddArtifact("deadbeef", debugPath, "debuginfo", 1); err != nil {
+	if err := store.AddArtifact(storage.ArtifactInput{
+		BuildID: "deadbeef", Type: "debuginfo", FilePath: debugPath,
+	}, 1); err != nil {
 		t.Fatal(err)
 	}
 
@@ -64,7 +69,9 @@ func TestHandlerSource(t *testing.T) {
 	if err := os.WriteFile(srcPath, []byte("int main(){}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.AddArtifact("cafebabe", filepath.Join(tmp, "bin"), "executable", 1); err != nil {
+	if err := store.AddArtifact(storage.ArtifactInput{
+		BuildID: "cafebabe", Type: "executable", FilePath: filepath.Join(tmp, "bin"),
+	}, 1); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.AddSource("cafebabe", "/project/main.c", srcPath, 1); err != nil {
@@ -77,5 +84,33 @@ func TestHandlerSource(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("source status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestMetadataHandler(t *testing.T) {
+	store, err := storage.New(filepath.Join(t.TempDir(), "meta.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	_ = store.AddArtifact(storage.ArtifactInput{
+		BuildID: "abc", Type: "executable", FilePath: "/opt/bin/tool",
+	}, 1)
+
+	handler := MetadataHandler(store)
+	req := httptest.NewRequest(http.MethodGet, "/metadata?key=glob&value=/opt/bin/*", nil)
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp storage.MetadataResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Results) != 1 || !resp.Complete {
+		t.Fatalf("unexpected response: %+v", resp)
 	}
 }

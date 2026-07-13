@@ -1,6 +1,7 @@
 package webapi
 
 import (
+	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
@@ -20,10 +21,7 @@ func NewHandler(store *storage.Storage) *Handler {
 	return &Handler{storage: store}
 }
 
-// ServeHTTP маршрутизирует запросы вида:
-//   - /buildid/<id>/debuginfo
-//   - /buildid/<id>/executable
-//   - /buildid/<id>/source/<path>
+// ServeHTTP маршрутизирует запросы buildid API.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -57,14 +55,43 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// MetadataHandler обрабатывает GET /metadata?key=...&value=...
+func MetadataHandler(store *storage.Storage) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		key := r.URL.Query().Get("key")
+		value := r.URL.Query().Get("value")
+		if key == "" || value == "" {
+			http.Error(w, "key and value query params required", http.StatusBadRequest)
+			return
+		}
+
+		resp, err := store.SearchMetadata(key, value)
+		if err != nil {
+			log.Printf("SearchMetadata(%s, %s): %v", key, value, err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			log.Printf("encode metadata: %v", err)
+		}
+	}
+}
+
 func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, buildID, artifactType string) {
-	filePath, err := h.storage.GetArtifact(buildID, artifactType)
+	filePath, err := h.storage.GetArtifactPath(buildID, artifactType)
 	if errors.Is(err, storage.ErrNotFound) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 	if err != nil {
-		log.Printf("GetArtifact(%s, %s): %v", buildID, artifactType, err)
+		log.Printf("GetArtifactPath(%s, %s): %v", buildID, artifactType, err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}

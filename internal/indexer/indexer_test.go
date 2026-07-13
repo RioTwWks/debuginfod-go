@@ -33,7 +33,7 @@ func TestIndexerScanELF(t *testing.T) {
 	}
 	defer store.Close()
 
-	idx := NewIndexer(store, []string{tmp})
+	idx := NewIndexer(store, []string{tmp}, filepath.Join(tmp, "cache"))
 	if err := idx.Scan(); err != nil {
 		t.Fatal(err)
 	}
@@ -44,11 +44,48 @@ func TestIndexerScanELF(t *testing.T) {
 	}
 	id = buildid.Normalize(id)
 
-	path, err := store.GetArtifact(id, "executable")
+	path, err := store.GetArtifactPath(id, "executable")
 	if err != nil {
 		t.Fatalf("artifact not indexed: %v", err)
 	}
 	if path != bin {
 		t.Fatalf("path = %q, want %q", path, bin)
+	}
+}
+
+func TestIndexerScanGoBinary(t *testing.T) {
+	tmp := t.TempDir()
+	src := filepath.Join(tmp, "main.go")
+	bin := filepath.Join(tmp, "hello")
+	if err := os.WriteFile(src, []byte("package main\nfunc main(){}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("go", "build", "-o", bin, src)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go build: %v\n%s", err, out)
+	}
+
+	store, err := storage.New(filepath.Join(tmp, "index.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	idx := NewIndexer(store, []string{tmp}, filepath.Join(tmp, "cache"))
+	if err := idx.Scan(); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := buildid.FromPathDetailed(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := store.GetArtifactPath(result.Value, "executable")
+	if err != nil {
+		t.Fatalf("go binary not indexed: %v", err)
+	}
+	if path == "" {
+		t.Fatal("empty artifact path")
 	}
 }

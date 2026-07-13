@@ -3,27 +3,30 @@ package indexer
 import (
 	"debug/dwarf"
 	"debug/elf"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/your-username/debuginfod-go/internal/archive"
 	"github.com/your-username/debuginfod-go/internal/storage"
 	"github.com/your-username/debuginfod-go/pkg/buildid"
 )
 
 // Indexer сканирует файловую систему и заполняет SQLite-индекс.
 type Indexer struct {
-	storage *storage.Storage
-	paths   []string
+	storage  *storage.Storage
+	paths    []string
+	cacheDir string
 }
 
 // NewIndexer создаёт индексатор для указанных корневых путей.
-func NewIndexer(store *storage.Storage, paths []string) *Indexer {
-	return &Indexer{storage: store, paths: paths}
+func NewIndexer(store *storage.Storage, paths []string, cacheDir string) *Indexer {
+	return &Indexer{storage: store, paths: paths, cacheDir: cacheDir}
 }
 
-// Scan обходит все пути и индексирует ELF-файлы и исходники.
+// Scan обходит все пути и индексирует ELF-файлы, архивы и исходники.
 func (i *Indexer) Scan() error {
 	var indexed int
 	for _, root := range i.paths {
@@ -40,18 +43,24 @@ func (i *Indexer) Scan() error {
 			if err != nil {
 				return nil
 			}
+			mtime := info.ModTime().UnixNano()
 
-			if buildid.IsELF(path) {
-				if err := i.indexELF(path, info.ModTime().UnixNano()); err != nil {
-					log.Printf("ошибка индексации ELF %s: %v", path, err)
+			if archive.IsArchive(path) {
+				count, err := i.indexArchive(path, mtime)
+				if err != nil {
+					log.Printf("ошибка индексации архива %s: %v", path, err)
 				} else {
-					indexed++
+					indexed += count
 				}
 				return nil
 			}
 
-			if isSourceFile(path) {
-				i.indexLooseSource(path, info.ModTime().UnixNano())
+			if buildid.IsELF(path) {
+				if err := i.indexELF(path, mtime, "", ""); err != nil {
+					log.Printf("ошибка индексации ELF %s: %v", path, err)
+				} else {
+					indexed++
+				}
 			}
 			return nil
 		})
@@ -63,12 +72,34 @@ func (i *Indexer) Scan() error {
 	return nil
 }
 
-func (i *Indexer) indexELF(path string, mtimeNS int64) error {
-	id, err := buildid.FromPath(path)
+func (i *Indexer) indexArchive(archivePath string, mtimeNS int64) (int, error) {
+	members, err := archive.ListELFMembers(archivePath)
+	if err != nil {
+		return 0, err
+	}
+
+	var count int
+	for _, member := range members {
+		cached, err := archive.ExtractToCache(i.cacheDir, member.ArchivePath, member.MemberPath, member.Reader)
+		if err != nil {
+			log.Printf("не удалось извлечь %s:%s: %v", member.ArchivePath, member.MemberPath, err)
+			continue
+		}
+		if err := i.indexELF(cached, mtimeNS, member.ArchivePath, member.MemberPath); err != nil {
+			log.Printf("ошибка индексации %s в %s: %v", member.MemberPath, archivePath, err)
+			continue
+		}
+		count++
+	}
+	return count, nil
+}
+
+func (i *Indexer) indexELF(path string, mtimeNS int64, archivePath, memberPath string) error {
+	result, err := buildid.FromPathDetailed(path)
 	if err != nil {
 		return err
 	}
-	id = buildid.Normalize(id)
+	result.Value = buildid.Normalize(result.Value)
 
 	elfFile, err := buildid.OpenELF(path)
 	if err != nil {
@@ -77,17 +108,25 @@ func (i *Indexer) indexELF(path string, mtimeNS int64) error {
 	defer elfFile.Close()
 
 	artifactType := buildid.ArtifactType(path, elfFile)
-	if err := i.storage.AddArtifact(id, path, artifactType, mtimeNS); err != nil {
+	row := storage.ArtifactInput{
+		BuildID:     result.Value,
+		Type:        artifactType,
+		FilePath:    path,
+		ArchivePath: archivePath,
+		MemberPath:  memberPath,
+		BuildIDKind: string(result.Kind),
+		RawBuildID:  result.Raw,
+	}
+	if err := i.storage.AddArtifact(row, mtimeNS); err != nil {
 		return err
 	}
 
-	return i.indexSourcesFromDWARF(id, elfFile, path, mtimeNS)
+	return i.indexSourcesFromDWARF(result.Value, elfFile, path, mtimeNS)
 }
 
 func (i *Indexer) indexSourcesFromDWARF(buildID string, f *elf.File, elfPath string, mtimeNS int64) error {
 	data, err := f.DWARF()
 	if err != nil {
-		// Нет DWARF — это нормально для stripped-бинарников.
 		return nil
 	}
 
@@ -132,17 +171,6 @@ func (i *Indexer) indexSourcesFromDWARF(buildID string, f *elf.File, elfPath str
 	return nil
 }
 
-func (i *Indexer) indexLooseSource(path string, mtimeNS int64) {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return
-	}
-	// Свободные исходники без DWARF привязываем к пустому build-id нельзя —
-	// они будут найдены только через DWARF-ссылки при индексации ELF.
-	_ = abs
-	_ = mtimeNS
-}
-
 func attrString(entry *dwarf.Entry, attr dwarf.Attr) string {
 	val, ok := entry.Val(attr).(string)
 	if !ok {
@@ -184,12 +212,21 @@ func findSourceOnDisk(sourcePath, elfPath string) string {
 	return ""
 }
 
-func isSourceFile(path string) bool {
-	ext := strings.ToLower(filepath.Ext(path))
-	switch ext {
-	case ".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".rs", ".go", ".s":
-		return true
-	default:
-		return false
+// IndexELFReader индексирует ELF из потока (для тестов).
+func (i *Indexer) IndexELFReader(r io.Reader, mtimeNS int64) error {
+	tmp, err := os.CreateTemp(i.cacheDir, "elf-*")
+	if err != nil {
+		return err
 	}
+	path := tmp.Name()
+	defer os.Remove(path)
+
+	if _, err := io.Copy(tmp, r); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return i.indexELF(path, mtimeNS, "", "")
 }
