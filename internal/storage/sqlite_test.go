@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 )
@@ -14,8 +15,8 @@ func TestStorageArtifactsAndSources(t *testing.T) {
 	defer store.Close()
 
 	if err := store.AddArtifact(ArtifactInput{
-		BuildID: "abc123",
-		Type:    "executable",
+		BuildID:  "abc123",
+		Type:     "executable",
 		FilePath: "/bin/ls",
 	}, 1); err != nil {
 		t.Fatal(err)
@@ -60,7 +61,8 @@ func TestSearchMetadataGlob(t *testing.T) {
 		MemberPath:  "usr/bin/world",
 	}, 1)
 
-	resp, err := store.SearchMetadata("glob", "/usr/bin/*")
+	ctx := context.Background()
+	resp, err := store.SearchMetadata(ctx, "glob", "/usr/bin/*")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,11 +70,61 @@ func TestSearchMetadataGlob(t *testing.T) {
 		t.Fatalf("glob results = %d, want 1", len(resp.Results))
 	}
 
-	resp, err = store.SearchMetadata("buildid", "deadbeef")
+	resp, err = store.SearchMetadata(ctx, "buildid", "deadbeef")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(resp.Results) != 1 || resp.Results[0].BuildID != "deadbeef" {
 		t.Fatalf("buildid search failed: %+v", resp.Results)
+	}
+}
+
+func TestNeedsScanIncremental(t *testing.T) {
+	store, err := New(filepath.Join(t.TempDir(), "scan.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	path := "/tmp/hello"
+	needs, err := store.NeedsScan(path, 100, 1024)
+	if err != nil || !needs {
+		t.Fatalf("initial NeedsScan = %v, %v", needs, err)
+	}
+
+	if err := store.MarkScanned(path, 100, 1024, "elf"); err != nil {
+		t.Fatal(err)
+	}
+
+	needs, err = store.NeedsScan(path, 100, 1024)
+	if err != nil || needs {
+		t.Fatalf("unchanged NeedsScan = %v, want false", needs)
+	}
+
+	needs, err = store.NeedsScan(path, 200, 1024)
+	if err != nil || !needs {
+		t.Fatalf("mtime changed NeedsScan = %v, want true", needs)
+	}
+}
+
+func TestSearchMetadataGlobNoNestedMatch(t *testing.T) {
+	store, err := New(filepath.Join(t.TempDir(), "glob.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	_ = store.AddArtifact(ArtifactInput{
+		BuildID:  "aaa",
+		Type:     "executable",
+		FilePath: "/usr/bin/sub/hello",
+	}, 1)
+
+	resp, err := store.SearchMetadata(context.Background(), "glob", "/usr/bin/*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Results) != 0 {
+		t.Fatalf("nested path should not match /usr/bin/*: %+v", resp.Results)
 	}
 }

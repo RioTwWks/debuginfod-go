@@ -53,6 +53,39 @@ func TestIndexerScanELF(t *testing.T) {
 	}
 }
 
+func TestIndexerIncrementalSkip(t *testing.T) {
+	if _, err := exec.LookPath("gcc"); err != nil {
+		t.Skip("gcc not available")
+	}
+
+	tmp := t.TempDir()
+	src := filepath.Join(tmp, "main.c")
+	bin := filepath.Join(tmp, "hello")
+	_ = os.WriteFile(src, []byte("int main(){return 0;}"), 0o644)
+	_ = exec.Command("gcc", "-g", "-o", bin, src).Run()
+
+	store, err := storage.New(filepath.Join(tmp, "index.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	idx := NewIndexer(store, []string{tmp}, filepath.Join(tmp, "cache"))
+	if err := idx.Scan(); err != nil {
+		t.Fatal(err)
+	}
+
+	st, _ := os.Stat(bin)
+	needs, err := store.NeedsScan(bin, st.ModTime().UnixNano(), st.Size())
+	if err != nil || needs {
+		t.Fatalf("after scan NeedsScan=%v", needs)
+	}
+
+	if err := idx.Scan(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestIndexerScanGoBinary(t *testing.T) {
 	tmp := t.TempDir()
 	src := filepath.Join(tmp, "main.go")

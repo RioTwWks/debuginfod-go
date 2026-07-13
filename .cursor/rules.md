@@ -37,10 +37,10 @@ pkg/buildid/             # публичный парсер ELF build-id
 | `GET /buildid/<id>/debuginfo` | Отдать debuginfo |
 | `GET /buildid/<id>/executable` | Отдать executable |
 | `GET /buildid/<id>/source/<path>` | Отдать исходник |
-| `GET /metadata?key=&value=` | glob / file / buildid |
+| `GET /buildid/<id>/section/<name>` | Сырое содержимое ELF-секции |
 | `GET /healthz` | Liveness |
 
-**Не реализовано** (см. TODO.md): `/buildid/<id>/section/<name>`, федерация, IMA.
+**Не реализовано** (см. TODO.md): федерация, IMA, `/metrics`.
 
 ## Build-id
 

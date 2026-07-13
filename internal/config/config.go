@@ -12,13 +12,14 @@ import (
 
 // Config содержит все параметры запуска debuginfod.
 type Config struct {
-	DBPath         string
-	Port           string
-	ScanPaths      []string
-	RescanInterval time.Duration
-	LogLevel       string
-	CacheDir       string
-	EnvFile        string
+	DBPath           string
+	Port             string
+	ScanPaths        []string
+	RescanInterval   time.Duration
+	MetadataMaxTime  time.Duration
+	LogLevel         string
+	CacheDir         string
+	EnvFile          string
 }
 
 // Load читает .env, переменные окружения и флаги командной строки.
@@ -27,13 +28,14 @@ func Load() Config {
 	_ = godotenv.Load()
 
 	cfg := Config{
-		DBPath:         envOr("DEBUGINFOD_DB_PATH", "debuginfod.sqlite"),
-		Port:           envOr("DEBUGINFOD_PORT", "8002"),
-		ScanPaths:      splitPaths(envOr("DEBUGINFOD_SCAN_PATH", ".")),
-		RescanInterval: envDuration("DEBUGINFOD_RESCAN_INTERVAL", time.Hour),
-		LogLevel:       envOr("DEBUGINFOD_LOG_LEVEL", "info"),
-		CacheDir:       envOr("DEBUGINFOD_CACHE_DIR", ".debuginfod-cache"),
-		EnvFile:        envOr("DEBUGINFOD_ENV_FILE", ".env"),
+		DBPath:          envOr("DEBUGINFOD_DB_PATH", "debuginfod.sqlite"),
+		Port:            envOr("DEBUGINFOD_PORT", "8002"),
+		ScanPaths:       splitPaths(envOr("DEBUGINFOD_SCAN_PATH", ".")),
+		RescanInterval:  envDuration("DEBUGINFOD_RESCAN_INTERVAL", time.Hour),
+		MetadataMaxTime: envDuration("DEBUGINFOD_METADATA_MAXTIME", 5*time.Second),
+		LogLevel:        envOr("DEBUGINFOD_LOG_LEVEL", "info"),
+		CacheDir:        envOr("DEBUGINFOD_CACHE_DIR", ".debuginfod-cache"),
+		EnvFile:         envOr("DEBUGINFOD_ENV_FILE", ".env"),
 	}
 
 	if cfg.EnvFile != "" && cfg.EnvFile != ".env" {
@@ -45,6 +47,7 @@ func Load() Config {
 	scanPath := strings.Join(cfg.ScanPaths, ",")
 	flag.StringVar(&scanPath, "s", scanPath, "пути для сканирования (через запятую)")
 	flag.DurationVar(&cfg.RescanInterval, "r", cfg.RescanInterval, "интервал переиндексации")
+	flag.DurationVar(&cfg.MetadataMaxTime, "metadata-maxtime", cfg.MetadataMaxTime, "лимит времени metadata-запросов (0 = без лимита)")
 	flag.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "уровень логирования")
 	flag.StringVar(&cfg.CacheDir, "cache", cfg.CacheDir, "каталог кэша извлечённых файлов")
 	flag.StringVar(&cfg.EnvFile, "env-file", cfg.EnvFile, "путь к .env файлу")

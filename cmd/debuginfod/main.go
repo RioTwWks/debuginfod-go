@@ -31,10 +31,7 @@ func main() {
 	idx := indexer.NewIndexer(store, cfg.ScanPaths, cfg.CacheDir)
 	go runIndexer(idx, cfg.RescanInterval)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", webapi.HealthHandler)
-	mux.HandleFunc("/metadata", webapi.MetadataHandler(store))
-	mux.Handle("/buildid/", webapi.NewHandler(store))
+	mux := webapi.NewMux(store, cfg.MetadataMaxTime)
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -43,7 +40,8 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("сервер debuginfod запущен на :%s (сканирование: %v)", cfg.Port, cfg.ScanPaths)
+		log.Printf("сервер debuginfod запущен на :%s (сканирование: %v, metadata-maxtime: %s)",
+			cfg.Port, cfg.ScanPaths, cfg.MetadataMaxTime)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("сервер упал: %v", err)
 		}

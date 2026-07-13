@@ -26,9 +26,10 @@ func NewIndexer(store *storage.Storage, paths []string, cacheDir string) *Indexe
 	return &Indexer{storage: store, paths: paths, cacheDir: cacheDir}
 }
 
-// Scan обходит все пути и индексирует ELF-файлы, архивы и исходники.
+// Scan обходит все пути и индексирует ELF-файлы и архивы.
+// Файлы с неизменившимися mtime/size пропускаются (инкрементальная индексация).
 func (i *Indexer) Scan() error {
-	var indexed int
+	var indexed, skipped int
 	for _, root := range i.paths {
 		err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 			if err != nil {
@@ -44,23 +45,44 @@ func (i *Indexer) Scan() error {
 				return nil
 			}
 			mtime := info.ModTime().UnixNano()
+			size := info.Size()
 
 			if archive.IsArchive(path) {
+				needs, err := i.storage.NeedsScan(path, mtime, size)
+				if err != nil {
+					log.Printf("NeedsScan %s: %v", path, err)
+				} else if !needs {
+					skipped++
+					return nil
+				}
 				count, err := i.indexArchive(path, mtime)
 				if err != nil {
 					log.Printf("ошибка индексации архива %s: %v", path, err)
-				} else {
-					indexed += count
+					return nil
 				}
+				if err := i.storage.MarkScanned(path, mtime, size, "archive"); err != nil {
+					log.Printf("MarkScanned %s: %v", path, err)
+				}
+				indexed += count
 				return nil
 			}
 
 			if buildid.IsELF(path) {
+				needs, err := i.storage.NeedsScan(path, mtime, size)
+				if err != nil {
+					log.Printf("NeedsScan %s: %v", path, err)
+				} else if !needs {
+					skipped++
+					return nil
+				}
 				if err := i.indexELF(path, mtime, "", ""); err != nil {
 					log.Printf("ошибка индексации ELF %s: %v", path, err)
-				} else {
-					indexed++
+					return nil
 				}
+				if err := i.storage.MarkScanned(path, mtime, size, "elf"); err != nil {
+					log.Printf("MarkScanned %s: %v", path, err)
+				}
+				indexed++
 			}
 			return nil
 		})
@@ -68,7 +90,7 @@ func (i *Indexer) Scan() error {
 			log.Printf("ошибка обхода %s: %v", root, err)
 		}
 	}
-	log.Printf("индексация завершена: обработано ELF-файлов %d", indexed)
+	log.Printf("индексация завершена: новых/обновлённых ELF %d, пропущено без изменений %d", indexed, skipped)
 	return nil
 }
 
