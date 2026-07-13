@@ -31,6 +31,7 @@ fmt:
 
 clean:
 	rm -f $(BINARY_NAME) $(SQLITE_DB)
+	rm -rf .debuginfod-cache
 	$(GO) clean
 
 docker: build

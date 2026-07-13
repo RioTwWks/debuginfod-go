@@ -68,7 +68,16 @@ pkg/buildid/             # публичный парсер ELF build-id
 
 ## MCP
 
-Конфиг: [mcp.json](./mcp.json). Используй sqlite MCP для отладки индекса, go MCP для навигации по коду.
+Конфиг: [mcp.json](./mcp.json).
+
+| Сервер | Назначение |
+|--------|------------|
+| `go-doc` | Документация Go stdlib |
+| `sqlite` | Инспекция `debuginfod.sqlite` |
+| `go-quality-local` | Линтинг и качество Go-кода |
+| `test-runner` | Запуск `go test ./...` |
+
+Дополнительно в `mcp.json`: `projectScripts` (make test, curl healthz) и `hints` для контекста.
 
 ## Roadmap
 
