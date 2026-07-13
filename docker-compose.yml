@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  debuginfod:
+    build: .
+    ports:
+      - "8002:8002"
+    environment:
+      - DEBUGINFOD_DB_PATH=/data/debuginfod.sqlite
+    volumes:
+      - ./data:/data
+      - /usr/lib/debug:/usr/lib/debug:ro   # монтируем отладочные файлы для индексации
+    command: ["-s", "/usr/lib/debug", "-p", "8002", "-d", "/data/debuginfod.sqlite"]

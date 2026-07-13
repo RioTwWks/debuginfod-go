@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "go-doc": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-go-doc"],
+      "env": {}
+    },
+    "sqlite": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sqlite"],
+      "env": {
+        "SQLITE_DB_PATH": "./debuginfod.sqlite"
+      }
+    },
+    "test-runner": {
+      "command": "go",
+      "args": ["test", "./..."],
+      "env": {}
+    },
+    "cloud-linter": {
+      "url": "https://api.smithery.ai/v1/mcp/golangci-lint",
+      "headers": {
+        "Authorization": "Bearer ${SMITHERY_API_KEY}"
+      }
+    }
+  }
+}
