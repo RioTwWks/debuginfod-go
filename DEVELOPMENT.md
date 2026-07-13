@@ -56,7 +56,18 @@ flowchart LR
 | `build_id_kind` | `gnu` / `go` |
 | `raw_build_id` | Оригинальная строка Go build-id |
 
-**`sources`** — исходники, привязанные к build-id через DWARF.
+**`scanned_files`** — инкрементальная индексация (path, mtime_ns, size, kind).
+
+## Реализованные эндпоинты
+
+| Маршрут | Статус |
+|---------|--------|
+| `/buildid/<id>/debuginfo` | ✅ |
+| `/buildid/<id>/executable` | ✅ |
+| `/buildid/<id>/source/<path>` | ✅ |
+| `/buildid/<id>/section/<name>` | ✅ |
+| `/metadata?key=glob\|file\|buildid` | ✅ (fnmatch Pathname, timeout) |
+| `/healthz` | ✅ |
 
 ## Go build-id
 

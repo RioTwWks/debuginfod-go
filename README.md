@@ -63,6 +63,7 @@ docker compose up --build
 | `DEBUGINFOD_SCAN_PATH` | `-s` | Пути сканирования (через запятую) | `.` |
 | `DEBUGINFOD_PORT` | `-p` | HTTP-порт | `8002` |
 | `DEBUGINFOD_RESCAN_INTERVAL` | `-r` | Интервал переиндексации | `1h` |
+| `DEBUGINFOD_METADATA_MAXTIME` | `-metadata-maxtime` | Лимит metadata-запросов | `5s` |
 | `DEBUGINFOD_CACHE_DIR` | `-cache` | Кэш ELF из архивов | `.debuginfod-cache` |
 | `DEBUGINFOD_LOG_LEVEL` | `-log-level` | Уровень логов (пока не в slog) | `info` |
 | `DEBUGINFOD_ENV_FILE` | `-env-file` | Путь к `.env` | `.env` |
@@ -75,6 +76,7 @@ docker compose up --build
 GET /buildid/<BUILDID>/debuginfo
 GET /buildid/<BUILDID>/executable
 GET /buildid/<BUILDID>/source/<абсолютный/путь/к/файлу>
+GET /buildid/<BUILDID>/section/<имя_секции>
 ```
 
 `BUILDID` — lowercase hex. Для Go-бинарников используется SHA-256 от raw build-id (см. [DEVELOPMENT.md](./DEVELOPMENT.md#go-build-id)).
@@ -146,6 +148,8 @@ scan paths ──► indexer ──► SQLite ◄── webapi ◄── HTTP cl
 | `internal/indexer` | Обход FS, DWARF, запись в БД |
 | `internal/storage` | SQLite: артефакты, sources, metadata |
 | `internal/webapi` | HTTP-обработчики |
+| `internal/fnmatch` | Shell-glob с FNM_PATHNAME для metadata |
+| `pkg/elfsection` | Извлечение сырых ELF-секций |
 
 ## Документация
 

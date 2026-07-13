@@ -1,14 +1,17 @@
 package webapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/your-username/debuginfod-go/internal/storage"
 	"github.com/your-username/debuginfod-go/pkg/buildid"
+	"github.com/your-username/debuginfod-go/pkg/elfsection"
 )
 
 // Handler обслуживает HTTP-запросы протокола debuginfod.
@@ -50,13 +53,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		sourcePath := "/" + strings.Join(parts[3:], "/")
 		h.serveSource(w, r, buildID, sourcePath)
+	case "section":
+		if len(parts) < 4 {
+			http.Error(w, "section name required", http.StatusBadRequest)
+			return
+		}
+		h.serveSection(w, r, buildID, parts[3])
 	default:
 		http.NotFound(w, r)
 	}
 }
 
 // MetadataHandler обрабатывает GET /metadata?key=...&value=...
-func MetadataHandler(store *storage.Storage) http.HandlerFunc {
+func MetadataHandler(store *storage.Storage, maxTime time.Duration) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -70,7 +79,14 @@ func MetadataHandler(store *storage.Storage) http.HandlerFunc {
 			return
 		}
 
-		resp, err := store.SearchMetadata(key, value)
+		ctx := r.Context()
+		if maxTime > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, maxTime)
+			defer cancel()
+		}
+
+		resp, err := store.SearchMetadata(ctx, key, value)
 		if err != nil {
 			log.Printf("SearchMetadata(%s, %s): %v", key, value, err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -112,9 +128,45 @@ func (h *Handler) serveSource(w http.ResponseWriter, r *http.Request, buildID, s
 	http.ServeFile(w, r, filePath)
 }
 
+func (h *Handler) serveSection(w http.ResponseWriter, r *http.Request, buildID, sectionName string) {
+	debuginfo, executable, err := h.storage.GetArtifactPaths(buildID)
+	if err != nil {
+		log.Printf("GetArtifactPaths(%s): %v", buildID, err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if debuginfo == "" && executable == "" {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	data, err := elfsection.ExtractFirst(debuginfo, executable, sectionName)
+	if errors.Is(err, elfsection.ErrNotFound) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		log.Printf("ExtractSection(%s, %s): %v", buildID, sectionName, err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	_, _ = w.Write(data)
+}
+
 // HealthHandler возвращает 200 OK для проверки живости сервиса.
 func HealthHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok\n"))
+}
+
+// NewMux создаёт ServeMux со всеми маршрутами debuginfod.
+func NewMux(store *storage.Storage, metadataMaxTime time.Duration) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", HealthHandler)
+	mux.HandleFunc("/metadata", MetadataHandler(store, metadataMaxTime))
+	mux.Handle("/buildid/", NewHandler(store))
+	return mux
 }

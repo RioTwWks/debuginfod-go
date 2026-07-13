@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/ulikunitz/xz"
 )
 
@@ -112,7 +113,27 @@ func openCompressedTar(r io.Reader, tarName string) (io.ReadCloser, error) {
 			return nil, err
 		}
 		return io.NopCloser(xr), nil
+	case strings.HasSuffix(tarName, ".zst"):
+		zr, err := zstd.NewReader(r)
+		if err != nil {
+			return nil, err
+		}
+		return &zstdReadCloser{zr}, nil
 	default:
 		return io.NopCloser(r), nil
 	}
+}
+
+type zstdReadCloser struct {
+	*zstd.Decoder
+}
+
+func (z *zstdReadCloser) Close() error {
+	z.Decoder.Close()
+	return nil
+}
+
+type readCloser struct {
+	io.Reader
+	io.Closer
 }
