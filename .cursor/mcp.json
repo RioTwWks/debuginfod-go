@@ -1,20 +1,26 @@
 {
   "$schema": "https://cursor.com/schemas/mcp.json",
   "mcpServers": {
+    "go-doc": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-go-doc"],
+      "env": {}
+    },
     "sqlite": {
-      "comment": "Инспекция debuginfod.sqlite — артефакты и sources",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sqlite"],
       "env": {
         "SQLITE_DB_PATH": "./debuginfod.sqlite"
       }
     },
-    "go": {
-      "comment": "go-mcp-official — навигация, символы, тесты Go-пакетов"
+    "test-runner": {
+      "command": "go",
+      "args": ["test", "./..."],
+      "env": {}
     },
-    "terminal": {
-      "comment": "Запуск make test, curl healthz, go vet"
-    },
-    "filesystem": {
-      "comment": "Чтение исходников проекта"
+    "go-quality-local": {
+      "command": "npx",
+      "args": ["-y", "@afshinator/mcp-server-go-quality"]
     }
   },
   "projectScripts": {
