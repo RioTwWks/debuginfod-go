@@ -29,6 +29,9 @@ go.work.sum
 *.sqlite
 *.sqlite-journal
 
+# Cache
+.debuginfod-cache/
+
 # env file
 .env
 .env.local

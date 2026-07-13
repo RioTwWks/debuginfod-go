@@ -4,12 +4,30 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 // ErrNotFound возвращается, когда запись не найдена в базе.
 var ErrNotFound = errors.New("not found")
+
+// ArtifactRecord описывает проиндексированный артефакт для metadata API.
+type ArtifactRecord struct {
+	BuildID     string `json:"buildid"`
+	Type        string `json:"type"`
+	File        string `json:"file"`
+	Archive     string `json:"archive,omitempty"`
+	BuildIDKind string `json:"buildid_kind,omitempty"`
+	RawBuildID  string `json:"raw_buildid,omitempty"`
+}
+
+// MetadataResponse — JSON-ответ эндпоинта /metadata.
+type MetadataResponse struct {
+	Results  []ArtifactRecord `json:"results"`
+	Complete bool             `json:"complete"`
+}
 
 // Storage — SQLite-хранилище метаданных debuginfod.
 type Storage struct {
@@ -35,8 +53,12 @@ func migrate(db *sql.DB) error {
 	schema := `
 		CREATE TABLE IF NOT EXISTS artifacts (
 			build_id TEXT NOT NULL,
-			file_path TEXT NOT NULL,
+			file_path TEXT NOT NULL DEFAULT '',
 			type TEXT NOT NULL,
+			archive_path TEXT NOT NULL DEFAULT '',
+			member_path TEXT NOT NULL DEFAULT '',
+			build_id_kind TEXT NOT NULL DEFAULT 'gnu',
+			raw_build_id TEXT NOT NULL DEFAULT '',
 			mtime_ns INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY (build_id, type)
 		);
@@ -54,6 +76,15 @@ func migrate(db *sql.DB) error {
 	if _, err := db.Exec(schema); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
 	}
+
+	for _, stmt := range []string{
+		"ALTER TABLE artifacts ADD COLUMN archive_path TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE artifacts ADD COLUMN member_path TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE artifacts ADD COLUMN build_id_kind TEXT NOT NULL DEFAULT 'gnu'",
+		"ALTER TABLE artifacts ADD COLUMN raw_build_id TEXT NOT NULL DEFAULT ''",
+	} {
+		_, _ = db.Exec(stmt)
+	}
 	return nil
 }
 
@@ -62,21 +93,49 @@ func (s *Storage) Close() error {
 	return s.db.Close()
 }
 
-// AddArtifact сохраняет или обновляет артефакт (executable/debuginfo).
-func (s *Storage) AddArtifact(buildID, filePath, artifactType string, mtimeNS int64) error {
+// ArtifactInput — данные для сохранения артефакта.
+type ArtifactInput struct {
+	BuildID     string
+	Type        string
+	FilePath    string
+	ArchivePath string
+	MemberPath  string
+	BuildIDKind string
+	RawBuildID  string
+}
+
+type artifactRow struct {
+	BuildID     string
+	Type        string
+	FilePath    string
+	ArchivePath string
+	MemberPath  string
+	BuildIDKind string
+	RawBuildID  string
+}
+
+// AddArtifact сохраняет или обновляет артефакт.
+func (s *Storage) AddArtifact(in ArtifactInput, mtimeNS int64) error {
 	_, err := s.db.Exec(`
-		INSERT INTO artifacts (build_id, file_path, type, mtime_ns)
-		VALUES (?, ?, ?, ?)
+		INSERT INTO artifacts (
+			build_id, file_path, type, archive_path, member_path,
+			build_id_kind, raw_build_id, mtime_ns
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(build_id, type) DO UPDATE SET
 			file_path = excluded.file_path,
+			archive_path = excluded.archive_path,
+			member_path = excluded.member_path,
+			build_id_kind = excluded.build_id_kind,
+			raw_build_id = excluded.raw_build_id,
 			mtime_ns = excluded.mtime_ns
 		WHERE excluded.mtime_ns >= artifacts.mtime_ns
-	`, buildID, filePath, artifactType, mtimeNS)
+	`, in.BuildID, in.FilePath, in.Type, in.ArchivePath, in.MemberPath,
+		in.BuildIDKind, in.RawBuildID, mtimeNS)
 	return err
 }
 
-// GetArtifact возвращает путь к артефакту по build-id и типу.
-func (s *Storage) GetArtifact(buildID, artifactType string) (string, error) {
+// GetArtifactPath возвращает путь на диске для отдачи файла клиенту.
+func (s *Storage) GetArtifactPath(buildID, artifactType string) (string, error) {
 	var filePath string
 	err := s.db.QueryRow(
 		`SELECT file_path FROM artifacts WHERE build_id = ? AND type = ?`,
@@ -122,4 +181,123 @@ func (s *Storage) HasBuildID(buildID string) (bool, error) {
 		buildID,
 	).Scan(&count)
 	return count > 0, err
+}
+
+// SearchMetadata ищет артефакты по ключу debuginfod metadata API.
+func (s *Storage) SearchMetadata(key, value string) (MetadataResponse, error) {
+	switch key {
+	case "glob":
+		return s.searchGlob(value)
+	case "file":
+		return s.searchFile(value)
+	case "buildid":
+		return s.searchBuildID(value)
+	default:
+		return MetadataResponse{}, fmt.Errorf("unsupported metadata key: %s", key)
+	}
+}
+
+func (s *Storage) searchGlob(pattern string) (MetadataResponse, error) {
+	rows, err := s.db.Query(`
+		SELECT build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id
+		FROM artifacts
+	`)
+	if err != nil {
+		return MetadataResponse{}, err
+	}
+	defer rows.Close()
+	return collectMetadata(rows, func(rec ArtifactRecord) bool {
+		return matchGlob(pattern, rec.File) || (rec.Archive != "" && matchGlob(pattern, rec.Archive))
+	})
+}
+
+func (s *Storage) searchFile(path string) (MetadataResponse, error) {
+	rows, err := s.db.Query(`
+		SELECT build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id
+		FROM artifacts
+	`)
+	if err != nil {
+		return MetadataResponse{}, err
+	}
+	defer rows.Close()
+	path = filepath.ToSlash(path)
+	return collectMetadata(rows, func(rec ArtifactRecord) bool {
+		return rec.File == path
+	})
+}
+
+func (s *Storage) searchBuildID(query string) (MetadataResponse, error) {
+	rows, err := s.db.Query(`
+		SELECT build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id
+		FROM artifacts
+	`)
+	if err != nil {
+		return MetadataResponse{}, err
+	}
+	defer rows.Close()
+	query = strings.ToLower(strings.TrimPrefix(query, "0x"))
+	return collectMetadata(rows, func(rec ArtifactRecord) bool {
+		return rec.BuildID == query || strings.EqualFold(rec.RawBuildID, query)
+	})
+}
+
+func collectMetadata(rows *sql.Rows, keep func(ArtifactRecord) bool) (MetadataResponse, error) {
+	var results []ArtifactRecord
+	for rows.Next() {
+		rec, err := scanArtifactRow(rows)
+		if err != nil {
+			return MetadataResponse{}, err
+		}
+		if keep(rec) {
+			results = append(results, rec)
+		}
+	}
+	if results == nil {
+		results = []ArtifactRecord{}
+	}
+	return MetadataResponse{Results: results, Complete: true}, rows.Err()
+}
+
+func scanArtifactRow(rows *sql.Rows) (ArtifactRecord, error) {
+	var row artifactRow
+	err := rows.Scan(
+		&row.BuildID, &row.FilePath, &row.Type, &row.ArchivePath, &row.MemberPath,
+		&row.BuildIDKind, &row.RawBuildID,
+	)
+	if err != nil {
+		return ArtifactRecord{}, err
+	}
+	return row.toRecord(), nil
+}
+
+func (r artifactRow) toRecord() ArtifactRecord {
+	rec := ArtifactRecord{
+		BuildID:     r.BuildID,
+		Type:        r.Type,
+		BuildIDKind: r.BuildIDKind,
+		RawBuildID:  r.RawBuildID,
+	}
+	if r.ArchivePath != "" {
+		rec.Archive = filepath.ToSlash(r.ArchivePath)
+		rec.File = filepath.ToSlash(r.MemberPath)
+	} else {
+		rec.File = filepath.ToSlash(r.FilePath)
+	}
+	return rec
+}
+
+func matchGlob(pattern, value string) bool {
+	pattern = filepath.ToSlash(pattern)
+	value = filepath.ToSlash(value)
+	ok, err := filepath.Match(pattern, value)
+	if err == nil && ok {
+		return true
+	}
+	if strings.Contains(pattern, "*") {
+		parts := strings.Split(pattern, "*")
+		if len(parts) == 2 {
+			return strings.HasPrefix(value, parts[0]) && strings.HasSuffix(value, parts[1])
+		}
+	}
+	return false
 }

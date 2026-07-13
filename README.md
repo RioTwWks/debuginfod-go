@@ -6,10 +6,13 @@
 
 - Простая архитектура на чистом Go (stdlib + SQLite).
 - Хранение метаданных в SQLite.
-- Индексирует ELF-файлы, извлекая GNU build-id.
+- Индексирует ELF-файлы: GNU build-id и Go build-id (`.note.go.buildid`).
+- Индексация `.deb` и `.rpm` пакетов.
 - Автоматически извлекает пути исходников из DWARF.
-- Поддерживает эндпоинты `/buildid/<id>/debuginfo`, `/buildid/<id>/executable`, `/buildid/<id>/source/*`.
+- HTTP API: `/buildid/*`, `/metadata`, `/healthz`.
+- Конфигурация через `.env` и флаги командной строки.
 - Периодическое переиндексирование и graceful shutdown.
+- CI: GitHub Actions (тесты, vet, сборка).
 
 ## Быстрый старт
 
@@ -23,8 +26,11 @@ go mod download
 
 ### Запуск
 
+Скопируйте `.env.example` в `.env` и отредактируйте при необходимости:
+
 ```bash
-make run
+cp .env.example .env
+make run-env
 ```
 
 или вручную:
@@ -32,6 +38,16 @@ make run
 ```bash
 go run ./cmd/debuginfod -s /path/to/your/elf/files -p 8002
 ```
+
+### Переменные окружения
+
+| Переменная | Описание | По умолчанию |
+|------------|----------|--------------|
+| `DEBUGINFOD_DB_PATH` | Путь к SQLite | `debuginfod.sqlite` |
+| `DEBUGINFOD_SCAN_PATH` | Пути сканирования (через запятую) | `.` |
+| `DEBUGINFOD_PORT` | HTTP-порт | `8002` |
+| `DEBUGINFOD_RESCAN_INTERVAL` | Интервал переиндексации | `1h` |
+| `DEBUGINFOD_CACHE_DIR` | Кэш извлечённых файлов из архивов | `.debuginfod-cache` |
 
 ### Использование с GDB
 
@@ -49,18 +65,20 @@ curl http://localhost:8002/healthz
 # узнать build-id бинарника
 readelf -n /bin/ls | grep 'Build ID'
 
-# скачать debuginfo (если проиндексирован)
-curl -O http://localhost:8002/buildid/<BUILDID>/debuginfo
+# metadata-поиск (glob)
+curl 'http://localhost:8002/metadata?key=glob&value=/usr/bin/*'
 ```
 
 ## Архитектура (кратко)
 
 | Пакет | Назначение |
 |-------|------------|
-| `cmd/debuginfod` | Точка входа: флаги, HTTP-сервер, фоновый индексатор |
-| `pkg/buildid` | Парсинг GNU build-id из ELF |
+| `cmd/debuginfod` | Точка входа: конфиг, HTTP-сервер, фоновый индексатор |
+| `internal/config` | Загрузка `.env` и флагов |
+| `pkg/buildid` | Парсинг GNU и Go build-id из ELF |
+| `internal/archive` | Чтение ELF из `.deb`/`.rpm` |
 | `internal/indexer` | Сканирование директорий, DWARF → исходники |
-| `internal/storage` | SQLite: артефакты и исходники |
+| `internal/storage` | SQLite: артефакты, исходники, metadata |
 | `internal/webapi` | HTTP API протокола debuginfod |
 
 ## Документация

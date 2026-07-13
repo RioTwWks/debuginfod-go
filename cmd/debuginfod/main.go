@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"log"
 	"net/http"
 	"os"
@@ -10,41 +9,41 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/your-username/debuginfod-go/internal/config"
 	"github.com/your-username/debuginfod-go/internal/indexer"
 	"github.com/your-username/debuginfod-go/internal/storage"
 	"github.com/your-username/debuginfod-go/internal/webapi"
 )
 
 func main() {
-	var (
-		dbPath   = flag.String("d", "debuginfod.sqlite", "путь к SQLite базе данных")
-		port     = flag.String("p", "8002", "порт для HTTP-сервера")
-		scanPath = flag.String("s", ".", "путь для сканирования ELF-файлов")
-		rescan   = flag.Duration("r", time.Hour, "интервал переиндексации")
-	)
-	flag.Parse()
+	cfg := config.Load()
 
-	store, err := storage.New(*dbPath)
+	if err := os.MkdirAll(cfg.CacheDir, 0o755); err != nil {
+		log.Fatalf("не удалось создать cache dir: %v", err)
+	}
+
+	store, err := storage.New(cfg.DBPath)
 	if err != nil {
 		log.Fatalf("не удалось открыть БД: %v", err)
 	}
 	defer store.Close()
 
-	idx := indexer.NewIndexer(store, []string{*scanPath})
-	go runIndexer(idx, *rescan)
+	idx := indexer.NewIndexer(store, cfg.ScanPaths, cfg.CacheDir)
+	go runIndexer(idx, cfg.RescanInterval)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", webapi.HealthHandler)
+	mux.HandleFunc("/metadata", webapi.MetadataHandler(store))
 	mux.Handle("/buildid/", webapi.NewHandler(store))
 
 	server := &http.Server{
-		Addr:              ":" + *port,
+		Addr:              ":" + cfg.Port,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	go func() {
-		log.Printf("сервер debuginfod запущен на :%s (сканирование: %s)", *port, *scanPath)
+		log.Printf("сервер debuginfod запущен на :%s (сканирование: %v)", cfg.Port, cfg.ScanPaths)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("сервер упал: %v", err)
 		}

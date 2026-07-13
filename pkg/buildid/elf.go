@@ -2,29 +2,36 @@ package buildid
 
 import (
 	"debug/elf"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 )
 
-// ErrNotFound возвращается, если в ELF-файле нет GNU build-id.
+// ErrNotFound возвращается, если в ELF-файле нет GNU/Go build-id.
 var ErrNotFound = errors.New("build-id not found")
 
 // FromPath извлекает build-id из ELF-файла по пути.
 func FromPath(path string) (string, error) {
-	f, err := elf.Open(path)
+	result, err := FromPathDetailed(path)
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	return result.Value, nil
+}
 
+// FromPathDetailed возвращает build-id вместе с типом заметки.
+func FromPathDetailed(path string) (Result, error) {
+	f, err := elf.Open(path)
+	if err != nil {
+		return Result{}, err
+	}
+	defer f.Close()
 	return FromELF(f)
 }
 
 // FromELF извлекает build-id из уже открытого ELF-файла.
-func FromELF(f *elf.File) (string, error) {
+func FromELF(f *elf.File) (Result, error) {
 	for _, sec := range f.Sections {
 		if sec.Type != elf.SHT_NOTE {
 			continue
@@ -33,12 +40,12 @@ func FromELF(f *elf.File) (string, error) {
 		if err != nil {
 			continue
 		}
-		id, err := parseNoteSection(data)
+		result, err := parseNotes(data)
 		if err == nil {
-			return id, nil
+			return result, nil
 		}
 	}
-	return "", ErrNotFound
+	return Result{}, ErrNotFound
 }
 
 // Normalize приводит build-id к формату debuginfod: lowercase hex без префиксов.
@@ -46,49 +53,6 @@ func Normalize(id string) string {
 	id = strings.TrimPrefix(strings.ToLower(id), "0x")
 	id = strings.ReplaceAll(id, "-", "")
 	return id
-}
-
-// parseNoteSection ищет NT_GNU_BUILD_ID в секции SHT_NOTE.
-func parseNoteSection(data []byte) (string, error) {
-	offset := 0
-	for offset < len(data) {
-		if offset+12 > len(data) {
-			break
-		}
-
-		namesz := int(uint32(data[offset]) | uint32(data[offset+1])<<8 |
-			uint32(data[offset+2])<<16 | uint32(data[offset+3])<<24)
-		descsz := int(uint32(data[offset+4]) | uint32(data[offset+5])<<8 |
-			uint32(data[offset+6])<<16 | uint32(data[offset+7])<<24)
-		typ := int(uint32(data[offset+8]) | uint32(data[offset+9])<<8 |
-			uint32(data[offset+10])<<16 | uint32(data[offset+11])<<24)
-		offset += 12
-
-		namePad := align4(namesz)
-		descPad := align4(descsz)
-		if offset+namePad+descsz > len(data) {
-			break
-		}
-
-		name := string(data[offset : offset+namesz])
-		offset += namePad
-
-		desc := data[offset : offset+descsz]
-		offset += descPad
-
-		// NT_GNU_BUILD_ID = 3, владелец заметки — "GNU".
-		if typ == 3 && strings.TrimRight(name, "\x00") == "GNU" && len(desc) > 0 {
-			return hex.EncodeToString(desc), nil
-		}
-	}
-	return "", ErrNotFound
-}
-
-func align4(n int) int {
-	if n%4 == 0 {
-		return n
-	}
-	return n + (4 - n%4)
 }
 
 // IsELF проверяет, является ли файл ELF по magic bytes.
