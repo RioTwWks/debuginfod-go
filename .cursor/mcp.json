@@ -17,11 +17,9 @@
       "args": ["test", "./..."],
       "env": {}
     },
-    "cloud-linter": {
-      "url": "https://api.smithery.ai/v1/mcp/golangci-lint",
-      "headers": {
-        "Authorization": "Bearer ${SMITHERY_API_KEY}"
-      }
+    "go-quality-local": {
+      "command": "npx",
+      "args": ["-y", "@afshinator/mcp-server-go-quality"]
     }
   }
 }
