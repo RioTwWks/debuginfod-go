@@ -4,7 +4,7 @@ GO=go
 GOPATH?=$(shell go env GOPATH)
 SQLITE_DB=debuginfod.sqlite
 
-.PHONY: all build test run clean lint fmt docker
+.PHONY: all build test vet run run-env clean lint fmt docker
 
 all: build
 
@@ -13,6 +13,9 @@ build:
 
 test:
 	$(GO) test -v ./...
+
+vet:
+	$(GO) vet ./...
 
 run: build
 	./$(BINARY_NAME) -s /usr/lib/debug -p 8002
@@ -28,6 +31,7 @@ fmt:
 
 clean:
 	rm -f $(BINARY_NAME) $(SQLITE_DB)
+	rm -rf .debuginfod-cache
 	$(GO) clean
 
 docker: build

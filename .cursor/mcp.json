@@ -1,4 +1,5 @@
 {
+  "$schema": "https://cursor.com/schemas/mcp.json",
   "mcpServers": {
     "go-doc": {
       "command": "npx",
@@ -21,5 +22,19 @@
       "command": "npx",
       "args": ["-y", "@afshinator/mcp-server-go-quality"]
     }
-  }
+  },
+  "projectScripts": {
+    "test": "make test",
+    "vet": "go vet ./...",
+    "build": "make build",
+    "run": "make run-env",
+    "health": "curl -sf http://localhost:8002/healthz",
+    "metadata-glob": "curl -s 'http://localhost:8002/metadata?key=glob&value=*'"
+  },
+  "hints": [
+    "Перед изменением storage читай схему в internal/storage/sqlite.go",
+    "Тесты buildid требуют gcc для GNU и go build для Go",
+    "Архивные тесты RPM пропускаются без rpmbuild",
+    "Документация: README.md, DEVELOPMENT.md, TODO.md"
+  ]
 }
