@@ -1,6 +1,7 @@
 package buildid
 
 import (
+	"bytes"
 	"debug/elf"
 	"errors"
 	"fmt"
@@ -10,6 +11,24 @@ import (
 
 // ErrNotFound возвращается, если в ELF-файле нет GNU/Go build-id.
 var ErrNotFound = errors.New("build-id not found")
+
+// FromBytes извлекает build-id из ELF-данных в памяти.
+func FromBytes(data []byte) (Result, error) {
+	f, err := elf.NewFile(bytes.NewReader(data))
+	if err != nil {
+		return Result{}, err
+	}
+	return FromELF(f)
+}
+
+// ArtifactTypeFromBytes определяет тип артефакта по пути-намёку и ELF-данным.
+func ArtifactTypeFromBytes(pathHint string, data []byte) (string, error) {
+	f, err := elf.NewFile(bytes.NewReader(data))
+	if err != nil {
+		return "", err
+	}
+	return ArtifactType(pathHint, f), nil
+}
 
 // FromPath извлекает build-id из ELF-файла по пути.
 func FromPath(path string) (string, error) {

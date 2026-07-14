@@ -8,27 +8,65 @@ import (
 	"strings"
 )
 
-// Member описывает файл внутри .deb или .rpm архива.
+// Member описывает файл внутри архива.
 type Member struct {
 	ArchivePath string
 	MemberPath  string
 	Reader      func() (io.ReadCloser, error)
 }
 
-// IsArchive возвращает true для поддерживаемых пакетов.
-func IsArchive(path string) bool {
-	ext := strings.ToLower(filepath.Ext(path))
-	return ext == ".deb" || ext == ".rpm"
-}
-
 // ListELFMembers возвращает ELF-файлы внутри архива.
 func ListELFMembers(archivePath string) ([]Member, error) {
-	ext := strings.ToLower(filepath.Ext(archivePath))
-	switch ext {
-	case ".deb":
+	switch DetectKind(archivePath) {
+	case KindDeb:
 		return listDebELFMembers(archivePath)
-	case ".rpm":
+	case KindRPM:
 		return listRPMELFMembers(archivePath)
+	case KindAPK:
+		return listAPKELFMembers(archivePath)
+	case KindPacman:
+		return listPacmanELFMembers(archivePath)
+	case KindTar:
+		return listTarELFMembersFromFile(archivePath)
+	default:
+		return nil, fmt.Errorf("unsupported archive: %s", archivePath)
+	}
+}
+
+// ListSourceMembers возвращает исходные файлы из SRPM или DSC.
+func ListSourceMembers(archivePath string) ([]Member, error) {
+	switch DetectKind(archivePath) {
+	case KindSRPM:
+		return listSRPMSourceMembers(archivePath)
+	case KindDSC:
+		return listDSCSourceMembers(archivePath)
+	default:
+		return nil, fmt.Errorf("unsupported source package: %s", archivePath)
+	}
+}
+
+// OpenMemberReader открывает поток члена архива для отложенного извлечения.
+func OpenMemberReader(archivePath, memberPath string) (io.ReadCloser, error) {
+	switch DetectKind(archivePath) {
+	case KindDeb:
+		return openDebMember(archivePath, memberPath)
+	case KindRPM:
+		return openRPMMember(archivePath, memberPath)
+	case KindAPK:
+		return openTarArchiveMember(archivePath, memberPath, ".tar.gz")
+	case KindPacman, KindTar:
+		suffix := tarSuffix(archivePath)
+		if suffix == "" {
+			suffix = ".tar.zst"
+		}
+		return openTarArchiveMember(archivePath, memberPath, suffix)
+	case KindSRPM:
+		if strings.Contains(memberPath, "!") {
+			return openNestedMember(archivePath, memberPath)
+		}
+		return openSRPMMember(archivePath, memberPath)
+	case KindDSC:
+		return openDSCMember(archivePath, memberPath)
 	default:
 		return nil, fmt.Errorf("unsupported archive: %s", archivePath)
 	}
@@ -70,8 +108,15 @@ func ExtractToCache(cacheDir, archivePath, memberPath string, open func() (io.Re
 	return dest, nil
 }
 
+// ExtractMember извлекает член архива по пути (для HTTP-запросов).
+func ExtractMember(cacheDir, archivePath, memberPath string) (string, error) {
+	return ExtractToCache(cacheDir, archivePath, memberPath, func() (io.ReadCloser, error) {
+		return OpenMemberReader(archivePath, memberPath)
+	})
+}
+
 func cacheKey(archivePath, memberPath string) string {
-	base := strings.NewReplacer(string(os.PathSeparator), "_", "/", "_", ":", "_").
+	base := strings.NewReplacer(string(os.PathSeparator), "_", "/", "_", ":", "_", "!", "_").
 		Replace(archivePath + "!" + memberPath)
 	return base
 }

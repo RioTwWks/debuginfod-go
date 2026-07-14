@@ -79,6 +79,8 @@ func migrateSQLite(db *sql.DB) error {
 			build_id TEXT NOT NULL,
 			source_path TEXT NOT NULL,
 			file_path TEXT NOT NULL,
+			archive_path TEXT NOT NULL DEFAULT '',
+			member_path TEXT NOT NULL DEFAULT '',
 			mtime_ns INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY (build_id, source_path)
 		);
@@ -100,6 +102,8 @@ func migrateSQLite(db *sql.DB) error {
 		"ALTER TABLE artifacts ADD COLUMN member_path TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE artifacts ADD COLUMN build_id_kind TEXT NOT NULL DEFAULT 'gnu'",
 		"ALTER TABLE artifacts ADD COLUMN raw_build_id TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE sources ADD COLUMN archive_path TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE sources ADD COLUMN member_path TEXT NOT NULL DEFAULT ''",
 	} {
 		_, _ = db.Exec(stmt)
 	}
@@ -109,6 +113,21 @@ func migrateSQLite(db *sql.DB) error {
 // Close закрывает соединение с базой данных.
 func (s *Storage) Close() error {
 	return s.db.Close()
+}
+
+// ArtifactLocation описывает, где лежит артефакт (на диске или в архиве).
+type ArtifactLocation struct {
+	FilePath    string
+	ArchivePath string
+	MemberPath  string
+}
+
+// SourceLocation описывает расположение исходного файла.
+type SourceLocation struct {
+	SourcePath  string
+	FilePath    string
+	ArchivePath string
+	MemberPath  string
 }
 
 // ArtifactInput — данные для сохранения артефакта.
@@ -156,36 +175,45 @@ func (s *Storage) AddArtifact(in ArtifactInput, mtimeNS int64) error {
 
 // GetArtifactPath возвращает путь на диске для отдачи файла клиенту.
 func (s *Storage) GetArtifactPath(buildID, artifactType string) (string, error) {
-	var filePath string
-	err := s.db.QueryRow(
-		rebind(`SELECT file_path FROM artifacts WHERE build_id = ? AND type = ?`, s.dialect),
-		buildID, artifactType,
-	).Scan(&filePath)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", ErrNotFound
+	loc, err := s.GetArtifactLocation(buildID, artifactType)
+	if err != nil {
+		return "", err
 	}
-	return filePath, err
+	return loc.FilePath, nil
 }
 
-// GetArtifactPaths возвращает пути debuginfo и executable (пустая строка, если нет).
-func (s *Storage) GetArtifactPaths(buildID string) (debuginfo, executable string, err error) {
-	debuginfo, err = s.getOptionalPath(buildID, "debuginfo")
-	if err != nil {
-		return "", "", err
+// GetArtifactLocation возвращает расположение артефакта (файл или архив).
+func (s *Storage) GetArtifactLocation(buildID, artifactType string) (ArtifactLocation, error) {
+	var loc ArtifactLocation
+	err := s.db.QueryRow(
+		rebind(`SELECT file_path, archive_path, member_path FROM artifacts WHERE build_id = ? AND type = ?`, s.dialect),
+		buildID, artifactType,
+	).Scan(&loc.FilePath, &loc.ArchivePath, &loc.MemberPath)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ArtifactLocation{}, ErrNotFound
 	}
-	executable, err = s.getOptionalPath(buildID, "executable")
+	return loc, err
+}
+
+// GetArtifactPaths возвращает расположения debuginfo и executable.
+func (s *Storage) GetArtifactPaths(buildID string) (debuginfo, executable ArtifactLocation, err error) {
+	debuginfo, err = s.getOptionalLocation(buildID, "debuginfo")
 	if err != nil {
-		return "", "", err
+		return ArtifactLocation{}, ArtifactLocation{}, err
+	}
+	executable, err = s.getOptionalLocation(buildID, "executable")
+	if err != nil {
+		return ArtifactLocation{}, ArtifactLocation{}, err
 	}
 	return debuginfo, executable, nil
 }
 
-func (s *Storage) getOptionalPath(buildID, artifactType string) (string, error) {
-	path, err := s.GetArtifactPath(buildID, artifactType)
+func (s *Storage) getOptionalLocation(buildID, artifactType string) (ArtifactLocation, error) {
+	loc, err := s.GetArtifactLocation(buildID, artifactType)
 	if errors.Is(err, ErrNotFound) {
-		return "", nil
+		return ArtifactLocation{}, nil
 	}
-	return path, err
+	return loc, err
 }
 
 // NeedsScan возвращает true, если файл нужно переиндексировать.
@@ -218,28 +246,89 @@ func (s *Storage) MarkScanned(path string, mtimeNS, size int64, kind string) err
 
 // AddSource сохраняет или обновляет исходный файл, привязанный к build-id.
 func (s *Storage) AddSource(buildID, sourcePath, filePath string, mtimeNS int64) error {
+	return s.AddSourceLocation(SourceInput{
+		BuildID:    buildID,
+		SourcePath: sourcePath,
+		FilePath:   filePath,
+	}, mtimeNS)
+}
+
+// SourceInput — данные для сохранения исходника.
+type SourceInput struct {
+	BuildID     string
+	SourcePath  string
+	FilePath    string
+	ArchivePath string
+	MemberPath  string
+}
+
+// AddSourceLocation сохраняет исходник с поддержкой архивов.
+func (s *Storage) AddSourceLocation(in SourceInput, mtimeNS int64) error {
 	_, err := s.db.Exec(rebind(`
-		INSERT INTO sources (build_id, source_path, file_path, mtime_ns)
-		VALUES (?, ?, ?, ?)
+		INSERT INTO sources (build_id, source_path, file_path, archive_path, member_path, mtime_ns)
+		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(build_id, source_path) DO UPDATE SET
 			file_path = excluded.file_path,
+			archive_path = excluded.archive_path,
+			member_path = excluded.member_path,
 			mtime_ns = excluded.mtime_ns
 		WHERE excluded.mtime_ns >= sources.mtime_ns
-	`, s.dialect), buildID, sourcePath, filePath, mtimeNS)
+	`, s.dialect), in.BuildID, in.SourcePath, in.FilePath, in.ArchivePath, in.MemberPath, mtimeNS)
 	return err
 }
 
-// GetSource возвращает путь к исходнику по build-id и пути из DWARF.
-func (s *Storage) GetSource(buildID, sourcePath string) (string, error) {
-	var filePath string
-	err := s.db.QueryRow(
-		rebind(`SELECT file_path FROM sources WHERE build_id = ? AND source_path = ?`, s.dialect),
-		buildID, sourcePath,
-	).Scan(&filePath)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", ErrNotFound
+// GetSource возвращает расположение исходника по build-id и пути из DWARF.
+func (s *Storage) GetSource(buildID, sourcePath string) (SourceLocation, error) {
+	loc, err := s.getSourceExact(buildID, sourcePath)
+	if err == nil {
+		return loc, nil
 	}
-	return filePath, err
+	if !errors.Is(err, ErrNotFound) {
+		return SourceLocation{}, err
+	}
+
+	// Fallback: исходники из SRPM/DSC без привязки к build-id.
+	loc, err = s.getSourceByPathSuffix(sourcePath)
+	if err != nil {
+		return SourceLocation{}, err
+	}
+	return loc, nil
+}
+
+func (s *Storage) getSourceExact(buildID, sourcePath string) (SourceLocation, error) {
+	var loc SourceLocation
+	var buildIDCol string
+	err := s.db.QueryRow(
+		rebind(`SELECT build_id, source_path, file_path, archive_path, member_path FROM sources WHERE build_id = ? AND source_path = ?`, s.dialect),
+		buildID, sourcePath,
+	).Scan(&buildIDCol, &loc.SourcePath, &loc.FilePath, &loc.ArchivePath, &loc.MemberPath)
+	if errors.Is(err, sql.ErrNoRows) {
+		return SourceLocation{}, ErrNotFound
+	}
+	return loc, err
+}
+
+func (s *Storage) getSourceByPathSuffix(sourcePath string) (SourceLocation, error) {
+	base := filepath.Base(sourcePath)
+	rows, err := s.db.Query(rebind(`
+		SELECT source_path, file_path, archive_path, member_path
+		FROM sources
+		WHERE source_path = ? OR source_path LIKE ?
+		ORDER BY length(source_path) DESC
+		LIMIT 1
+	`, s.dialect), sourcePath, "%"+base)
+	if err != nil {
+		return SourceLocation{}, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return SourceLocation{}, ErrNotFound
+	}
+	var loc SourceLocation
+	if err := rows.Scan(&loc.SourcePath, &loc.FilePath, &loc.ArchivePath, &loc.MemberPath); err != nil {
+		return SourceLocation{}, err
+	}
+	return loc, nil
 }
 
 // HasBuildID проверяет, известен ли серверу данный build-id.

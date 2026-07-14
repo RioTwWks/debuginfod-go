@@ -45,7 +45,7 @@ func listRPMELFMembers(archivePath string) ([]Member, error) {
 		if err != nil {
 			continue
 		}
-		if len(data) < 4 || data[0] != 0x7f || data[1] != 'E' || data[2] != 'L' || data[3] != 'F' {
+		if !isELF(data) {
 			continue
 		}
 
@@ -59,4 +59,40 @@ func listRPMELFMembers(archivePath string) ([]Member, error) {
 		})
 	}
 	return members, nil
+}
+
+func openRPMMember(archivePath, memberPath string) (io.ReadCloser, error) {
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	rpm, err := rpmutils.ReadRpm(f)
+	if err != nil {
+		return nil, err
+	}
+	reader, err := rpm.PayloadReaderExtended()
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		info, err := reader.Next()
+		if err == io.EOF {
+			return nil, fmt.Errorf("member %q not found in %s", memberPath, archivePath)
+		}
+		if err != nil {
+			return nil, err
+		}
+		name := strings.TrimPrefix(info.Name(), "./")
+		if name != memberPath {
+			continue
+		}
+		data, err := io.ReadAll(reader)
+		if err != nil {
+			return nil, err
+		}
+		return io.NopCloser(bytes.NewReader(data)), nil
+	}
 }

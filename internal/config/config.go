@@ -25,6 +25,7 @@ type Config struct {
 	UpstreamURLs     []string
 	ZabbixKey        string
 	EnvFile          string
+	LazyExtract      bool
 }
 
 // Load читает .env, переменные окружения и флаги командной строки.
@@ -45,6 +46,7 @@ func Load() Config {
 		UpstreamURLs:    splitPaths(envOr("DEBUGINFOD_URLS", "")),
 		ZabbixKey:       envOr("DEBUGINFOD_ZABBIX_KEY", ""),
 		EnvFile:         envOr("DEBUGINFOD_ENV_FILE", ".env"),
+		LazyExtract:     envBool("DEBUGINFOD_LAZY_EXTRACT", true),
 	}
 
 	if cfg.EnvFile != "" && cfg.EnvFile != ".env" {
@@ -65,6 +67,7 @@ func Load() Config {
 	upstreams := strings.Join(cfg.UpstreamURLs, ",")
 	flag.StringVar(&upstreams, "upstream", upstreams, "upstream debuginfod URLs для федерации")
 	flag.StringVar(&cfg.ZabbixKey, "zabbix-key", cfg.ZabbixKey, "токен для /zabbix endpoint")
+	flag.BoolVar(&cfg.LazyExtract, "lazy-extract", cfg.LazyExtract, "не кэшировать ELF при индексации, извлекать по HTTP-запросу")
 	flag.StringVar(&cfg.EnvFile, "env-file", cfg.EnvFile, "путь к .env")
 	flag.Parse()
 
@@ -117,6 +120,18 @@ func envInt64(key string, fallback int64) int64 {
 		return fallback
 	}
 	return n
+}
+
+func envBool(key string, fallback bool) bool {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+	v, err := strconv.ParseBool(raw)
+	if err != nil {
+		return fallback
+	}
+	return v
 }
 
 func splitPaths(raw string) []string {
