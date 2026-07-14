@@ -315,7 +315,7 @@ cd examples && make demo
 - **Ansible:** [deploy/ansible/README.md](./deploy/ansible/README.md)
 - **nginx:** [deploy/nginx/README.md](./deploy/nginx/README.md)
 - **Backup:** [deploy/backup/README.md](./deploy/backup/README.md)
-- **PostgreSQL:** [deploy/postgresql/README.md](./deploy/postgresql/README.md)
+- **Безопасность:** [deploy/security/README.md](./deploy/security/README.md)
 - **systemd:** [deploy/debuginfod-go.service](./deploy/debuginfod-go.service)
 
 ## Cursor / MCP

@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/your-username/debuginfod-go/internal/archive"
+	"github.com/your-username/debuginfod-go/internal/pathsafe"
 	"github.com/your-username/debuginfod-go/internal/storage"
 	"github.com/your-username/debuginfod-go/pkg/elfsection"
 )
@@ -19,6 +20,9 @@ func resolveFilePath(cacheDir string, loc storage.ArtifactLocation) (string, err
 	if loc.ArchivePath == "" || loc.MemberPath == "" {
 		return "", storage.ErrNotFound
 	}
+	if err := pathsafe.ValidateMemberPath(loc.MemberPath); err != nil {
+		return "", err
+	}
 	return archive.ExtractMember(cacheDir, loc.ArchivePath, loc.MemberPath)
 }
 
@@ -28,6 +32,9 @@ func resolveSourcePath(cacheDir string, loc storage.SourceLocation) (string, err
 	}
 	if loc.ArchivePath == "" || loc.MemberPath == "" {
 		return "", storage.ErrNotFound
+	}
+	if err := pathsafe.ValidateMemberPath(loc.MemberPath); err != nil {
+		return "", err
 	}
 	return archive.ExtractMember(cacheDir, loc.ArchivePath, loc.MemberPath)
 }
@@ -76,6 +83,9 @@ func openArtifactIfPresent(cacheDir string, loc storage.ArtifactLocation) (strin
 
 // streamMember отдаёт содержимое члена архива без сохранения на диск (опционально).
 func streamMember(w http.ResponseWriter, archivePath, memberPath string) error {
+	if err := pathsafe.ValidateMemberPath(memberPath); err != nil {
+		return err
+	}
 	rc, err := archive.OpenMemberReader(archivePath, memberPath)
 	if err != nil {
 		return err

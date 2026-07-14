@@ -29,7 +29,11 @@ func TestIndexerLazyTarArchive(t *testing.T) {
 	_ = exec.Command("gcc", "-g", "-o", bin, src).Run()
 	elfData, _ := os.ReadFile(bin)
 
-	archivePath := filepath.Join(tmp, "symbols.tar.gz")
+	archiveDir := filepath.Join(tmp, "packages")
+	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(archiveDir, "symbols.tar.gz")
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
@@ -48,7 +52,7 @@ func TestIndexerLazyTarArchive(t *testing.T) {
 	cacheDir := filepath.Join(tmp, "cache")
 	idx := NewIndexer(Options{
 		Storage:     store,
-		Paths:       []string{tmp},
+		Paths:       []string{archiveDir},
 		CacheDir:    cacheDir,
 		Workers:     2,
 		Metrics:     metrics.New(),
@@ -73,9 +77,10 @@ func TestIndexerLazyTarArchive(t *testing.T) {
 	}
 
 	handler := webapi.NewHandler(webapi.ServerOpts{
-		Store:    store,
-		CacheDir: cacheDir,
-		Metrics:  metrics.New(),
+		Store:     store,
+		CacheDir:  cacheDir,
+		ScanPaths: []string{archiveDir},
+		Metrics:   metrics.New(),
 	})
 	req := httptest.NewRequest(http.MethodGet, "/buildid/"+id+"/executable", nil)
 	rec := httptest.NewRecorder()

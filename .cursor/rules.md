@@ -25,7 +25,7 @@ internal/metrics/        # runtime counters + /zabbix JSON
 internal/federation/     # upstream proxy при 404
 internal/cache/          # LRU prune кэша
 internal/logging/        # log/slog JSON
-internal/fnmatch/        # FNM_PATHNAME для metadata glob
+internal/pathsafe/        # path traversal validation
 pkg/buildid/             # GNU + Go build-id из ELF notes
 pkg/elfsection/          # сырые ELF-секции для /section
 deploy/                  # systemd unit, Zabbix docs

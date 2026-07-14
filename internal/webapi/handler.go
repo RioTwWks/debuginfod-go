@@ -12,6 +12,7 @@ import (
 
 	"github.com/your-username/debuginfod-go/internal/federation"
 	"github.com/your-username/debuginfod-go/internal/metrics"
+	"github.com/your-username/debuginfod-go/internal/pathsafe"
 	"github.com/your-username/debuginfod-go/internal/storage"
 	"github.com/your-username/debuginfod-go/internal/webui"
 	"github.com/your-username/debuginfod-go/pkg/buildid"
@@ -28,25 +29,28 @@ type ServerOpts struct {
 	ZabbixKey        string
 	CacheBytes       func() int64
 	CacheDir         string
+	ScanPaths        []string
 	UIEnabled        bool
 	Security         SecurityOpts
 }
 
 // Handler обслуживает HTTP-запросы протокола debuginfod.
 type Handler struct {
-	store      *storage.Storage
-	federation *federation.Client
-	metrics    *metrics.Collector
-	cacheDir   string
+	store         *storage.Storage
+	federation    *federation.Client
+	metrics       *metrics.Collector
+	cacheDir      string
+	allowedRoots  []string
 }
 
 // NewHandler создаёт HTTP-обработчик.
 func NewHandler(opts ServerOpts) *Handler {
 	return &Handler{
-		store:      opts.Store,
-		federation: opts.Federation,
-		metrics:    opts.Metrics,
-		cacheDir:   opts.CacheDir,
+		store:        opts.Store,
+		federation:   opts.Federation,
+		metrics:      opts.Metrics,
+		cacheDir:     opts.CacheDir,
+		allowedRoots: pathsafe.AllowedRoots(opts.ScanPaths, opts.CacheDir),
 	}
 }
 
@@ -78,13 +82,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		sourcePath := "/" + strings.Join(parts[3:], "/")
+		if err := pathsafe.ValidateHTTPSourcePath(sourcePath); err != nil {
+			http.Error(w, "invalid source path", http.StatusBadRequest)
+			return
+		}
 		h.serveSource(w, r, buildID, sourcePath)
 	case "section":
 		if len(parts) < 4 {
 			http.Error(w, "section name required", http.StatusBadRequest)
 			return
 		}
-		h.serveSection(w, r, buildID, parts[3])
+		sectionName := parts[3]
+		if err := pathsafe.ValidateSectionName(sectionName); err != nil {
+			http.Error(w, "invalid section name", http.StatusBadRequest)
+			return
+		}
+		h.serveSection(w, r, buildID, sectionName)
 	default:
 		http.NotFound(w, r)
 	}
@@ -170,6 +183,11 @@ func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, buildID,
 	}
 
 	if loc.FilePath == "" && loc.ArchivePath != "" {
+		if err := h.validateArchiveAccess(loc.ArchivePath, loc.MemberPath); err != nil {
+			logResolveError("validateArchive", err, "build_id", buildID)
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		if err := streamMember(w, loc.ArchivePath, loc.MemberPath); err != nil {
 			logResolveError("streamArtifact", err, "build_id", buildID, "type", artifactType)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -183,7 +201,33 @@ func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, buildID,
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	if err := h.validateServingPath(path); err != nil {
+		logResolveError("validateArtifactPath", err, "build_id", buildID, "path", path)
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	serveResolvedFile(w, r, path)
+}
+
+func (h *Handler) validateArchiveAccess(archivePath, memberPath string) error {
+	if err := pathsafe.ValidateMemberPath(memberPath); err != nil {
+		return err
+	}
+	return pathsafe.ValidateArchivePath(archivePath, h.allowedRoots)
+}
+
+func (h *Handler) validateArtifactLocation(loc storage.ArtifactLocation) error {
+	if loc.FilePath != "" {
+		return h.validateServingPath(loc.FilePath)
+	}
+	if loc.ArchivePath != "" {
+		return h.validateArchiveAccess(loc.ArchivePath, loc.MemberPath)
+	}
+	return nil
+}
+
+func (h *Handler) validateServingPath(path string) error {
+	return pathsafe.AssertUnderRoots(path, h.allowedRoots)
 }
 
 func (h *Handler) serveSource(w http.ResponseWriter, r *http.Request, buildID, sourcePath string) {
@@ -204,6 +248,11 @@ func (h *Handler) serveSource(w http.ResponseWriter, r *http.Request, buildID, s
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	if err := h.validateServingPath(path); err != nil {
+		logResolveError("validateSourcePath", err, "build_id", buildID, "path", path)
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	serveResolvedFile(w, r, path)
 }
 
@@ -217,6 +266,17 @@ func (h *Handler) serveSection(w http.ResponseWriter, r *http.Request, buildID, 
 	if debuginfo.FilePath == "" && debuginfo.ArchivePath == "" &&
 		executable.FilePath == "" && executable.ArchivePath == "" {
 		h.tryFederation(w, r)
+		return
+	}
+
+	if err := h.validateArtifactLocation(debuginfo); err != nil {
+		logResolveError("validateDebuginfo", err, "build_id", buildID)
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if err := h.validateArtifactLocation(executable); err != nil {
+		logResolveError("validateExecutable", err, "build_id", buildID)
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 

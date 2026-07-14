@@ -126,10 +126,10 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 
 ## Безопасность
 
-- [ ] **Валидация путей** — path traversal
-- [ ] **Лимит размера архива**
-- [ ] **IMA/подписи**
-- [ ] **systemd hardening** — раскомментировать/документировать `ProtectSystem`, `ReadWritePaths` в unit
+- [x] **Валидация путей** — `internal/pathsafe`, проверка в webapi/archive
+- [x] ~~**Лимит размера архива**~~ — не планируется
+- [x] **IMA/подписи** — `deploy/security/README.md`: подпись пакетов, IMA appraisal, рекомендации
+- [x] **systemd hardening** — `ProtectSystem`, `ReadWritePaths` в unit + документация
 
 ## Документация
 

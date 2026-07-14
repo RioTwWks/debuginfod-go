@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/your-username/debuginfod-go/internal/pathsafe"
 )
 
 // Member описывает файл внутри архива.
@@ -68,6 +70,9 @@ func OpenMemberReader(archivePath, memberPath string) (io.ReadCloser, error) {
 
 // ExtractToCache извлекает член архива в каталог кэша и возвращает путь.
 func ExtractToCache(cacheDir, archivePath, memberPath string, open func() (io.ReadCloser, error)) (string, error) {
+	if err := pathsafe.ValidateMemberPath(memberPath); err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return "", err
 	}
