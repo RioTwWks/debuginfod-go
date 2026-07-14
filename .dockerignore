@@ -3,7 +3,8 @@
 data
 dist
 *.sqlite
-.debuginfod-cache
+.debuginfod
+debuginfod-find-cache
 examples/sample/bin
 examples/delve/sample/bin
 **/node_modules
