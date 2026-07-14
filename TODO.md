@@ -15,14 +15,14 @@
 
 ## Средний приоритет (эксплуатация и производительность)
 
-- [ ] **Структурированное логирование** — `log/slog` с уровнем из `DEBUGINFOD_LOG_LEVEL`
-- [ ] **Метрики Prometheus** — `/metrics`: число артефактов, длительность scan, HTTP latency
-- [ ] **Ограничение размера кэша** — ротация/очистка `DEBUGINFOD_CACHE_DIR` по LRU или лимиту в ГБ
-- [ ] **Параллельный scan** — worker pool при обходе больших деревьев каталогов
-- [ ] **Федерация** — опрос upstream-серверов из `DEBUGINFOD_URLS` при отсутствии артефакта локально
-- [ ] **PostgreSQL** — опциональный backend вместо SQLite для production-кластера
-- [ ] **systemd unit** — пример `debuginfod-go.service` для деплоя без Docker
-- [ ] **Сжатие HTTP-ответов** — `gzip` middleware для крупных debuginfo-файлов
+- [x] **Структурированное логирование** — `log/slog` с уровнем из `DEBUGINFOD_LOG_LEVEL`
+- [x] **Метрики для Zabbix** — `/zabbix` JSON endpoint для HTTP agent (вместо Prometheus)
+- [x] **Ограничение размера кэша** — ротация `DEBUGINFOD_CACHE_DIR` по LRU (старые файлы)
+- [x] **Параллельный scan** — worker pool (`DEBUGINFOD_SCAN_WORKERS`)
+- [x] **Федерация** — опрос upstream из `DEBUGINFOD_URLS` при 404
+- [x] **PostgreSQL** — `DEBUGINFOD_DATABASE_URL` как альтернатива SQLite
+- [x] **systemd unit** — `deploy/debuginfod-go.service`
+- [x] **Сжатие HTTP-ответов** — gzip middleware
 
 ## Архивы и форматы пакетов
 

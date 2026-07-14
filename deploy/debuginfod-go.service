@@ -1,0 +1,23 @@
+[Unit]
+Description=debuginfod-go debuginfo HTTP server
+Documentation=https://github.com/RioTwWks/debuginfod-go
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=debuginfod
+Group=debuginfod
+EnvironmentFile=-/etc/debuginfod-go/debuginfod-go.env
+ExecStart=/usr/local/bin/debuginfod
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65535
+
+# Hardening (опционально, раскомментируйте при необходимости)
+# NoNewPrivileges=true
+# ProtectSystem=strict
+# ReadWritePaths=/var/lib/debuginfod-go /var/cache/debuginfod-go
+
+[Install]
+WantedBy=multi-user.target
