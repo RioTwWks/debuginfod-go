@@ -15,3 +15,12 @@ if [ -n "$http_proxy_val" ]; then
 	} > /etc/apt/apt.conf.d/99proxy
 	echo "APT proxy: $http_proxy_val"
 fi
+
+if [ "${APT_INSECURE:-}" = "true" ]; then
+	mkdir -p /etc/apt/apt.conf.d
+	{
+		echo 'Acquire::https::Verify-Peer "false";'
+		echo 'Acquire::https::Verify-Host "false";'
+	} >> /etc/apt/apt.conf.d/99proxy
+	echo "APT: HTTPS certificate verification disabled (APT_INSECURE=true)"
+fi

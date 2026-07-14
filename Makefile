@@ -5,7 +5,7 @@ GOPATH?=$(shell go env GOPATH)
 SQLITE_DB=debuginfod.sqlite
 
 .PHONY: all build build-find test vet run run-env clean lint fmt docker \
-	docker-prebuilt docker-up-prebuilt docker-astra docker-up-astra \
+	docker-prep docker-prebuilt docker-up-prebuilt docker-astra docker-up-astra \
 	package package-deb package-rpm \
 	offline-download-deb offline-download-rpm \
 	offline-bundle-deb offline-bundle-rpm
@@ -81,22 +81,22 @@ offline-bundle-rpm:
 
 # --- Docker (dev/demo) ---
 
-docker-prebuilt: build
+.PHONY: docker-prep
+docker-prep:
+	bash deploy/docker/prepare-build-certs.sh
 	bash deploy/docker/ensure-proxy-env.sh
+
+docker-prebuilt: build docker-prep
 	docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build
 
-docker-up-prebuilt: build
-	bash deploy/docker/ensure-proxy-env.sh
+docker-up-prebuilt: build docker-prep
 	docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up -d --build
 
-docker-astra: build
-	bash deploy/docker/ensure-proxy-env.sh
+docker-astra: build docker-prep
 	docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml -f docker-compose.astra.yml up --build
 
-docker-up-astra: build
-	bash deploy/docker/ensure-proxy-env.sh
+docker-up-astra: build docker-prep
 	docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml -f docker-compose.astra.yml up -d --build
 
-docker: build
-	bash deploy/docker/ensure-proxy-env.sh
+docker: build docker-prep
 	docker build -t debuginfod-go .
