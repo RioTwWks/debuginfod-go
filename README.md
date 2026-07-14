@@ -243,7 +243,9 @@ scan paths ──► indexer (workers) ──► SQLite/PostgreSQL ◄── web
 | [deploy/ansible/README.md](./deploy/ansible/README.md) | Ansible playbook |
 | [deploy/nginx/README.md](./deploy/nginx/README.md) | Reverse proxy |
 | [deploy/offline/README.md](./deploy/offline/README.md) | Оффлайн bundle `.deb`/`.rpm` |
-| [deploy/zabbix/README.md](./deploy/zabbix/README.md) | Zabbix template и мониторинг |
+| [deploy/backup/README.md](./deploy/backup/README.md) | Backup и restore |
+| [deploy/postgresql/README.md](./deploy/postgresql/README.md) | PostgreSQL в проде |
+| [deploy/zabbix/README.md](./deploy/zabbix/README.md) | Zabbix template |
 
 ## Лицензия
 

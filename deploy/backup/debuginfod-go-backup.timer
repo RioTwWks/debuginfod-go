@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily debuginfod-go backup
+Documentation=file:///usr/share/doc/debuginfod-go/backup/README.md
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=30m
+
+[Install]
+WantedBy=timers.target

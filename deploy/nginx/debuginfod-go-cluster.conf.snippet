@@ -1,0 +1,19 @@
+# Несколько backend-инстансов debuginfod-go за nginx (PostgreSQL).
+# Подключите в server {} после основного upstream или замените debuginfod_backend.
+#
+# Требования:
+#   - Общий DEBUGINFOD_DATABASE_URL (PostgreSQL) на всех инстансах
+#   - Локальный cache на каждом хосте
+
+upstream debuginfod_cluster {
+    least_conn;
+    server 10.0.1.11:8002 max_fails=3 fail_timeout=30s;
+    server 10.0.1.12:8002 max_fails=3 fail_timeout=30s;
+    server 10.0.1.13:8002 max_fails=3 fail_timeout=30s;
+    keepalive 32;
+}
+
+# В location / замените:
+#   proxy_pass http://debuginfod_backend;
+# на:
+#   proxy_pass http://debuginfod_cluster;

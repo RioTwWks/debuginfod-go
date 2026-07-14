@@ -51,6 +51,6 @@
     "Конфиг: .env.example + internal/config/config.go",
     "Roadmap: TODO.md — отмечать [x] при завершении задач",
     "Examples: examples/ — docker-compose + GDB demo (make demo)",
-    "Deploy: deploy/ansible, deploy/nginx, deploy/zabbix/template_debuginfod-go.xml"
+    "Deploy: deploy/ansible, deploy/nginx, deploy/backup, deploy/postgresql"
   ]
 }

@@ -47,7 +47,6 @@ curl -k https://debuginfod.example.com/healthz
 curl -k https://debuginfod.example.com/ui/api/stats
 ```
 
-## Связанные файлы
+## Кластер (несколько инстансов)
 
-- [deploy/ansible/README.md](../ansible/README.md) — раскатка сервиса
-- [deploy/zabbix/README.md](../zabbix/README.md) — мониторинг (URL через nginx или напрямую :8002)
+При общем PostgreSQL — см. [debuginfod-go-cluster.conf.snippet](./debuginfod-go-cluster.conf.snippet) и [postgresql/README.md](../postgresql/README.md).
