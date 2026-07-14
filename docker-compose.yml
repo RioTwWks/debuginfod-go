@@ -38,8 +38,10 @@ services:
       DEBUGINFOD_PORT: "8002"
       DEBUGINFOD_LOG_LEVEL: info
       DEBUGINFOD_UI_ENABLED: "true"
+      NO_PROXY: localhost,127.0.0.1
+      no_proxy: localhost,127.0.0.1
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8002/healthz"]
+      test: ["CMD", "curl", "-sf", "--noproxy", "*", "http://127.0.0.1:8002/healthz"]
       interval: 5s
       timeout: 3s
       retries: 6
