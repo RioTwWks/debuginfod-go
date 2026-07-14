@@ -23,6 +23,9 @@ services:
         APT_PROFILE: ${APT_PROFILE:-}
         APT_MIRROR: ${APT_MIRROR:-}
         SKIP_APT_INSTALL: ${SKIP_APT_INSTALL:-false}
+        HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
+        HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
+        NO_PROXY: ${NO_PROXY:-${no_proxy:-}}
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1:8002/healthz"]
       interval: 5s
