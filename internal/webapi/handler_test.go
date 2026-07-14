@@ -219,7 +219,7 @@ func TestIntegrationHTTPEndpoints(t *testing.T) {
 
 func TestFederationFallback(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("fed-data"))
+		_, _ = w.Write([]byte("fed-data"))
 	}))
 	defer upstream.Close()
 

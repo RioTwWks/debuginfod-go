@@ -6,7 +6,25 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+          cache: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.59.1
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -18,7 +36,7 @@ jobs:
           cache: true
 
       - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y gcc libsqlite3-dev rpm
+        run: sudo apt-get update && sudo apt-get install -y gcc libsqlite3-dev
 
       - name: Download modules
         run: go mod download
@@ -26,8 +44,156 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Test
-        run: go test -v -race ./...
+      - name: Test with race and coverage
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
 
-      - name: Build
-        run: go build -o debuginfod ./cmd/debuginfod
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.out
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+          cache: true
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y gcc libsqlite3-dev
+
+      - name: Benchmark
+        run: |
+          go test -bench=. -benchmem -benchtime=100ms -run='^$' \
+            ./pkg/buildid/... ./internal/archive/... ./internal/fnmatch/... \
+            | tee benchmark.txt
+
+      - name: Upload benchmark output
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark.txt
+          retention-days: 14
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+          cache: true
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y gcc libsqlite3-dev
+
+      - name: Fuzz ELF notes
+        run: go test -fuzz=FuzzParseNotes -fuzztime=20s ./pkg/buildid/
+
+      - name: Fuzz tar archives
+        run: go test -fuzz=FuzzListTarELFMembers -fuzztime=20s ./internal/archive/
+
+      - name: Fuzz deb ar archives
+        run: go test -fuzz=FuzzListDebELFMembers -fuzztime=20s ./internal/archive/
+
+  cross:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            binaries: debuginfod debuginfod-find
+            cgo: "1"
+          - goos: linux
+            goarch: arm64
+            binaries: debuginfod debuginfod-find
+            cgo: "1"
+            cc: aarch64-linux-gnu-gcc
+          - goos: darwin
+            goarch: amd64
+            binaries: debuginfod-find
+            cgo: "0"
+          - goos: darwin
+            goarch: arm64
+            binaries: debuginfod-find
+            cgo: "0"
+          - goos: windows
+            goarch: amd64
+            binaries: debuginfod-find
+            cgo: "0"
+            ext: .exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+          cache: true
+
+      - name: Install cross-compilers
+        if: matrix.cc != ''
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu libsqlite3-dev
+
+      - name: Install native build deps
+        if: matrix.cc == '' && matrix.cgo == '1'
+        run: sudo apt-get update && sudo apt-get install -y gcc libsqlite3-dev
+
+      - name: Cross-compile
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: ${{ matrix.cgo }}
+          CC: ${{ matrix.cc }}
+        run: |
+          mkdir -p dist/cross/${{ matrix.goos }}_${{ matrix.goarch }}
+          for bin in ${{ matrix.binaries }}; do
+            out="dist/cross/${{ matrix.goos }}_${{ matrix.goarch }}/${bin}${{ matrix.ext }}"
+            echo "Building ${out}"
+            go build -trimpath -ldflags "-s -w" -o "${out}" "./cmd/${bin}"
+          done
+
+      - name: Upload cross-build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cross-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/cross/${{ matrix.goos }}_${{ matrix.goarch }}/
+          retention-days: 14
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+          cache: true
+
+      - name: Install packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc libsqlite3-dev rpm
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.37.1
+
+      - name: Build packages
+        run: |
+          export PATH="${PATH}:${HOME}/go/bin"
+          make package VERSION="${GITHUB_SHA::7}"
+
+      - name: Upload .deb and .rpm
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages-amd64
+          path: |
+            dist/*.deb
+            dist/*.rpm
+          retention-days: 30
