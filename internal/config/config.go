@@ -27,6 +27,14 @@ type Config struct {
 	EnvFile          string
 	LazyExtract      bool
 	UIEnabled        bool
+	CORSOrigins      []string
+	RateLimitRPS     float64
+	BasicAuthUser    string
+	BasicAuthPass    string
+	TLSCertFile      string
+	TLSKeyFile       string
+	TLSClientCA      string
+	MetadataPageSize int
 }
 
 // Load читает .env, переменные окружения и флаги командной строки.
@@ -47,8 +55,16 @@ func Load() Config {
 		UpstreamURLs:    splitPaths(envOr("DEBUGINFOD_URLS", "")),
 		ZabbixKey:       envOr("DEBUGINFOD_ZABBIX_KEY", ""),
 		EnvFile:         envOr("DEBUGINFOD_ENV_FILE", ".env"),
-		LazyExtract:     envBool("DEBUGINFOD_LAZY_EXTRACT", true),
-		UIEnabled:       envBool("DEBUGINFOD_UI_ENABLED", true),
+		LazyExtract:      envBool("DEBUGINFOD_LAZY_EXTRACT", true),
+		UIEnabled:        envBool("DEBUGINFOD_UI_ENABLED", true),
+		CORSOrigins:      splitPaths(envOr("DEBUGINFOD_CORS_ORIGINS", "")),
+		RateLimitRPS:     envFloat64("DEBUGINFOD_RATE_LIMIT", 0),
+		BasicAuthUser:    envOr("DEBUGINFOD_BASIC_AUTH_USER", ""),
+		BasicAuthPass:    envOr("DEBUGINFOD_BASIC_AUTH_PASSWORD", ""),
+		TLSCertFile:      envOr("DEBUGINFOD_TLS_CERT", ""),
+		TLSKeyFile:       envOr("DEBUGINFOD_TLS_KEY", ""),
+		TLSClientCA:      envOr("DEBUGINFOD_TLS_CLIENT_CA", ""),
+		MetadataPageSize: envInt("DEBUGINFOD_METADATA_PAGE_SIZE", 100),
 	}
 
 	if cfg.EnvFile != "" && cfg.EnvFile != ".env" {
@@ -71,11 +87,21 @@ func Load() Config {
 	flag.StringVar(&cfg.ZabbixKey, "zabbix-key", cfg.ZabbixKey, "токен для /zabbix endpoint")
 	flag.BoolVar(&cfg.LazyExtract, "lazy-extract", cfg.LazyExtract, "не кэшировать ELF при индексации, извлекать по HTTP-запросу")
 	flag.BoolVar(&cfg.UIEnabled, "ui", cfg.UIEnabled, "включить Web UI на /ui/")
+	corsOrigins := strings.Join(cfg.CORSOrigins, ",")
+	flag.StringVar(&corsOrigins, "cors-origins", corsOrigins, "CORS origins (через запятую, * = все)")
+	flag.Float64Var(&cfg.RateLimitRPS, "rate-limit", cfg.RateLimitRPS, "лимит запросов/с на IP (0=выкл)")
+	flag.StringVar(&cfg.BasicAuthUser, "basic-auth-user", cfg.BasicAuthUser, "Basic Auth пользователь")
+	flag.StringVar(&cfg.BasicAuthPass, "basic-auth-password", cfg.BasicAuthPass, "Basic Auth пароль")
+	flag.StringVar(&cfg.TLSCertFile, "tls-cert", cfg.TLSCertFile, "TLS сертификат")
+	flag.StringVar(&cfg.TLSKeyFile, "tls-key", cfg.TLSKeyFile, "TLS ключ")
+	flag.StringVar(&cfg.TLSClientCA, "tls-client-ca", cfg.TLSClientCA, "CA для mTLS клиентов")
+	flag.IntVar(&cfg.MetadataPageSize, "metadata-page-size", cfg.MetadataPageSize, "размер страницы metadata")
 	flag.StringVar(&cfg.EnvFile, "env-file", cfg.EnvFile, "путь к .env")
 	flag.Parse()
 
 	cfg.ScanPaths = splitPaths(scanPath)
 	cfg.UpstreamURLs = splitPaths(upstreams)
+	cfg.CORSOrigins = splitPaths(corsOrigins)
 	if len(cfg.ScanPaths) == 0 {
 		cfg.ScanPaths = []string{"."}
 	}
@@ -131,6 +157,18 @@ func envBool(key string, fallback bool) bool {
 		return fallback
 	}
 	v, err := strconv.ParseBool(raw)
+	if err != nil {
+		return fallback
+	}
+	return v
+}
+
+func envFloat64(key string, fallback float64) float64 {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+	v, err := strconv.ParseFloat(raw, 64)
 	if err != nil {
 		return fallback
 	}

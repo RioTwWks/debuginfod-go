@@ -27,13 +27,15 @@
     "test": "make test",
     "vet": "go vet ./...",
     "build": "make build",
+    "build-find": "make build-find",
     "run": "make run-env",
     "health": "curl -sf http://localhost:8002/healthz",
     "ui": "curl -sf http://localhost:8002/ui/ | head -20",
     "ui-stats": "curl -s http://localhost:8002/ui/api/stats",
     "ui-search": "curl -s 'http://localhost:8002/ui/api/search?q='",
     "zabbix": "curl -s http://localhost:8002/zabbix",
-    "metadata-glob": "curl -s 'http://localhost:8002/metadata?key=glob&value=*'"
+    "metadata-glob": "curl -s 'http://localhost:8002/metadata?key=glob&value=*'",
+    "openapi": "curl -s http://localhost:8002/openapi.yaml | head -30"
   },
   "hints": [
     "Схема БД: internal/storage/sqlite.go (artifacts, sources, scanned_files)",
@@ -42,7 +44,9 @@
     "Архивы: internal/archive/kind.go — DetectKind, isUnsupportedDistroPackage",
     "Lazy extract: DEBUGINFOD_LAZY_EXTRACT=true — archive_path+member_path без file_path",
     "Тесты buildid требуют gcc; RPM — rpmbuild; Go binary — go build",
-    "HTTP: /buildid, /metadata, /healthz, /zabbix, /ui/",
+    "HTTP: /buildid, /metadata, /healthz, /zabbix, /ui/, /openapi.yaml",
+    "CLI: cmd/debuginfod-find — debuginfo/executable/source/section/metadata",
+    "Security: CORS, rate limit, Basic Auth, TLS/mTLS — internal/webapi/security.go",
     "Документация: README.md, DEVELOPMENT.md, TODO.md, deploy/zabbix/README.md",
     "Конфиг: .env.example + internal/config/config.go",
     "Roadmap: TODO.md — отмечать [x] при завершении задач"

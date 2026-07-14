@@ -31,8 +31,17 @@ type ArtifactRecord struct {
 
 // MetadataResponse — JSON-ответ эндпоинта /metadata.
 type MetadataResponse struct {
-	Results  []ArtifactRecord `json:"results"`
-	Complete bool             `json:"complete"`
+	Results    []ArtifactRecord `json:"results"`
+	Complete   bool             `json:"complete"`
+	NextOffset int              `json:"next_offset,omitempty"`
+}
+
+// MetadataQuery — параметры поиска metadata с пагинацией.
+type MetadataQuery struct {
+	Key    string
+	Value  string
+	Offset int
+	Limit  int // 0 = без лимита (все совпадения)
 }
 
 // Storage — SQLite-хранилище метаданных debuginfod.
@@ -391,65 +400,75 @@ func (s *Storage) SearchBuildIDForUI(ctx context.Context, query string, limit in
 
 // SearchMetadata ищет артефакты по ключу debuginfod metadata API.
 func (s *Storage) SearchMetadata(ctx context.Context, key, value string) (MetadataResponse, error) {
-	switch key {
+	return s.SearchMetadataQuery(ctx, MetadataQuery{Key: key, Value: value})
+}
+
+// SearchMetadataQuery ищет артефакты с поддержкой offset/limit.
+func (s *Storage) SearchMetadataQuery(ctx context.Context, q MetadataQuery) (MetadataResponse, error) {
+	switch q.Key {
 	case "glob":
-		return s.searchGlob(ctx, value)
+		return s.searchGlob(ctx, q)
 	case "file":
-		return s.searchFile(ctx, value)
+		return s.searchFile(ctx, q)
 	case "buildid":
-		return s.searchBuildID(ctx, value)
+		return s.searchBuildID(ctx, q)
 	default:
-		return MetadataResponse{}, fmt.Errorf("unsupported metadata key: %s", key)
+		return MetadataResponse{}, fmt.Errorf("unsupported metadata key: %s", q.Key)
 	}
 }
 
-func (s *Storage) searchGlob(ctx context.Context, pattern string) (MetadataResponse, error) {
+func (s *Storage) searchGlob(ctx context.Context, q MetadataQuery) (MetadataResponse, error) {
 	rows, err := s.db.QueryContext(ctx, rebind(`
 		SELECT build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id
 		FROM artifacts
+		ORDER BY build_id, type
 	`, s.dialect))
 	if err != nil {
 		return MetadataResponse{}, err
 	}
 	defer rows.Close()
 	return collectMetadata(ctx, rows, func(rec ArtifactRecord) bool {
-		return matchGlob(pattern, rec.File) || (rec.Archive != "" && matchGlob(pattern, rec.Archive))
-	})
+		return matchGlob(q.Value, rec.File) || (rec.Archive != "" && matchGlob(q.Value, rec.Archive))
+	}, q.Offset, q.Limit)
 }
 
-func (s *Storage) searchFile(ctx context.Context, path string) (MetadataResponse, error) {
+func (s *Storage) searchFile(ctx context.Context, q MetadataQuery) (MetadataResponse, error) {
 	rows, err := s.db.QueryContext(ctx, rebind(`
 		SELECT build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id
 		FROM artifacts
+		ORDER BY build_id, type
 	`, s.dialect))
 	if err != nil {
 		return MetadataResponse{}, err
 	}
 	defer rows.Close()
-	path = filepath.ToSlash(path)
+	path := filepath.ToSlash(q.Value)
 	return collectMetadata(ctx, rows, func(rec ArtifactRecord) bool {
 		return rec.File == path
-	})
+	}, q.Offset, q.Limit)
 }
 
-func (s *Storage) searchBuildID(ctx context.Context, query string) (MetadataResponse, error) {
+func (s *Storage) searchBuildID(ctx context.Context, q MetadataQuery) (MetadataResponse, error) {
 	rows, err := s.db.QueryContext(ctx, rebind(`
 		SELECT build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id
 		FROM artifacts
+		ORDER BY build_id, type
 	`, s.dialect))
 	if err != nil {
 		return MetadataResponse{}, err
 	}
 	defer rows.Close()
-	query = strings.ToLower(strings.TrimPrefix(query, "0x"))
+	query := strings.ToLower(strings.TrimPrefix(q.Value, "0x"))
 	return collectMetadata(ctx, rows, func(rec ArtifactRecord) bool {
 		return rec.BuildID == query || strings.EqualFold(rec.RawBuildID, query)
-	})
+	}, q.Offset, q.Limit)
 }
 
-func collectMetadata(ctx context.Context, rows *sql.Rows, keep func(ArtifactRecord) bool) (MetadataResponse, error) {
+func collectMetadata(ctx context.Context, rows *sql.Rows, keep func(ArtifactRecord) bool, offset, limit int) (MetadataResponse, error) {
 	var results []ArtifactRecord
 	complete := true
+	skipped := 0
+	hasLimit := limit > 0
 
 	for rows.Next() {
 		if err := ctx.Err(); err != nil {
@@ -460,12 +479,37 @@ func collectMetadata(ctx context.Context, rows *sql.Rows, keep func(ArtifactReco
 		if err != nil {
 			return MetadataResponse{}, err
 		}
-		if keep(rec) {
-			results = append(results, rec)
+		if !keep(rec) {
+			continue
 		}
+		if skipped < offset {
+			skipped++
+			continue
+		}
+		if hasLimit && len(results) >= limit {
+			complete = false
+			break
+		}
+		results = append(results, rec)
 	}
 	if err := rows.Err(); err != nil {
 		return MetadataResponse{}, err
+	}
+	if !hasLimit {
+		// Проверяем, не осталось ли ещё строк после таймаута.
+		if !complete && len(results) > 0 {
+			return MetadataResponse{
+				Results:    results,
+				Complete:   false,
+				NextOffset: offset + len(results),
+			}, nil
+		}
+	} else if !complete {
+		return MetadataResponse{
+			Results:    results,
+			Complete:   false,
+			NextOffset: offset + len(results),
+		}, nil
 	}
 	if results == nil {
 		results = []ArtifactRecord{}

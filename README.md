@@ -94,6 +94,14 @@ docker compose up --build
 | `DEBUGINFOD_SCAN_WORKERS` | `-scan-workers` | Параллельные воркеры | `4` |
 | `DEBUGINFOD_URLS` | `-upstream` | Upstream для федерации | — |
 | `DEBUGINFOD_ZABBIX_KEY` | `-zabbix-key` | Токен `/zabbix` | — |
+| `DEBUGINFOD_CORS_ORIGINS` | `-cors-origins` | CORS origins (`*`=все) | — |
+| `DEBUGINFOD_RATE_LIMIT` | `-rate-limit` | Лимит запросов/с на IP (0=выкл) | `0` |
+| `DEBUGINFOD_BASIC_AUTH_USER` | `-basic-auth-user` | Basic Auth пользователь | — |
+| `DEBUGINFOD_BASIC_AUTH_PASSWORD` | `-basic-auth-password` | Basic Auth пароль | — |
+| `DEBUGINFOD_TLS_CERT` | `-tls-cert` | TLS сертификат | — |
+| `DEBUGINFOD_TLS_KEY` | `-tls-key` | TLS ключ | — |
+| `DEBUGINFOD_TLS_CLIENT_CA` | `-tls-client-ca` | CA для mTLS клиентов | — |
+| `DEBUGINFOD_METADATA_PAGE_SIZE` | `-metadata-page-size` | Размер страницы metadata | `100` |
 | `DEBUGINFOD_ENV_FILE` | `-env-file` | Путь к `.env` | `.env` |
 
 Полный пример: [.env.example](./.env.example).
@@ -117,7 +125,18 @@ GET /buildid/<BUILDID>/section/<имя_секции>
 GET /metadata?key=glob&value=/usr/bin/*
 GET /metadata?key=file&value=/usr/bin/hello
 GET /metadata?key=buildid&value=<hex>
+GET /metadata?key=glob&value=/bin/*&offset=0&limit=100
 ```
+
+Ответ — JSON с полями `artifacts` и `next_offset` (если есть ещё страницы). Параметры `offset`/`limit` опциональны; по умолчанию `limit` берётся из `DEBUGINFOD_METADATA_PAGE_SIZE`.
+
+### OpenAPI и безопасность
+
+```http
+GET /openapi.yaml          → OpenAPI 3.0 спецификация
+```
+
+Опционально: CORS (`DEBUGINFOD_CORS_ORIGINS`), rate limiting (`DEBUGINFOD_RATE_LIMIT`), Basic Auth (`DEBUGINFOD_BASIC_AUTH_*`), TLS/mTLS (`DEBUGINFOD_TLS_*`). `/healthz` доступен без Basic Auth.
 
 ### Мониторинг и UI
 
@@ -137,6 +156,27 @@ Zabbix: [deploy/zabbix/README.md](deploy/zabbix/README.md).
 export DEBUGINFOD_URLS="http://localhost:8002"
 gdb /path/to/binary
 ```
+
+## CLI `debuginfod-find`
+
+Совместимая обёртка над HTTP API (сборка: `make build-find`):
+
+```bash
+export DEBUGINFOD_URLS="http://localhost:8002"
+
+# Скачать debuginfo / executable
+debuginfod-find debuginfo <BUILDID> -o /tmp/out.debug
+debuginfod-find executable <BUILDID>
+
+# Исходник и ELF-секция
+debuginfod-find source <BUILDID> /usr/src/hello.c
+debuginfod-find section <BUILDID> .note.gnu.build-id
+
+# Metadata
+debuginfod-find --key glob --value '/bin/*'
+```
+
+Флаг `--url` переопределяет `DEBUGINFOD_URLS`.
 
 ## Проверка
 
@@ -161,6 +201,7 @@ scan paths ──► indexer (workers) ──► SQLite/PostgreSQL ◄── web
 | Пакет | Назначение |
 |-------|------------|
 | `cmd/debuginfod` | Точка входа |
+| `cmd/debuginfod-find` | CLI-клиент HTTP API |
 | `internal/config` | `.env` + флаги |
 | `pkg/buildid` | GNU и Go build-id |
 | `pkg/elfsection` | ELF-секции |

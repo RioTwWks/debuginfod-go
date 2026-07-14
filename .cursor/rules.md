@@ -14,10 +14,11 @@
 
 ```
 cmd/debuginfod/          # main: wiring HTTP, indexer, graceful shutdown
+cmd/debuginfod-find/     # CLI-клиент HTTP API
 internal/config/         # .env + флаги CLI
 internal/indexer/        # scan FS (worker pool), DWARF sources, lazy extract
 internal/storage/        # SQLite / PostgreSQL: artifacts, sources, metadata
-internal/webapi/         # /buildid, /metadata, /healthz, /zabbix, gzip, federation
+internal/webapi/         # /buildid, /metadata, /healthz, /zabbix, /openapi.yaml, security middleware
 internal/webui/          # /ui/ дашборд (embed static)
 internal/archive/        # .deb, .rpm, tar, SRPM, DSC (целевые ОС)
 internal/metrics/        # runtime counters + /zabbix JSON
@@ -47,14 +48,15 @@ deploy/                  # systemd unit, Zabbix docs
 | `GET /buildid/<id>/executable` | Отдать executable |
 | `GET /buildid/<id>/source/<path>` | Отдать исходник |
 | `GET /buildid/<id>/section/<name>` | Сырое содержимое ELF-секции |
-| `GET /metadata?key=glob\|file\|buildid&value=...` | Поиск артефактов (fnmatch, timeout) |
-| `GET /healthz` | Liveness |
+| `GET /metadata?key=glob\|file\|buildid&value=...&offset=&limit=` | Поиск артефактов (fnmatch, timeout, pagination) |
+| `GET /openapi.yaml` | OpenAPI 3.0 спецификация |
+| `GET /healthz` | Liveness (без Basic Auth) |
 | `GET /zabbix` | JSON-метрики для Zabbix HTTP agent |
 | `GET /ui/` | Web UI: статистика + поиск по build-id |
 | `GET /ui/api/stats` | JSON счётчиков для UI |
 | `GET /ui/api/search?q=` | Поиск по префиксу build-id |
 
-**Middleware:** gzip, HTTP metrics (2xx/4xx/5xx), federation fallback на 404.
+**Middleware:** gzip, CORS, rate limit, Basic Auth, HTTP metrics (2xx/4xx/5xx), federation fallback на 404.
 
 ## Индексация
 
@@ -103,6 +105,11 @@ deploy/                  # systemd unit, Zabbix docs
 | `DEBUGINFOD_SCAN_WORKERS` | `4` | Параллельные воркеры |
 | `DEBUGINFOD_URLS` | — | Upstream для федерации |
 | `DEBUGINFOD_ZABBIX_KEY` | — | Токен `/zabbix` |
+| `DEBUGINFOD_CORS_ORIGINS` | — | CORS origins (`*` = все) |
+| `DEBUGINFOD_RATE_LIMIT` | `0` | Лимит запросов/с на IP |
+| `DEBUGINFOD_BASIC_AUTH_USER/PASSWORD` | — | Basic Auth |
+| `DEBUGINFOD_TLS_CERT/KEY/CLIENT_CA` | — | TLS и mTLS |
+| `DEBUGINFOD_METADATA_PAGE_SIZE` | `100` | Размер страницы metadata |
 
 ## База данных
 
