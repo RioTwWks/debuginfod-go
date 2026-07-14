@@ -5,6 +5,7 @@ GOPATH?=$(shell go env GOPATH)
 SQLITE_DB=debuginfod.sqlite
 
 .PHONY: all build build-find test vet run run-env clean lint fmt docker \
+	docker-prebuilt docker-up-prebuilt \
 	package package-deb package-rpm \
 	offline-download-deb offline-download-rpm \
 	offline-bundle-deb offline-bundle-rpm
@@ -77,6 +78,14 @@ offline-bundle-deb:
 offline-bundle-rpm:
 	bash deploy/offline/download-deps-rpm.sh
 	VERSION=$(VERSION) bash deploy/offline/make-bundle.sh rpm
+
+# --- Docker (dev/demo) ---
+
+docker-prebuilt: build
+	docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build
+
+docker-up-prebuilt: build
+	docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up -d --build
 
 docker: build
 	docker build -t debuginfod-go .

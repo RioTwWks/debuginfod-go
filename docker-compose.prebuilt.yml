@@ -1,0 +1,26 @@
+# Overlay для Astra / оффлайн: бинарник с хоста, без go mod download в Docker.
+#
+#   make build
+#   docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build
+#
+# Переменные (см. .env.docker.example):
+#   DEBIAN_SUITE=bullseye
+#   APT_MIRROR=mirror.yandex.ru/debian
+#   SKIP_APT_INSTALL=true
+
+services:
+  debuginfod:
+    build:
+      context: .
+      dockerfile: Dockerfile.prebuilt
+      network: host
+      args:
+        DEBIAN_SUITE: ${DEBIAN_SUITE:-bullseye}
+        APT_MIRROR: ${APT_MIRROR:-}
+        SKIP_APT_INSTALL: ${SKIP_APT_INSTALL:-false}
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8002/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 15s

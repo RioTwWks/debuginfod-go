@@ -3,13 +3,24 @@
 #   make -C examples/sample    # демо-бинарники для индексации
 #   docker compose up --build
 #
+# Astra / без доступа к deb.debian.org:
+#   make build
+#   docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build
+#   см. deploy/docker/README.md
+#
 # Хостовый /usr/lib/debug (опционально):
 #   DEBUGINFOD_SCAN_PATH=/sample,/usr/lib/debug
 #   volumes: - /usr/lib/debug:/usr/lib/debug:ro
 
 services:
   debuginfod:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      network: host
+      args:
+        DEBIAN_SUITE: ${DEBIAN_SUITE:-bookworm}
+        APT_MIRROR: ${APT_MIRROR:-}
     ports:
       - "8002:8002"
     volumes:

@@ -1,0 +1,36 @@
+# Сборка без Go/apt в builder: бинарник собирается на хосте (make build).
+#
+#   make build
+#   docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build
+#
+# На Astra без доступа к deb.debian.org задайте зеркало или подготовленный runtime-образ:
+#   APT_MIRROR=mirror.example.ru/debian docker compose ...
+#   SKIP_APT_INSTALL=true  # если базовый образ уже содержит libsqlite3-0, curl
+
+ARG DEBIAN_SUITE=bullseye
+FROM debian:${DEBIAN_SUITE}-slim
+
+ARG APT_MIRROR=
+ARG SKIP_APT_INSTALL=false
+
+RUN if [ "${SKIP_APT_INSTALL}" != "true" ]; then \
+		if [ -n "${APT_MIRROR}" ]; then \
+			sed -i "s|deb.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list; \
+			sed -i "s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list || true; \
+		fi; \
+		apt-get -o Acquire::Retries=5 update \
+		&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+			ca-certificates \
+			curl \
+			libsqlite3-0 \
+		&& rm -rf /var/lib/apt/lists/*; \
+	fi
+
+WORKDIR /data
+
+COPY debuginfod /usr/local/bin/debuginfod
+RUN chmod 755 /usr/local/bin/debuginfod
+
+EXPOSE 8002
+ENTRYPOINT ["/usr/local/bin/debuginfod"]
+CMD ["-p", "8002"]

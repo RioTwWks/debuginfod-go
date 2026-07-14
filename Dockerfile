@@ -1,7 +1,15 @@
-# Сборка debuginfod-go (Debian bookworm — совместимо с Astra/Ubuntu, без Alpine apk).
-FROM golang:1.21-bookworm AS builder
+# Сборка debuginfod-go (Debian — совместимо с Astra/Ubuntu).
+# На Astra без доступа к deb.debian.org используйте Dockerfile.prebuilt (см. deploy/docker/README.md).
 
-RUN apt-get update \
+ARG DEBIAN_SUITE=bookworm
+FROM golang:1.21-${DEBIAN_SUITE} AS builder
+
+ARG APT_MIRROR=
+RUN if [ -n "${APT_MIRROR}" ]; then \
+		sed -i "s|deb.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list; \
+		sed -i "s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list || true; \
+	fi \
+	&& apt-get -o Acquire::Retries=5 update \
 	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
 		gcc \
 		libc6-dev \
@@ -15,9 +23,15 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=1 go build -trimpath -ldflags "-s -w" -o /debuginfod ./cmd/debuginfod
 
-FROM debian:bookworm-slim
+ARG DEBIAN_SUITE=bookworm
+FROM debian:${DEBIAN_SUITE}-slim
 
-RUN apt-get update \
+ARG APT_MIRROR=
+RUN if [ -n "${APT_MIRROR}" ]; then \
+		sed -i "s|deb.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list; \
+		sed -i "s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list || true; \
+	fi \
+	&& apt-get -o Acquire::Retries=5 update \
 	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
 		ca-certificates \
 		curl \
