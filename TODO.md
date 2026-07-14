@@ -2,7 +2,18 @@
 
 Список улучшений по приоритету. Выполненное — `[x]`.
 
-**Статус проекта (2026-07-14):** MVP + elfutils-совместимость + эксплуатация (Zabbix, federation, PostgreSQL) + архивы (apk/pacman/tar/lazy/SRPM) + Web UI.
+**Статус проекта (2026-07-14):** MVP + elfutils-совместимость + эксплуатация (Zabbix, federation, PostgreSQL) + архивы (deb/rpm/tar/lazy/SRPM) + Web UI.
+
+## Целевое развёртывание
+
+Эксплуатация только на **Astra Linux**, **Ubuntu**, **RedOS**, **CentOS**.
+
+| ОС | Пакеты в приоритете |
+|----|---------------------|
+| Astra Linux, Ubuntu | `.deb`, `.dsc`, `/usr/lib/debug`, plain tar |
+| RedOS, CentOS | `.rpm`, `.src.rpm`, `/usr/lib/debug`, plain tar |
+
+`.apk` и `.pacman` / `.pkg.tar.zst` — реализованы, но **вне целевых ОС**; новые фичи и тесты ориентировать на deb/rpm-стек.
 
 ---
 
@@ -28,11 +39,18 @@
 
 ## Архивы и форматы пакетов
 
-- [x] **`.apk` (Alpine)**
-- [x] **`.pacman` / `.pkg.tar.zst`**
-- [x] **Plain tar/tar.gz/tar.xz**
+### Целевые (Astra / Ubuntu / RedOS / CentOS)
+
+- [x] **`.deb`** — Debian/Ubuntu/Astra
+- [x] **`.rpm`** — RedOS/CentOS
+- [x] **Plain tar/tar.gz/tar.xz** — каталоги debuginfo
 - [x] **Отложенное извлечение** — `DEBUGINFOD_LAZY_EXTRACT`
 - [x] **Индексация исходников из SRPM/DSC**
+
+### Вне целевых ОС (реализовано, низкий приоритет)
+
+- [x] **`.apk` (Alpine)** — не развёртывается на целевых ОС
+- [x] **`.pacman` / `.pkg.tar.zst` (Arch)** — не развёртывается на целевых ОС
 
 ## API и клиенты
 

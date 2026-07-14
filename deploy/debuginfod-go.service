@@ -1,5 +1,5 @@
 [Unit]
-Description=debuginfod-go debuginfo HTTP server
+Description=debuginfod-go debuginfo HTTP server (Astra Linux, Ubuntu, RedOS, CentOS)
 Documentation=https://github.com/RioTwWks/debuginfod-go
 After=network-online.target
 Wants=network-online.target
