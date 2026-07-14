@@ -45,6 +45,7 @@ func main() {
 		CacheMaxBytes: cfg.CacheMaxBytes,
 		Workers:       cfg.ScanWorkers,
 		Metrics:       collector,
+		LazyExtract:   cfg.LazyExtract,
 	})
 	go runIndexer(idx, cfg.RescanInterval)
 
@@ -60,6 +61,7 @@ func main() {
 		Metrics:         collector,
 		ZabbixKey:       cfg.ZabbixKey,
 		CacheBytes:      cacheBytes,
+		CacheDir:        cfg.CacheDir,
 	}
 
 	server := &http.Server{

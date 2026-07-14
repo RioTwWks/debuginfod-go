@@ -42,6 +42,8 @@ func migratePostgres(db *sql.DB) error {
 			build_id TEXT NOT NULL,
 			source_path TEXT NOT NULL,
 			file_path TEXT NOT NULL,
+			archive_path TEXT NOT NULL DEFAULT '',
+			member_path TEXT NOT NULL DEFAULT '',
 			mtime_ns BIGINT NOT NULL DEFAULT 0,
 			PRIMARY KEY (build_id, source_path)
 		);
@@ -57,6 +59,12 @@ func migratePostgres(db *sql.DB) error {
 	_, err := db.Exec(schema)
 	if err != nil {
 		return fmt.Errorf("migrate postgres: %w", err)
+	}
+	for _, stmt := range []string{
+		"ALTER TABLE sources ADD COLUMN IF NOT EXISTS archive_path TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE sources ADD COLUMN IF NOT EXISTS member_path TEXT NOT NULL DEFAULT ''",
+	} {
+		_, _ = db.Exec(stmt)
 	}
 	return nil
 }

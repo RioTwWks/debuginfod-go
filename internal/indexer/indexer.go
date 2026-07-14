@@ -1,6 +1,7 @@
 package indexer
 
 import (
+	"bytes"
 	"debug/dwarf"
 	"debug/elf"
 	"io"
@@ -23,7 +24,7 @@ type scanJob struct {
 	path  string
 	mtime int64
 	size  int64
-	kind  string // elf | archive
+	kind  string // elf | archive | sourcepkg
 }
 
 // Indexer сканирует файловую систему и заполняет индекс.
@@ -34,6 +35,7 @@ type Indexer struct {
 	cacheMaxBytes int64
 	workers       int
 	metrics       *metrics.Collector
+	lazyExtract   bool
 }
 
 // Options — параметры индексатора.
@@ -44,6 +46,7 @@ type Options struct {
 	CacheMaxBytes int64
 	Workers       int
 	Metrics       *metrics.Collector
+	LazyExtract   bool
 }
 
 // NewIndexer создаёт индексатор.
@@ -59,6 +62,7 @@ func NewIndexer(opts Options) *Indexer {
 		cacheMaxBytes: opts.CacheMaxBytes,
 		workers:       workers,
 		metrics:       opts.Metrics,
+		lazyExtract:   opts.LazyExtract,
 	}
 }
 
@@ -83,6 +87,13 @@ func (i *Indexer) Scan() error {
 					if err == nil {
 						indexed.Add(int64(count))
 						_ = i.storage.MarkScanned(job.path, job.mtime, job.size, "archive")
+					}
+				case "sourcepkg":
+					var count int
+					count, err = i.indexSourcePackage(job.path, job.mtime)
+					if err == nil {
+						indexed.Add(int64(count))
+						_ = i.storage.MarkScanned(job.path, job.mtime, job.size, "sourcepkg")
 					}
 				case "elf":
 					err = i.indexELF(job.path, job.mtime, "", "")
@@ -119,6 +130,8 @@ func (i *Indexer) Scan() error {
 			switch {
 			case archive.IsArchive(path):
 				kind = "archive"
+			case archive.IsSourcePackage(path):
+				kind = "sourcepkg"
 			case buildid.IsELF(path):
 				kind = "elf"
 			default:
@@ -177,13 +190,91 @@ func (i *Indexer) indexArchive(archivePath string, mtimeNS int64) (int, error) {
 
 	var count int
 	for _, member := range members {
-		cached, err := archive.ExtractToCache(i.cacheDir, member.ArchivePath, member.MemberPath, member.Reader)
-		if err != nil {
-			slog.Warn("extract failed", "archive", member.ArchivePath, "member", member.MemberPath, "err", err)
+		var indexErr error
+		if i.lazyExtract {
+			indexErr = i.indexArchiveMemberLazy(member, mtimeNS)
+		} else {
+			cached, extractErr := archive.ExtractToCache(i.cacheDir, member.ArchivePath, member.MemberPath, member.Reader)
+			if extractErr != nil {
+				slog.Warn("extract failed", "archive", member.ArchivePath, "member", member.MemberPath, "err", extractErr)
+				continue
+			}
+			indexErr = i.indexELF(cached, mtimeNS, member.ArchivePath, member.MemberPath)
+		}
+		if indexErr != nil {
+			slog.Warn("index archive member", "member", member.MemberPath, "err", indexErr)
 			continue
 		}
-		if err := i.indexELF(cached, mtimeNS, member.ArchivePath, member.MemberPath); err != nil {
-			slog.Warn("index archive member", "member", member.MemberPath, "err", err)
+		count++
+	}
+	return count, nil
+}
+
+func (i *Indexer) indexArchiveMemberLazy(member archive.Member, mtimeNS int64) error {
+	rc, err := member.Reader()
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		return err
+	}
+
+	result, err := buildid.FromBytes(data)
+	if err != nil {
+		return err
+	}
+	result.Value = buildid.Normalize(result.Value)
+
+	artifactType, err := buildid.ArtifactTypeFromBytes(member.MemberPath, data)
+	if err != nil {
+		return err
+	}
+
+	row := storage.ArtifactInput{
+		BuildID:     result.Value,
+		Type:        artifactType,
+		ArchivePath: member.ArchivePath,
+		MemberPath:  member.MemberPath,
+		BuildIDKind: string(result.Kind),
+		RawBuildID:  result.Raw,
+	}
+	if err := i.storage.AddArtifact(row, mtimeNS); err != nil {
+		return err
+	}
+
+	elfFile, err := elf.NewFile(bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	return i.indexSourcesFromDWARF(result.Value, elfFile, member.MemberPath, mtimeNS)
+}
+
+func (i *Indexer) indexSourcePackage(pkgPath string, mtimeNS int64) (int, error) {
+	members, err := archive.ListSourceMembers(pkgPath)
+	if err != nil {
+		return 0, err
+	}
+
+	var count int
+	for _, member := range members {
+		in := storage.SourceInput{
+			SourcePath:  member.MemberPath,
+			ArchivePath: member.ArchivePath,
+			MemberPath:  member.MemberPath,
+		}
+		if !i.lazyExtract {
+			cached, extractErr := archive.ExtractToCache(i.cacheDir, member.ArchivePath, member.MemberPath, member.Reader)
+			if extractErr != nil {
+				slog.Warn("extract source failed", "pkg", pkgPath, "member", member.MemberPath, "err", extractErr)
+				continue
+			}
+			in.FilePath = cached
+		}
+		if err := i.storage.AddSourceLocation(in, mtimeNS); err != nil {
+			slog.Warn("index source member", "member", member.MemberPath, "err", err)
 			continue
 		}
 		count++

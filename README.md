@@ -8,7 +8,7 @@ HTTP-сервер [debuginfod](https://sourceware.org/elfutils/Debuginfod.html) 
 
 | Область | Что реализовано |
 |---------|-----------------|
-| Индексация | ELF на диске, GNU + Go build-id, `.deb`/`.rpm`, DWARF → исходники |
+| Индексация | ELF на диске, GNU + Go build-id, `.deb`/`.rpm`/`.apk`/pacman/tar, SRPM/DSC → исходники, отложенное извлечение |
 | HTTP API | `/buildid/*`, `/metadata`, `/healthz` |
 | Хранение | SQLite, кэш извлечённых файлов из архивов |
 | Конфигурация | `.env`, переменные окружения, флаги CLI |
@@ -25,6 +25,7 @@ HTTP-сервер [debuginfod](https://sourceware.org/elfutils/Debuginfod.html) 
 - GCC и `libsqlite3-dev` (CGO для SQLite)
 - Для тестов с C-бинарниками: `gcc`
 - Для индексации RPM: пакеты в формате `.rpm` в scan path
+- Поддерживаются также `.apk`, `.pkg.tar.zst`, plain `.tar.gz`/`.tar.xz`/`.tar.zst`, SRPM (`.src.rpm`) и DSC
 
 ### Установка
 
@@ -65,6 +66,7 @@ docker compose up --build
 | `DEBUGINFOD_RESCAN_INTERVAL` | `-r` | Интервал переиндексации | `1h` |
 | `DEBUGINFOD_METADATA_MAXTIME` | `-metadata-maxtime` | Лимит metadata-запросов | `5s` |
 | `DEBUGINFOD_CACHE_DIR` | `-cache` | Кэш ELF из архивов | `.debuginfod-cache` |
+| `DEBUGINFOD_LAZY_EXTRACT` | `-lazy-extract` | Не кэшировать ELF при индексации | `true` |
 | `DEBUGINFOD_CACHE_MAX_BYTES` | `-cache-max-bytes` | Лимит кэша (0=∞) | `0` |
 | `DEBUGINFOD_SCAN_WORKERS` | `-scan-workers` | Параллельные воркеры scan | `4` |
 | `DEBUGINFOD_URLS` | `-upstream` | Upstream для федерации | — |
@@ -152,7 +154,7 @@ scan paths ──► indexer ──► SQLite ◄── webapi ◄── HTTP cl
 | `cmd/debuginfod` | Точка входа, HTTP-сервер, фоновый индексатор |
 | `internal/config` | `.env` + флаги |
 | `pkg/buildid` | GNU и Go build-id из ELF notes |
-| `internal/archive` | ELF внутри `.deb`/`.rpm` |
+| `internal/archive` | ELF внутри `.deb`/`.rpm`/`.apk`/pacman/tar, SRPM/DSC |
 | `internal/indexer` | Обход FS, DWARF, запись в БД |
 | `internal/storage` | SQLite: артефакты, sources, metadata |
 | `internal/webapi` | HTTP-обработчики |

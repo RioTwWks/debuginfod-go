@@ -31,8 +31,8 @@ func TestStorageArtifactsAndSources(t *testing.T) {
 	}
 
 	src, err := store.GetSource("abc123", "/src/main.c")
-	if err != nil || src != "/src/main.c" {
-		t.Fatalf("GetSource = %q, %v", src, err)
+	if err != nil || src.FilePath != "/src/main.c" {
+		t.Fatalf("GetSource = %+v, %v", src, err)
 	}
 
 	ok, err := store.HasBuildID("abc123")

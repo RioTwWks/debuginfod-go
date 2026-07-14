@@ -24,6 +24,7 @@ type ServerOpts struct {
 	Metrics          *metrics.Collector
 	ZabbixKey        string
 	CacheBytes       func() int64
+	CacheDir         string
 }
 
 // Handler обслуживает HTTP-запросы протокола debuginfod.
@@ -31,11 +32,17 @@ type Handler struct {
 	store      *storage.Storage
 	federation *federation.Client
 	metrics    *metrics.Collector
+	cacheDir   string
 }
 
 // NewHandler создаёт HTTP-обработчик.
 func NewHandler(opts ServerOpts) *Handler {
-	return &Handler{store: opts.Store, federation: opts.Federation, metrics: opts.Metrics}
+	return &Handler{
+		store:      opts.Store,
+		federation: opts.Federation,
+		metrics:    opts.Metrics,
+		cacheDir:   opts.CacheDir,
+	}
 }
 
 // ServeHTTP маршрутизирует запросы buildid API.
@@ -115,52 +122,75 @@ func MetadataHandler(opts ServerOpts) http.HandlerFunc {
 }
 
 func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, buildID, artifactType string) {
-	filePath, err := h.store.GetArtifactPath(buildID, artifactType)
+	loc, err := h.store.GetArtifactLocation(buildID, artifactType)
 	if errors.Is(err, storage.ErrNotFound) {
 		h.tryFederation(w, r)
 		return
 	}
 	if err != nil {
-		slog.Error("GetArtifactPath", "build_id", buildID, "type", artifactType, "err", err)
+		logResolveError("GetArtifactLocation", err, "build_id", buildID, "type", artifactType)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	http.ServeFile(w, r, filePath)
+
+	if loc.FilePath == "" && loc.ArchivePath != "" {
+		if err := streamMember(w, loc.ArchivePath, loc.MemberPath); err != nil {
+			logResolveError("streamArtifact", err, "build_id", buildID, "type", artifactType)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	path, err := resolveFilePath(h.cacheDir, loc)
+	if err != nil {
+		logResolveError("resolveArtifact", err, "build_id", buildID)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	serveResolvedFile(w, r, path)
 }
 
 func (h *Handler) serveSource(w http.ResponseWriter, r *http.Request, buildID, sourcePath string) {
-	filePath, err := h.store.GetSource(buildID, sourcePath)
+	loc, err := h.store.GetSource(buildID, sourcePath)
 	if errors.Is(err, storage.ErrNotFound) {
 		h.tryFederation(w, r)
 		return
 	}
 	if err != nil {
-		slog.Error("GetSource", "build_id", buildID, "path", sourcePath, "err", err)
+		logResolveError("GetSource", err, "build_id", buildID, "path", sourcePath)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	http.ServeFile(w, r, filePath)
+
+	path, err := resolveSourcePath(h.cacheDir, loc)
+	if err != nil {
+		logResolveError("resolveSource", err, "build_id", buildID, "path", sourcePath)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	serveResolvedFile(w, r, path)
 }
 
 func (h *Handler) serveSection(w http.ResponseWriter, r *http.Request, buildID, sectionName string) {
 	debuginfo, executable, err := h.store.GetArtifactPaths(buildID)
 	if err != nil {
-		slog.Error("GetArtifactPaths", "build_id", buildID, "err", err)
+		logResolveError("GetArtifactPaths", err, "build_id", buildID)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	if debuginfo == "" && executable == "" {
+	if debuginfo.FilePath == "" && debuginfo.ArchivePath == "" &&
+		executable.FilePath == "" && executable.ArchivePath == "" {
 		h.tryFederation(w, r)
 		return
 	}
 
-	data, err := elfsection.ExtractFirst(debuginfo, executable, sectionName)
+	data, err := extractSectionFromLocations(h.cacheDir, debuginfo, executable, sectionName)
 	if errors.Is(err, elfsection.ErrNotFound) {
 		h.tryFederation(w, r)
 		return
 	}
 	if err != nil {
-		slog.Error("ExtractSection", "build_id", buildID, "section", sectionName, "err", err)
+		logResolveError("ExtractSection", err, "build_id", buildID, "section", sectionName)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
