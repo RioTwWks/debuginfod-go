@@ -2,14 +2,67 @@
 
 ## Проблема
 
-`docker compose up --build` с корневым `Dockerfile` требует внутри контейнера:
+`docker compose up --build` требует сетевой доступ **внутри build-контейнера**:
 
-1. `apt-get` → `deb.debian.org`
-2. `go mod download` → proxy.golang.org
+1. `apt-get` → репозитории Debian или Astra
+2. `go mod download` → proxy.golang.org (полный `Dockerfile`)
 
-На Astra Linux 1.7.4 и в закрытых контурах внешние зеркала часто **недоступны** (`Ign: … InRelease`).
+На корпоративных хостах интернет часто доступен **только через HTTP(S)-прокси**. Переменные прокси в `/etc/environment` действуют на `apt`/`curl` **на хосте**, но Docker build **не подхватывает** их автоматически — `apt-get` внутри контейнера зависает на `Ign: … InRelease`.
 
 `make build` / `make run-env` на **хосте** при этом работают — используйте **prebuilt**-сборку.
+
+## Корпоративный прокси (частая причина зависания)
+
+### 1. Экспортировать прокси в текущую сессию
+
+```bash
+# Проверить, что прокси виден в shell (не только в /etc/environment)
+echo "$HTTP_PROXY $http_proxy"
+
+# Подхватить из /etc/environment
+set -a && source /etc/environment && set +a
+
+# Или явно
+export HTTP_PROXY=http://proxy.corp:3128
+export HTTPS_PROXY=http://proxy.corp:3128
+export NO_PROXY=localhost,127.0.0.1,.corp.local
+```
+
+### 2. Собрать с прокси
+
+`make docker-astra` и другие docker-цели автоматически вызывают `deploy/docker/ensure-proxy-env.sh`.
+
+В логе build должно появиться:
+
+```text
+APT proxy: http://proxy.corp:3128
+```
+
+Для ручного `docker compose`:
+
+```bash
+source deploy/docker/ensure-proxy-env.sh   # или export вручную
+make build
+make docker-astra
+```
+
+Прокси передаётся в build через `HTTP_PROXY` / `HTTPS_PROXY` build-args и настраивает `/etc/apt/apt.conf.d/99proxy` внутри контейнера (`deploy/docker/configure-proxy.sh`).
+
+### 3. Прокси для демона Docker (pull образов)
+
+Если `docker pull debian:buster-slim` без прокси не работает, настройте systemd:
+
+```bash
+sudo mkdir -p /etc/systemd/system/docker.service.d
+sudo tee /etc/systemd/system/docker.service.d/http-proxy.conf <<'EOF'
+[Service]
+Environment="HTTP_PROXY=http://proxy.corp:3128"
+Environment="HTTPS_PROXY=http://proxy.corp:3128"
+Environment="NO_PROXY=localhost,127.0.0.1"
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+```
 
 ## Рекомендуемый способ (Astra)
 
@@ -35,7 +88,7 @@ curl http://127.0.0.1:8002/readyz
 
 ## Профиль APT_PROFILE=astra
 
-На Astra Linux 1.7 `sudo apt update` на **хосте** ходит в `download.astralinux.ru`, а образ `debian:bookworm` внутри Docker по умолчанию — в `deb.debian.org`, который часто недоступен.
+Опционально: если `deb.debian.org` недоступен, а `download.astralinux.ru` — доступен (часто через тот же прокси), overlay `docker-compose.astra.yml` подменяет sources.list:
 
 Overlay `docker-compose.astra.yml` включает:
 

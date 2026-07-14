@@ -1,16 +1,29 @@
 # Сборка debuginfod-go (Debian — совместимо с Astra/Ubuntu).
 # На Astra без доступа к deb.debian.org используйте Dockerfile.prebuilt (см. deploy/docker/README.md).
+# За корпоративным прокси: export HTTP_PROXY/HTTPS_PROXY или deploy/docker/ensure-proxy-env.sh
 
 ARG DEBIAN_SUITE=bookworm
 FROM golang:1.21-${DEBIAN_SUITE} AS builder
 
 ARG APT_PROFILE=
 ARG APT_MIRROR=
+ARG HTTP_PROXY=
+ARG HTTPS_PROXY=
+ARG NO_PROXY=
+
+ENV HTTP_PROXY=${HTTP_PROXY} \
+	HTTPS_PROXY=${HTTPS_PROXY} \
+	NO_PROXY=${NO_PROXY} \
+	http_proxy=${HTTP_PROXY} \
+	https_proxy=${HTTPS_PROXY} \
+	no_proxy=${NO_PROXY}
 
 COPY deploy/docker/sources.astra-1.7.list /astra-sources.list
 COPY deploy/docker/install-astra-apt.sh /install-astra-apt.sh
+COPY deploy/docker/configure-proxy.sh /configure-proxy.sh
 
-RUN chmod +x /install-astra-apt.sh \
+RUN chmod +x /install-astra-apt.sh /configure-proxy.sh \
+	&& /configure-proxy.sh \
 	&& APT_PROFILE="${APT_PROFILE}" APT_MIRROR="${APT_MIRROR}" /install-astra-apt.sh \
 	&& apt-get -o Acquire::Retries=5 update \
 	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -31,11 +44,23 @@ FROM debian:${DEBIAN_SUITE}-slim
 
 ARG APT_PROFILE=
 ARG APT_MIRROR=
+ARG HTTP_PROXY=
+ARG HTTPS_PROXY=
+ARG NO_PROXY=
+
+ENV HTTP_PROXY=${HTTP_PROXY} \
+	HTTPS_PROXY=${HTTPS_PROXY} \
+	NO_PROXY=${NO_PROXY} \
+	http_proxy=${HTTP_PROXY} \
+	https_proxy=${HTTPS_PROXY} \
+	no_proxy=${NO_PROXY}
 
 COPY deploy/docker/sources.astra-1.7.list /astra-sources.list
 COPY deploy/docker/install-astra-apt.sh /install-astra-apt.sh
+COPY deploy/docker/configure-proxy.sh /configure-proxy.sh
 
-RUN chmod +x /install-astra-apt.sh \
+RUN chmod +x /install-astra-apt.sh /configure-proxy.sh \
+	&& /configure-proxy.sh \
 	&& APT_PROFILE="${APT_PROFILE}" APT_MIRROR="${APT_MIRROR}" /install-astra-apt.sh \
 	&& apt-get -o Acquire::Retries=5 update \
 	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \

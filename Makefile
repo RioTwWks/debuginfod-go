@@ -82,16 +82,21 @@ offline-bundle-rpm:
 # --- Docker (dev/demo) ---
 
 docker-prebuilt: build
+	bash deploy/docker/ensure-proxy-env.sh
 	docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build
 
 docker-up-prebuilt: build
+	bash deploy/docker/ensure-proxy-env.sh
 	docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up -d --build
 
 docker-astra: build
+	bash deploy/docker/ensure-proxy-env.sh
 	docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml -f docker-compose.astra.yml up --build
 
 docker-up-astra: build
+	bash deploy/docker/ensure-proxy-env.sh
 	docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml -f docker-compose.astra.yml up -d --build
 
 docker: build
+	bash deploy/docker/ensure-proxy-env.sh
 	docker build -t debuginfod-go .
