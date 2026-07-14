@@ -111,9 +111,9 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 
 ## Go-экосистема
 
-- [ ] **Совместимость с `go tool buildid`** — документировать маппинг
-- [ ] **Delve integration** — пример `DEBUGINFOD_URLS`
-- [ ] **`-buildmode=pie` и внешний линкер** — тесты GNU build-id
+- [x] **Совместимость с `go tool buildid`** — документировать маппинг
+- [x] **Delve integration** — пример `DEBUGINFOD_URLS`
+- [x] **`-buildmode=pie` и внешний линкер** — тесты GNU build-id
 
 ## Качество и CI
 

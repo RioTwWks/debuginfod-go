@@ -171,6 +171,20 @@ export DEBUGINFOD_URLS="http://localhost:8002"
 gdb /path/to/binary
 ```
 
+Демо: [examples/gdb/](examples/gdb/).
+
+## Использование с Delve (Go)
+
+Delve на Linux вызывает `debuginfod-find`, который читает `DEBUGINFOD_URLS`:
+
+```bash
+export DEBUGINFOD_URLS="http://localhost:8002"
+dlv exec ./myapp
+```
+
+Маппинг Go build-id (`go tool buildid` → URL), PIE и external linker: [docs/GO_ECOSYSTEM.md](docs/GO_ECOSYSTEM.md).  
+Демо: [examples/delve/](examples/delve/) (`make -C examples demo-delve`).
+
 ## CLI `debuginfod-find`
 
 Совместимая обёртка над HTTP API (сборка: `make build-find`):
