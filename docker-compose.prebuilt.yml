@@ -3,8 +3,12 @@
 #   make build
 #   docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build
 #
+# Astra Linux 1.7 (download.astralinux.ru):
+#   make docker-astra
+#
 # Переменные (см. .env.docker.example):
-#   DEBIAN_SUITE=bullseye
+#   DEBIAN_SUITE=buster
+#   APT_PROFILE=astra
 #   APT_MIRROR=mirror.yandex.ru/debian
 #   SKIP_APT_INSTALL=true
 
@@ -16,6 +20,7 @@ services:
       network: host
       args:
         DEBIAN_SUITE: ${DEBIAN_SUITE:-bullseye}
+        APT_PROFILE: ${APT_PROFILE:-}
         APT_MIRROR: ${APT_MIRROR:-}
         SKIP_APT_INSTALL: ${SKIP_APT_INSTALL:-false}
     healthcheck:

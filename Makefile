@@ -5,7 +5,7 @@ GOPATH?=$(shell go env GOPATH)
 SQLITE_DB=debuginfod.sqlite
 
 .PHONY: all build build-find test vet run run-env clean lint fmt docker \
-	docker-prebuilt docker-up-prebuilt \
+	docker-prebuilt docker-up-prebuilt docker-astra docker-up-astra \
 	package package-deb package-rpm \
 	offline-download-deb offline-download-rpm \
 	offline-bundle-deb offline-bundle-rpm
@@ -86,6 +86,12 @@ docker-prebuilt: build
 
 docker-up-prebuilt: build
 	docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up -d --build
+
+docker-astra: build
+	docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml -f docker-compose.astra.yml up --build
+
+docker-up-astra: build
+	docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml -f docker-compose.astra.yml up -d --build
 
 docker: build
 	docker build -t debuginfod-go .

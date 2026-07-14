@@ -3,22 +3,24 @@
 #   make build
 #   docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build
 #
-# На Astra без доступа к deb.debian.org задайте зеркало или подготовленный runtime-образ:
-#   APT_MIRROR=mirror.example.ru/debian docker compose ...
-#   SKIP_APT_INSTALL=true  # если базовый образ уже содержит libsqlite3-0, curl
+# Astra Linux 1.7 (репозитории download.astralinux.ru, не deb.debian.org):
+#   docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml -f docker-compose.astra.yml up --build
+#   или: make docker-astra
 
-ARG DEBIAN_SUITE=bullseye
+ARG DEBIAN_SUITE=buster
 FROM debian:${DEBIAN_SUITE}-slim
 
+ARG APT_PROFILE=
 ARG APT_MIRROR=
 ARG SKIP_APT_INSTALL=false
 
+COPY deploy/docker/sources.astra-1.7.list /astra-sources.list
+COPY deploy/docker/install-astra-apt.sh /install-astra-apt.sh
+
 RUN if [ "${SKIP_APT_INSTALL}" != "true" ]; then \
-		if [ -n "${APT_MIRROR}" ]; then \
-			sed -i "s|deb.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list; \
-			sed -i "s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list || true; \
-		fi; \
-		apt-get -o Acquire::Retries=5 update \
+		chmod +x /install-astra-apt.sh \
+		&& APT_PROFILE="${APT_PROFILE}" APT_MIRROR="${APT_MIRROR}" /install-astra-apt.sh \
+		&& apt-get -o Acquire::Retries=5 update \
 		&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
 			ca-certificates \
 			curl \
