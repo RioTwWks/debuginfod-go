@@ -48,6 +48,26 @@ make docker-astra
 
 Прокси передаётся в build через `HTTP_PROXY` / `HTTPS_PROXY` build-args и настраивает `/etc/apt/apt.conf.d/99proxy` внутри контейнера (`deploy/docker/configure-proxy.sh`).
 
+### 4. Ошибка сертификатов (`Certificate verification failed`, `No system certificates`)
+
+Образ `debian:*-slim` **не содержит** `ca-certificates` до первого `apt-get install`. HTTPS-репозитории через корпоративный прокси (SSL inspection) требуют CA хоста.
+
+`make docker-astra` автоматически копирует `/etc/ssl/certs` хоста в build context (`deploy/docker/prepare-build-certs.sh`).
+
+В логе build должно быть:
+
+```text
+Prepared N certificate file(s) in .docker-build/ssl-certs
+Installed host ca-certificates.crt (… bytes)
+```
+
+Если ошибка сохраняется:
+
+```bash
+export APT_INSECURE=true   # отключить проверку HTTPS для apt bootstrap (только dev)
+make docker-astra
+```
+
 ### 3. Прокси для демона Docker (pull образов)
 
 Если `docker pull debian:buster-slim` без прокси не работает, настройте systemd:

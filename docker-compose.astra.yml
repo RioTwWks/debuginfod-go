@@ -19,3 +19,4 @@ services:
         HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
         HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
         NO_PROXY: ${NO_PROXY:-${no_proxy:-}}
+        APT_INSECURE: ${APT_INSECURE:-false}
