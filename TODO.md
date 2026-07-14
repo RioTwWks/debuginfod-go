@@ -29,7 +29,8 @@ CI (GitHub Actions) → .deb / .rpm → Ansible → systemd + nginx → Zabbix
 |------|------------|--------|
 | Запуск | **systemd** | ✅ `deploy/debuginfod-go.service` |
 | Мониторинг | **Zabbix** (`/zabbix`, `/healthz`) | ✅ endpoint; template/triggers — в плане |
-| Доставка | **нативные `.deb` / `.rpm`** | ⬜ в плане |
+| Доставка | **нативные `.deb` / `.rpm`** | ✅ nfpm + `make package` |
+| Оффлайн | **bundle без интернета** | ✅ `deploy/offline/`, `make offline-bundle-*` |
 | Конфигурация | **Ansible** (или имеющийся CM) | ⬜ в плане |
 | Периметр | **nginx** (TLS, ACL, rate limit) | ⬜ в плане |
 | БД (опц.) | **PostgreSQL** + backup | ✅ драйвер; backup — в плане |
@@ -43,7 +44,8 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 
 ### Высокий приоритет
 
-- [ ] **Нативные пакеты `.deb` / `.rpm`** — nfpm/fpm: бинарник, пользователь `debuginfod`, каталоги `/var/lib`, `/etc/debuginfod-go`, postinst → `systemctl enable`
+- [x] **Нативные пакеты `.deb` / `.rpm`** — nfpm: `deploy/nfpm.yaml`, postinstall, systemd, `/etc/debuginfod-go`
+- [x] **Оффлайн-установка** — `deploy/offline/`: скачивание зависимостей, bundle `.tar.gz`, install без сети
 - [ ] **Ansible playbook** — раскатка на Astra/Ubuntu (deb) и RedOS/CentOS (rpm): пакет, `.env`, systemd, firewall
 - [ ] **nginx reverse proxy** — пример конфига: TLS-терминация, ACL, rate limit на периметре
 - [ ] **Zabbix template** — triggers (5xx, `last_scan_errors`, недоступность `/healthz`), actions (alert)
@@ -53,7 +55,7 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 - [x] **systemd unit** — `deploy/debuginfod-go.service`
 - [ ] **Публикация пакетов из CI** — артефакты `.deb`/`.rpm` во внутренний apt/dnf-репозиторий (Nexus, aptly, pulp)
 - [ ] **Backup** — SQLite/PostgreSQL (`pg_dump`), cache, конфиги; cron + restic/rsync
-- [ ] **Документация продакшн-схемы** — `deploy/README.md`: systemd + пакеты + nginx + Zabbix + federation для резерва
+- [ ] **Документация продакшн-схемы** — расширить `deploy/README.md`: nginx + Zabbix + federation
 - [ ] **Рекомендации PostgreSQL в проде** — когда переходить с SQLite, миграция, несколько инстансов за nginx
 
 ### Не планируется
@@ -115,7 +117,7 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 ## Качество и CI
 
 - [ ] **golangci-lint в CI**
-- [ ] **Сборка `.deb`/`.rpm` в CI** — связано с DevOps (nfpm + upload артефактов)
+- [ ] **Сборка `.deb`/`.rpm` в CI** — nfpm + upload артефактов (Makefile готов локально)
 - [ ] **Coverage badge** — Codecov
 - [ ] **Benchmark-тесты**
 - [ ] **Fuzzing** — ELF notes, ar/tar
@@ -133,7 +135,7 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 - [x] **Примеры в `examples/`** — docker-compose, GDB-скрипт
 - [x] **Диаграмма потока данных** — mermaid в DEVELOPMENT.md
 - [x] **Сравнение с upstream debuginfod** — таблица в DEVELOPMENT.md
-- [ ] **Руководство по эксплуатации** — `deploy/README.md` (см. DevOps)
+- [ ] **Руководство по эксплуатации** — nginx, Zabbix template (базовый deploy/README.md ✅)
 
 ---
 

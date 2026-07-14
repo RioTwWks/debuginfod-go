@@ -1,0 +1,4 @@
+# Runtime-зависимости debuginfod-go для Debian/Ubuntu/Astra (amd64).
+# Используется deploy/offline/download-deps-deb.sh
+libsqlite3-0
+ca-certificates
