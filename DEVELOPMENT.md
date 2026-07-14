@@ -11,7 +11,7 @@
 - **RedOS** — `.rpm`, `.src.rpm`, `/usr/lib/debug`
 - **CentOS** — `.rpm`, `.src.rpm`, `/usr/lib/debug`
 
-Форматы Alpine (`.apk`) и Arch (`.pacman`, `.pkg.tar.zst`) поддерживаются кодом, но не входят в scope эксплуатации. При разработке и тестировании ориентироваться на deb/rpm.
+Форматы Alpine (`.apk`) и Arch (`.pacman`, `.pkg.tar.*`) **не поддерживаются** в коде.
 
 ## Архитектура
 
@@ -66,7 +66,7 @@ flowchart TB
 | `internal/config` | `godotenv` + флаги; приоритет CLI > env > `.env` |
 | `pkg/buildid` | Парсинг `SHT_NOTE`: GNU и Go build-id; `FromBytes` для lazy |
 | `pkg/elfsection` | Извлечение сырых ELF-секций |
-| `internal/archive` | ELF и исходники из deb/rpm/tar/SRPM/DSC (apk/pacman — вне scope) |
+| `internal/archive` | ELF и исходники из deb/rpm/tar/SRPM/DSC |
 | `internal/indexer` | `WalkDir`, worker pool, инкрементальный scan, DWARF sources |
 | `internal/storage` | CRUD артефактов, sources, metadata search, `Stats()` |
 | `internal/webapi` | `/buildid`, `/metadata`, `/healthz`, `/zabbix`, gzip, federation |
@@ -135,9 +135,9 @@ Backend: SQLite (`DEBUGINFOD_DB_PATH`) или PostgreSQL (`DEBUGINFOD_DATABASE_U
 | `/buildid/.../source/...` | ✅ | ✅ |
 | `/buildid/.../section/...` | ✅ | ✅ |
 | `/metadata` glob/file/buildid | ✅ | ✅ (fnmatch Pathname) |
-| `.deb` / `.rpm` | ✅ | ✅ (целевые ОС: Astra, Ubuntu, RedOS, CentOS) |
+| `.deb` / `.rpm` | ✅ | ✅ (целевые ОС) |
 | plain tar | ✅ | ✅ |
-| `.apk`, pacman | ✅ | ✅ (код есть, вне scope развёртывания) |
+| `.apk`, pacman | ✅ | ❌ (вне целевых ОС) |
 | SRPM / DSC sources | ✅ | ✅ (базово) |
 | Федерация (`DEBUGINFOD_URLS`) | ✅ | ✅ |
 | Web UI | ❌ | ✅ `/ui/` |
@@ -230,7 +230,7 @@ go test ./... -race -count=1
 | `internal/webapi` | HTTP handlers, section, metadata, integration |
 | `internal/webui` | `/ui/`, stats, search |
 | `internal/indexer` | ELF scan, lazy tar archive |
-| `internal/archive` | deb/rpm/tar, DSC parser (apk/pacman — опционально) |
+| `internal/archive` | deb/rpm/tar, DSC parser |
 | `internal/fnmatch` | Pathname glob |
 | `internal/metrics` | Collector counters |
 | `internal/cache` | LRU prune |

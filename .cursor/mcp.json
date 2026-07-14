@@ -38,7 +38,8 @@
   "hints": [
     "Схема БД: internal/storage/sqlite.go (artifacts, sources, scanned_files)",
     "Целевые ОС: Astra Linux, Ubuntu (deb), RedOS, CentOS (rpm)",
-    "apk/pacman реализованы, но вне scope развёртывания — приоритет deb/rpm",
+    "apk/pacman/pkg.tar — НЕ поддерживаются, не добавлять",
+    "Архивы: internal/archive/kind.go — DetectKind, isUnsupportedDistroPackage",
     "Lazy extract: DEBUGINFOD_LAZY_EXTRACT=true — archive_path+member_path без file_path",
     "Тесты buildid требуют gcc; RPM — rpmbuild; Go binary — go build",
     "HTTP: /buildid, /metadata, /healthz, /zabbix, /ui/",

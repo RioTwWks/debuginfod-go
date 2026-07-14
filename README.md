@@ -30,7 +30,7 @@ HTTP-сервер [debuginfod](https://sourceware.org/elfutils/Debuginfod.html) 
 
 На всех платформах дополнительно индексируются loose ELF и каталоги отладочных символов (`/usr/lib/debug`, plain `.tar.*`).
 
-Форматы **Alpine (`.apk`)** и **Arch (`.pacman`, `.pkg.tar.zst`)** реализованы в коде для совместимости с upstream debuginfod, но **не являются целевыми** для развёртывания и тестирования в этом проекте.
+Форматы **Alpine (`.apk`)** и **Arch (`.pacman`, `.pkg.tar.*`)** **не поддерживаются** — сервис ориентирован только на deb/rpm-стек целевых ОС.
 
 ### Типичные пути scan
 
@@ -164,7 +164,7 @@ scan paths ──► indexer (workers) ──► SQLite/PostgreSQL ◄── web
 | `internal/config` | `.env` + флаги |
 | `pkg/buildid` | GNU и Go build-id |
 | `pkg/elfsection` | ELF-секции |
-| `internal/archive` | deb/rpm (целевые ОС), tar, SRPM/DSC; apk/pacman — вне scope |
+| `internal/archive` | deb/rpm, tar, SRPM/DSC (целевые ОС) |
 | `internal/indexer` | Scan, DWARF, lazy extract |
 | `internal/storage` | БД, metadata, stats |
 | `internal/webapi` | debuginfod HTTP API |

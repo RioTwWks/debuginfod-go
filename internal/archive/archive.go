@@ -22,10 +22,6 @@ func ListELFMembers(archivePath string) ([]Member, error) {
 		return listDebELFMembers(archivePath)
 	case KindRPM:
 		return listRPMELFMembers(archivePath)
-	case KindAPK:
-		return listAPKELFMembers(archivePath)
-	case KindPacman:
-		return listPacmanELFMembers(archivePath)
 	case KindTar:
 		return listTarELFMembersFromFile(archivePath)
 	default:
@@ -52,12 +48,10 @@ func OpenMemberReader(archivePath, memberPath string) (io.ReadCloser, error) {
 		return openDebMember(archivePath, memberPath)
 	case KindRPM:
 		return openRPMMember(archivePath, memberPath)
-	case KindAPK:
-		return openTarArchiveMember(archivePath, memberPath, ".tar.gz")
-	case KindPacman, KindTar:
+	case KindTar:
 		suffix := tarSuffix(archivePath)
 		if suffix == "" {
-			suffix = ".tar.zst"
+			return nil, fmt.Errorf("unsupported tar archive: %s", archivePath)
 		}
 		return openTarArchiveMember(archivePath, memberPath, suffix)
 	case KindSRPM:

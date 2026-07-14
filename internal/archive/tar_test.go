@@ -84,25 +84,6 @@ func writeTarZstELF(t *testing.T, path, memberName string, elfData []byte) {
 	}
 }
 
-func TestIsArchiveKinds(t *testing.T) {
-	cases := map[string]bool{
-		"pkg.deb":           true,
-		"app.rpm":           true,
-		"lib.apk":           true,
-		"foo.pkg.tar.zst":   true,
-		"symbols.tar.gz":    true,
-		"debug.tar.zst":     true,
-		"hello":             false,
-		"pkg.src.rpm":       false,
-		"pkg.dsc":           false,
-	}
-	for path, want := range cases {
-		if got := IsArchive(path); got != want {
-			t.Errorf("IsArchive(%q) = %v, want %v", path, got, want)
-		}
-	}
-}
-
 func TestIsSourcePackage(t *testing.T) {
 	if !IsSourcePackage("foo-1.0.src.rpm") {
 		t.Fatal("expected src.rpm as source package")
@@ -133,26 +114,11 @@ func TestListPlainTarGzELFMembers(t *testing.T) {
 	}
 }
 
-func TestListAPKELFMembers(t *testing.T) {
+func TestListPlainTarZstELFMembers(t *testing.T) {
 	tmp := t.TempDir()
 	elf := buildTestELF(t, tmp)
-	archivePath := filepath.Join(tmp, "hello.apk")
-	writeTarGzELF(t, archivePath, "usr/bin/hello", elf)
-
-	members, err := ListELFMembers(archivePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(members) != 1 {
-		t.Fatalf("members=%d, want 1", len(members))
-	}
-}
-
-func TestListPacmanELFMembers(t *testing.T) {
-	tmp := t.TempDir()
-	elf := buildTestELF(t, tmp)
-	archivePath := filepath.Join(tmp, "hello.pkg.tar.zst")
-	writeTarZstELF(t, archivePath, "usr/bin/hello", elf)
+	archivePath := filepath.Join(tmp, "debug.tar.zst")
+	writeTarZstELF(t, archivePath, "usr/lib/debug/hello", elf)
 
 	members, err := ListELFMembers(archivePath)
 	if err != nil {

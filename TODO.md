@@ -13,7 +13,7 @@
 | Astra Linux, Ubuntu | `.deb`, `.dsc`, `/usr/lib/debug`, plain tar |
 | RedOS, CentOS | `.rpm`, `.src.rpm`, `/usr/lib/debug`, plain tar |
 
-`.apk` и `.pacman` / `.pkg.tar.zst` — реализованы, но **вне целевых ОС**; новые фичи и тесты ориентировать на deb/rpm-стек.
+`.apk` и `.pacman` / `.pkg.tar.*` **не поддерживаются** — только deb/rpm-стек целевых ОС.
 
 ---
 
@@ -47,10 +47,10 @@
 - [x] **Отложенное извлечение** — `DEBUGINFOD_LAZY_EXTRACT`
 - [x] **Индексация исходников из SRPM/DSC**
 
-### Вне целевых ОС (реализовано, низкий приоритет)
+### Не поддерживается (вне целевых ОС)
 
-- [x] **`.apk` (Alpine)** — не развёртывается на целевых ОС
-- [x] **`.pacman` / `.pkg.tar.zst` (Arch)** — не развёртывается на целевых ОС
+- [x] ~~**`.apk` (Alpine)**~~ — удалено, не в scope
+- [x] ~~**`.pacman` / `.pkg.tar.zst` (Arch)**~~ — удалено, не в scope
 
 ## API и клиенты
 
