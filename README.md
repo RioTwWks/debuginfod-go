@@ -8,7 +8,7 @@ HTTP-сервер [debuginfod](https://sourceware.org/elfutils/Debuginfod.html) 
 
 | Область | Что реализовано |
 |---------|-----------------|
-| Индексация | ELF, GNU + Go build-id, `.deb`/`.rpm`/`.apk`/pacman/tar, SRPM/DSC, lazy extract, инкрементальный scan |
+| Индексация | ELF, GNU + Go build-id, `.deb`/`.rpm` (целевые ОС), tar, SRPM/DSC, lazy extract |
 | HTTP API | `/buildid/*`, `/metadata`, `/healthz`, `/zabbix`, `/ui/` |
 | Хранение | SQLite или PostgreSQL, LRU-кэш, отложенное извлечение из архивов |
 | Эксплуатация | slog, worker pool, федерация, gzip, graceful shutdown, systemd |
@@ -17,6 +17,31 @@ HTTP-сервер [debuginfod](https://sourceware.org/elfutils/Debuginfod.html) 
 
 Подробный план — [TODO.md](./TODO.md). Архитектура — [DEVELOPMENT.md](./DEVELOPMENT.md).
 
+## Целевые ОС развёртывания
+
+Сервис предназначен для эксплуатации **только** на:
+
+| ОС | Семейство | Основные форматы пакетов |
+|----|-----------|--------------------------|
+| **Astra Linux** | Debian | `.deb`, `.dsc`, plain tar |
+| **Ubuntu** | Debian | `.deb`, `.dsc`, plain tar |
+| **RedOS** | RHEL | `.rpm`, `.src.rpm`, plain tar |
+| **CentOS** | RHEL | `.rpm`, `.src.rpm`, plain tar |
+
+На всех платформах дополнительно индексируются loose ELF и каталоги отладочных символов (`/usr/lib/debug`, plain `.tar.*`).
+
+Форматы **Alpine (`.apk`)** и **Arch (`.pacman`, `.pkg.tar.zst`)** реализованы в коде для совместимости с upstream debuginfod, но **не являются целевыми** для развёртывания и тестирования в этом проекте.
+
+### Типичные пути scan
+
+```bash
+# Astra Linux / Ubuntu (deb)
+DEBUGINFOD_SCAN_PATH=/usr/lib/debug,/var/cache/apt/archives
+
+# RedOS / CentOS (rpm)
+DEBUGINFOD_SCAN_PATH=/usr/lib/debug,/var/cache/dnf,/var/cache/yum
+```
+
 ## Быстрый старт
 
 ### Требования
@@ -24,7 +49,8 @@ HTTP-сервер [debuginfod](https://sourceware.org/elfutils/Debuginfod.html) 
 - Go 1.21+
 - GCC и `libsqlite3-dev` (CGO для SQLite)
 - Для тестов: `gcc`; для RPM-тестов: `rpmbuild`
-- Scan path: ELF, `.deb`, `.rpm`, `.apk`, `.pkg.tar.zst`, plain tar, `.src.rpm`, `.dsc`
+- **Целевые ОС:** Astra Linux, Ubuntu, RedOS, CentOS (см. выше)
+- Scan path: ELF, `.deb` / `.rpm`, plain tar, `.src.rpm`, `.dsc`
 
 ### Установка и запуск
 
@@ -138,7 +164,7 @@ scan paths ──► indexer (workers) ──► SQLite/PostgreSQL ◄── web
 | `internal/config` | `.env` + флаги |
 | `pkg/buildid` | GNU и Go build-id |
 | `pkg/elfsection` | ELF-секции |
-| `internal/archive` | deb/rpm/apk/pacman/tar/SRPM/DSC |
+| `internal/archive` | deb/rpm (целевые ОС), tar, SRPM/DSC; apk/pacman — вне scope |
 | `internal/indexer` | Scan, DWARF, lazy extract |
 | `internal/storage` | БД, metadata, stats |
 | `internal/webapi` | debuginfod HTTP API |

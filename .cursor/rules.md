@@ -8,6 +8,7 @@
 - **Тип:** HTTP-сервер debuginfod + SQLite/PostgreSQL + индексация ELF/архивов
 - **Модуль:** `github.com/your-username/debuginfod-go`
 - **Репозиторий:** https://github.com/RioTwWks/debuginfod-go
+- **Целевые ОС:** Astra Linux, Ubuntu, RedOS, CentOS (deb/rpm-стек). Arch/Alpine — вне scope развёртывания.
 
 ## Структура пакетов
 
@@ -18,7 +19,7 @@ internal/indexer/        # scan FS (worker pool), DWARF sources, lazy extract
 internal/storage/        # SQLite / PostgreSQL: artifacts, sources, metadata
 internal/webapi/         # /buildid, /metadata, /healthz, /zabbix, gzip, federation
 internal/webui/          # /ui/ дашборд (embed static)
-internal/archive/        # .deb, .rpm, .apk, pacman, tar, SRPM, DSC
+internal/archive/        # .deb, .rpm (целевые ОС), tar, SRPM, DSC; apk/pacman — опционально
 internal/metrics/        # runtime counters + /zabbix JSON
 internal/federation/     # upstream proxy при 404
 internal/cache/          # LRU prune кэша
@@ -59,15 +60,22 @@ deploy/                  # systemd unit, Zabbix docs
 
 ### Форматы архивов
 
-| Формат | Расширения | Пакет |
-|--------|-----------|-------|
-| Debian | `.deb` | ar + data.tar.{gz,xz,zst} |
-| RPM | `.rpm` | go-rpmutils cpio |
-| Alpine | `.apk` | gzip-tar |
-| Arch | `.pacman`, `.pkg.tar.*` | tar.{zst,gz,xz} |
-| Plain tar | `.tar`, `.tar.gz`, `.tgz`, `.tar.xz`, `.tar.zst` | tar |
-| SRPM | `.src.rpm`, `.srpm` | исходники |
-| DSC | `.dsc` | исходники из .orig/.debian tar |
+**Целевые ОС (Astra Linux, Ubuntu, RedOS, CentOS):**
+
+| Формат | Расширения | ОС |
+|--------|-----------|-----|
+| Debian | `.deb` | Astra, Ubuntu |
+| RPM | `.rpm` | RedOS, CentOS |
+| Plain tar | `.tar`, `.tar.gz`, `.tar.xz`, `.tar.zst` | все |
+| SRPM | `.src.rpm` | RedOS, CentOS |
+| DSC | `.dsc` | Astra, Ubuntu |
+
+**Вне целевых ОС** (код есть, не приоритет для развёртывания/тестов):
+
+| Формат | Расширения | Примечание |
+|--------|-----------|------------|
+| Alpine | `.apk` | не развёртывается |
+| Arch | `.pacman`, `.pkg.tar.*` | не развёртывается |
 
 ### Отложенное извлечение
 
