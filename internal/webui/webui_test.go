@@ -92,6 +92,83 @@ func TestUISearch(t *testing.T) {
 	}
 }
 
+func TestUISearchGlob(t *testing.T) {
+	mux, store := testMux(t)
+	defer store.Close()
+
+	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "aaa", Type: "executable", FilePath: "/usr/bin/ls"}, 1)
+	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "bbb", Type: "debuginfo", FilePath: "/usr/lib/debug/libc.so.debug"}, 1)
+	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "ccc", Type: "executable", FilePath: "/opt/bin/tool"}, 1)
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/api/search?key=glob&value=/usr/bin/*", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var payload SearchResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Key != "glob" {
+		t.Fatalf("key=%q", payload.Key)
+	}
+	if payload.Count != 1 || len(payload.Results) != 1 {
+		t.Fatalf("count=%d results=%d, want 1", payload.Count, len(payload.Results))
+	}
+	if payload.Results[0].BuildID != "aaa" {
+		t.Fatalf("buildid=%q", payload.Results[0].BuildID)
+	}
+}
+
+func TestUISearchFile(t *testing.T) {
+	mux, store := testMux(t)
+	defer store.Close()
+
+	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "deadbeef", Type: "executable", FilePath: "/usr/bin/hello"}, 1)
+	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "cafebabe", Type: "executable", FilePath: "/usr/bin/other"}, 1)
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/api/search?key=file&value=/usr/bin/hello", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d", rec.Code)
+	}
+
+	var payload SearchResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Count != 1 || payload.Results[0].BuildID != "deadbeef" {
+		t.Fatalf("unexpected results: %+v", payload)
+	}
+}
+
+func TestUISearchGlobRequiresValue(t *testing.T) {
+	mux, store := testMux(t)
+	defer store.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/api/search?key=glob", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d, want 400", rec.Code)
+	}
+}
+
+func TestUISearchUnsupportedKey(t *testing.T) {
+	mux, store := testMux(t)
+	defer store.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/api/search?key=unknown&value=x", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d, want 400", rec.Code)
+	}
+}
+
 func TestUIRedirect(t *testing.T) {
 	mux, store := testMux(t)
 	defer store.Close()

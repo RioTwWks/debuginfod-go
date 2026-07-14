@@ -162,7 +162,9 @@ GET /healthz              → 200 ok
 GET /zabbix               → JSON-метрики (Zabbix HTTP agent)
 GET /ui/                  → Web UI дашборд
 GET /ui/api/stats         → счётчики индекса
-GET /ui/api/search?q=     → поиск по префиксу build-id
+GET /ui/api/search?q=           → поиск по префиксу build-id (key=buildid, по умолчанию)
+GET /ui/api/search?key=glob&value=/usr/bin/*  → metadata glob
+GET /ui/api/search?key=file&value=/path      → metadata file
 ```
 
 Zabbix: [deploy/zabbix/README.md](deploy/zabbix/README.md).

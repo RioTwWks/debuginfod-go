@@ -10,7 +10,7 @@
   <header class="header">
     <div class="header-inner">
       <h1>debuginfod-go</h1>
-      <p class="subtitle">Статистика индекса и поиск по build-id</p>
+      <p class="subtitle">Статистика индекса и поиск артефактов</p>
     </div>
     <div class="header-meta">
       <span id="uptime" class="badge">uptime —</span>
@@ -30,7 +30,12 @@
     </section>
 
     <section class="panel">
-      <h2>Поиск по build-id</h2>
+      <h2>Поиск артефактов</h2>
+      <div class="search-mode" role="tablist" aria-label="Режим поиска">
+        <button type="button" class="mode-btn active" data-key="buildid" role="tab" aria-selected="true">build-id</button>
+        <button type="button" class="mode-btn" data-key="glob" role="tab" aria-selected="false">glob</button>
+        <button type="button" class="mode-btn" data-key="file" role="tab" aria-selected="false">file</button>
+      </div>
       <form id="search-form" class="search-form">
         <input
           type="search"
@@ -42,7 +47,7 @@
         >
         <button type="submit">Найти</button>
       </form>
-      <p class="hint">Пустой запрос показывает первые 50 артефактов. Поиск по префиксу.</p>
+      <p class="hint" id="search-hint">Пустой запрос — первые 50 артефактов по build-id (префикс).</p>
       <div id="search-status" class="search-status"></div>
       <div class="table-wrap">
         <table class="results-table" id="results-table" hidden>
@@ -58,11 +63,12 @@
           <tbody id="results-body"></tbody>
         </table>
       </div>
+      <button type="button" id="load-more" class="load-more" hidden>Ещё результаты</button>
     </section>
   </main>
 
   <footer class="footer">
-    <span>debuginfod HTTP API: <code>/buildid/&lt;id&gt;/debuginfo</code></span>
+    <span>debuginfod HTTP API: <code>/metadata?key=glob&amp;value=/bin/*</code></span>
   </footer>
 
   <script src="/ui/static/app.js"></script>

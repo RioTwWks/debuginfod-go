@@ -163,7 +163,7 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 
 ### UI (низкий приоритет)
 
-- [ ] **Web UI: поиск metadata** — glob/file в дашборде (сейчас `/ui/api/search` — только prefix по build-id)
+- [x] **Web UI: поиск metadata** — glob/file в дашборде (сейчас `/ui/api/search` — только prefix по build-id)
 
 ---
 

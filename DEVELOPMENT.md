@@ -124,7 +124,7 @@ Backend: SQLite (`DEBUGINFOD_DB_PATH`) или PostgreSQL (`DEBUGINFOD_DATABASE_U
 | `/zabbix` | ✅ JSON для Zabbix HTTP agent |
 | `/ui/` | ✅ дашборд |
 | `/ui/api/stats` | ✅ |
-| `/ui/api/search?q=` | ✅ prefix search build-id |
+| `/ui/api/search` | ✅ build-id prefix, glob, file (`key`, `value`, `offset`) |
 
 ## Сравнение с upstream debuginfod (elfutils)
 

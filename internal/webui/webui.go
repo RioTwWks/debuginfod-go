@@ -44,9 +44,13 @@ type StatsResponse struct {
 
 // SearchResponse — JSON результатов поиска.
 type SearchResponse struct {
-	Query   string                  `json:"query"`
-	Results []storage.ArtifactRecord `json:"results"`
-	Count   int                     `json:"count"`
+	Key        string                   `json:"key,omitempty"`
+	Query      string                   `json:"query,omitempty"`
+	Value      string                   `json:"value,omitempty"`
+	Results    []storage.ArtifactRecord `json:"results"`
+	Count      int                      `json:"count"`
+	Complete   bool                     `json:"complete"`
+	NextOffset int                      `json:"next_offset,omitempty"`
 }
 
 // Register добавляет маршруты Web UI в mux.
@@ -134,7 +138,11 @@ func searchHandler(opts Opts) http.HandlerFunc {
 			return
 		}
 
-		query := r.URL.Query().Get("q")
+		key := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("key")))
+		if key == "" {
+			key = "buildid"
+		}
+
 		limit := 50
 		if raw := r.URL.Query().Get("limit"); raw != "" {
 			if n, err := strconv.Atoi(raw); err == nil {
@@ -142,21 +150,68 @@ func searchHandler(opts Opts) http.HandlerFunc {
 			}
 		}
 
+		offset := 0
+		if raw := r.URL.Query().Get("offset"); raw != "" {
+			if n, err := strconv.Atoi(raw); err == nil && n >= 0 {
+				offset = n
+			}
+		}
+
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
 
-		results, err := opts.Store.SearchBuildIDForUI(ctx, query, limit)
-		if err != nil {
-			slog.Error("webui search", "query", query, "err", err)
-			http.Error(w, "search error", http.StatusInternalServerError)
+		var resp SearchResponse
+
+		switch key {
+		case "buildid":
+			query := r.URL.Query().Get("q")
+			results, err := opts.Store.SearchBuildIDForUI(ctx, query, limit)
+			if err != nil {
+				slog.Error("webui search buildid", "query", query, "err", err)
+				http.Error(w, "search error", http.StatusInternalServerError)
+				return
+			}
+			resp = SearchResponse{
+				Key:      key,
+				Query:    query,
+				Results:  results,
+				Count:    len(results),
+				Complete: true,
+			}
+		case "glob", "file":
+			value := strings.TrimSpace(r.URL.Query().Get("value"))
+			if value == "" {
+				value = strings.TrimSpace(r.URL.Query().Get("q"))
+			}
+			if value == "" {
+				http.Error(w, "value required for "+key+" search", http.StatusBadRequest)
+				return
+			}
+			meta, err := opts.Store.SearchMetadataQuery(ctx, storage.MetadataQuery{
+				Key:    key,
+				Value:  value,
+				Offset: offset,
+				Limit:  limit,
+			})
+			if err != nil {
+				slog.Error("webui search metadata", "key", key, "value", value, "err", err)
+				http.Error(w, "search error", http.StatusInternalServerError)
+				return
+			}
+			resp = SearchResponse{
+				Key:        key,
+				Value:      value,
+				Results:    meta.Results,
+				Count:      len(meta.Results),
+				Complete:   meta.Complete,
+				NextOffset: meta.NextOffset,
+			}
+		default:
+			http.Error(w, "unsupported search key: "+key, http.StatusBadRequest)
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(SearchResponse{
-			Query:   query,
-			Results: results,
-			Count:   len(results),
-		})
+		_ = json.NewEncoder(w).Encode(resp)
 	}
 }
