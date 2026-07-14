@@ -65,6 +65,11 @@ docker compose up --build
 | `DEBUGINFOD_RESCAN_INTERVAL` | `-r` | Интервал переиндексации | `1h` |
 | `DEBUGINFOD_METADATA_MAXTIME` | `-metadata-maxtime` | Лимит metadata-запросов | `5s` |
 | `DEBUGINFOD_CACHE_DIR` | `-cache` | Кэш ELF из архивов | `.debuginfod-cache` |
+| `DEBUGINFOD_CACHE_MAX_BYTES` | `-cache-max-bytes` | Лимит кэша (0=∞) | `0` |
+| `DEBUGINFOD_SCAN_WORKERS` | `-scan-workers` | Параллельные воркеры scan | `4` |
+| `DEBUGINFOD_URLS` | `-upstream` | Upstream для федерации | — |
+| `DEBUGINFOD_DATABASE_URL` | `-database-url` | PostgreSQL URL | — |
+| `DEBUGINFOD_ZABBIX_KEY` | `-zabbix-key` | Токен для `/zabbix` | — |
 | `DEBUGINFOD_LOG_LEVEL` | `-log-level` | Уровень логов (пока не в slog) | `info` |
 | `DEBUGINFOD_ENV_FILE` | `-env-file` | Путь к `.env` | `.env` |
 
@@ -105,11 +110,14 @@ GET /metadata?key=buildid&value=<hex>
 }
 ```
 
-### Health
+### Health и мониторинг (Zabbix)
 
 ```http
 GET /healthz   → 200 ok
+GET /zabbix    → JSON-метрики для Zabbix HTTP agent
 ```
+
+Настройка Zabbix: [deploy/zabbix/README.md](deploy/zabbix/README.md).
 
 ## Использование с GDB
 

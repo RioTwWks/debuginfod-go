@@ -4,42 +4,110 @@ import (
 	"debug/dwarf"
 	"debug/elf"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/your-username/debuginfod-go/internal/archive"
+	"github.com/your-username/debuginfod-go/internal/cache"
+	"github.com/your-username/debuginfod-go/internal/metrics"
 	"github.com/your-username/debuginfod-go/internal/storage"
 	"github.com/your-username/debuginfod-go/pkg/buildid"
 )
 
-// Indexer сканирует файловую систему и заполняет SQLite-индекс.
+type scanJob struct {
+	path  string
+	mtime int64
+	size  int64
+	kind  string // elf | archive
+}
+
+// Indexer сканирует файловую систему и заполняет индекс.
 type Indexer struct {
-	storage  *storage.Storage
-	paths    []string
-	cacheDir string
+	storage       *storage.Storage
+	paths         []string
+	cacheDir      string
+	cacheMaxBytes int64
+	workers       int
+	metrics       *metrics.Collector
 }
 
-// NewIndexer создаёт индексатор для указанных корневых путей.
-func NewIndexer(store *storage.Storage, paths []string, cacheDir string) *Indexer {
-	return &Indexer{storage: store, paths: paths, cacheDir: cacheDir}
+// Options — параметры индексатора.
+type Options struct {
+	Storage       *storage.Storage
+	Paths         []string
+	CacheDir      string
+	CacheMaxBytes int64
+	Workers       int
+	Metrics       *metrics.Collector
 }
 
-// Scan обходит все пути и индексирует ELF-файлы и архивы.
-// Файлы с неизменившимися mtime/size пропускаются (инкрементальная индексация).
+// NewIndexer создаёт индексатор.
+func NewIndexer(opts Options) *Indexer {
+	workers := opts.Workers
+	if workers <= 0 {
+		workers = 4
+	}
+	return &Indexer{
+		storage:       opts.Storage,
+		paths:         opts.Paths,
+		cacheDir:      opts.CacheDir,
+		cacheMaxBytes: opts.CacheMaxBytes,
+		workers:       workers,
+		metrics:       opts.Metrics,
+	}
+}
+
+// Scan обходит пути и индексирует ELF/архивы с параллельными воркерами.
 func (i *Indexer) Scan() error {
-	var indexed, skipped int
+	start := time.Now()
+	var indexed, skipped, errorsCount atomic.Int64
+
+	jobs := make(chan scanJob, i.workers*2)
+	var wg sync.WaitGroup
+
+	for w := 0; w < i.workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range jobs {
+				var err error
+				switch job.kind {
+				case "archive":
+					var count int
+					count, err = i.indexArchive(job.path, job.mtime)
+					if err == nil {
+						indexed.Add(int64(count))
+						_ = i.storage.MarkScanned(job.path, job.mtime, job.size, "archive")
+					}
+				case "elf":
+					err = i.indexELF(job.path, job.mtime, "", "")
+					if err == nil {
+						indexed.Add(1)
+						_ = i.storage.MarkScanned(job.path, job.mtime, job.size, "elf")
+					}
+				}
+				if err != nil {
+					errorsCount.Add(1)
+					slog.Warn("index failed", "path", job.path, "err", err)
+				}
+			}
+		}()
+	}
+
 	for _, root := range i.paths {
-		err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 			if err != nil {
-				log.Printf("пропуск %s: %v", path, err)
+				slog.Warn("walk skip", "path", path, "err", err)
 				return nil
 			}
 			if entry.IsDir() {
 				return nil
 			}
-
 			info, err := entry.Info()
 			if err != nil {
 				return nil
@@ -47,50 +115,57 @@ func (i *Indexer) Scan() error {
 			mtime := info.ModTime().UnixNano()
 			size := info.Size()
 
-			if archive.IsArchive(path) {
-				needs, err := i.storage.NeedsScan(path, mtime, size)
-				if err != nil {
-					log.Printf("NeedsScan %s: %v", path, err)
-				} else if !needs {
-					skipped++
-					return nil
-				}
-				count, err := i.indexArchive(path, mtime)
-				if err != nil {
-					log.Printf("ошибка индексации архива %s: %v", path, err)
-					return nil
-				}
-				if err := i.storage.MarkScanned(path, mtime, size, "archive"); err != nil {
-					log.Printf("MarkScanned %s: %v", path, err)
-				}
-				indexed += count
+			var kind string
+			switch {
+			case archive.IsArchive(path):
+				kind = "archive"
+			case buildid.IsELF(path):
+				kind = "elf"
+			default:
 				return nil
 			}
 
-			if buildid.IsELF(path) {
-				needs, err := i.storage.NeedsScan(path, mtime, size)
-				if err != nil {
-					log.Printf("NeedsScan %s: %v", path, err)
-				} else if !needs {
-					skipped++
-					return nil
-				}
-				if err := i.indexELF(path, mtime, "", ""); err != nil {
-					log.Printf("ошибка индексации ELF %s: %v", path, err)
-					return nil
-				}
-				if err := i.storage.MarkScanned(path, mtime, size, "elf"); err != nil {
-					log.Printf("MarkScanned %s: %v", path, err)
-				}
-				indexed++
+			needs, err := i.storage.NeedsScan(path, mtime, size)
+			if err != nil {
+				slog.Warn("NeedsScan", "path", path, "err", err)
+			} else if !needs {
+				skipped.Add(1)
+				return nil
 			}
+
+			jobs <- scanJob{path: path, mtime: mtime, size: size, kind: kind}
 			return nil
 		})
+	}
+
+	close(jobs)
+	wg.Wait()
+
+	if i.cacheMaxBytes > 0 {
+		removed, freed, err := cache.Prune(i.cacheDir, i.cacheMaxBytes)
 		if err != nil {
-			log.Printf("ошибка обхода %s: %v", root, err)
+			slog.Warn("cache prune", "err", err)
+		} else if removed > 0 {
+			slog.Info("cache pruned", "removed", removed, "freed_bytes", freed)
 		}
 	}
-	log.Printf("индексация завершена: новых/обновлённых ELF %d, пропущено без изменений %d", indexed, skipped)
+
+	stats := metrics.ScanStats{
+		Duration: time.Since(start),
+		Indexed:  int(indexed.Load()),
+		Skipped:  int(skipped.Load()),
+		Errors:   int(errorsCount.Load()),
+		Finished: time.Now(),
+	}
+	if i.metrics != nil {
+		i.metrics.RecordScan(stats)
+	}
+	slog.Info("scan complete",
+		"indexed", stats.Indexed,
+		"skipped", stats.Skipped,
+		"errors", stats.Errors,
+		"duration", stats.Duration,
+	)
 	return nil
 }
 
@@ -104,11 +179,11 @@ func (i *Indexer) indexArchive(archivePath string, mtimeNS int64) (int, error) {
 	for _, member := range members {
 		cached, err := archive.ExtractToCache(i.cacheDir, member.ArchivePath, member.MemberPath, member.Reader)
 		if err != nil {
-			log.Printf("не удалось извлечь %s:%s: %v", member.ArchivePath, member.MemberPath, err)
+			slog.Warn("extract failed", "archive", member.ArchivePath, "member", member.MemberPath, "err", err)
 			continue
 		}
 		if err := i.indexELF(cached, mtimeNS, member.ArchivePath, member.MemberPath); err != nil {
-			log.Printf("ошибка индексации %s в %s: %v", member.MemberPath, archivePath, err)
+			slog.Warn("index archive member", "member", member.MemberPath, "err", err)
 			continue
 		}
 		count++
@@ -187,7 +262,7 @@ func (i *Indexer) indexSourcesFromDWARF(buildID string, f *elf.File, elfPath str
 		}
 
 		if err := i.storage.AddSource(buildID, sourcePath, filePath, mtimeNS); err != nil {
-			log.Printf("не удалось сохранить source %s: %v", sourcePath, err)
+			slog.Warn("save source", "path", sourcePath, "err", err)
 		}
 	}
 	return nil

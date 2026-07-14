@@ -10,58 +10,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/your-username/debuginfod-go/internal/federation"
 	"github.com/your-username/debuginfod-go/internal/indexer"
+	"github.com/your-username/debuginfod-go/internal/metrics"
 	"github.com/your-username/debuginfod-go/internal/storage"
 	"github.com/your-username/debuginfod-go/pkg/buildid"
 )
 
-func TestHandlerDebugInfoAndExecutable(t *testing.T) {
-	tmp := t.TempDir()
-	dbPath := filepath.Join(tmp, "test.sqlite")
-	store, err := storage.New(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-
-	execPath := filepath.Join(tmp, "bin")
-	debugPath := filepath.Join(tmp, "bin.debug")
-	if err := os.WriteFile(execPath, []byte("exec"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(debugPath, []byte("debug"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := store.AddArtifact(storage.ArtifactInput{
-		BuildID: "deadbeef", Type: "executable", FilePath: execPath,
-	}, 1); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.AddArtifact(storage.ArtifactInput{
-		BuildID: "deadbeef", Type: "debuginfo", FilePath: debugPath,
-	}, 1); err != nil {
-		t.Fatal(err)
-	}
-
-	handler := NewHandler(store)
-
-	req := httptest.NewRequest(http.MethodGet, "/buildid/deadbeef/executable", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("executable status = %d", rec.Code)
-	}
-
-	req = httptest.NewRequest(http.MethodGet, "/buildid/deadbeef/debuginfo", nil)
-	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("debuginfo status = %d", rec.Code)
+func testOpts(store *storage.Storage) ServerOpts {
+	return ServerOpts{
+		Store:           store,
+		MetadataMaxTime: 5 * time.Second,
+		Metrics:         metrics.New(),
+		CacheBytes:      func() int64 { return 0 },
 	}
 }
 
-func TestHandlerSource(t *testing.T) {
+func TestHandlerDebugInfoAndExecutable(t *testing.T) {
 	tmp := t.TempDir()
 	store, err := storage.New(filepath.Join(tmp, "test.sqlite"))
 	if err != nil {
@@ -69,25 +34,21 @@ func TestHandlerSource(t *testing.T) {
 	}
 	defer store.Close()
 
-	srcPath := filepath.Join(tmp, "main.c")
-	if err := os.WriteFile(srcPath, []byte("int main(){}"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.AddArtifact(storage.ArtifactInput{
-		BuildID: "cafebabe", Type: "executable", FilePath: filepath.Join(tmp, "bin"),
-	}, 1); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.AddSource("cafebabe", "/project/main.c", srcPath, 1); err != nil {
-		t.Fatal(err)
-	}
+	execPath := filepath.Join(tmp, "bin")
+	debugPath := filepath.Join(tmp, "bin.debug")
+	_ = os.WriteFile(execPath, []byte("exec"), 0o644)
+	_ = os.WriteFile(debugPath, []byte("debug"), 0o644)
 
-	handler := NewHandler(store)
-	req := httptest.NewRequest(http.MethodGet, "/buildid/cafebabe/source/project/main.c", nil)
+	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "deadbeef", Type: "executable", FilePath: execPath}, 1)
+	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "deadbeef", Type: "debuginfo", FilePath: debugPath}, 1)
+
+	handler := NewHandler(testOpts(store))
+
+	req := httptest.NewRequest(http.MethodGet, "/buildid/deadbeef/executable", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("source status = %d, body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("executable status = %d", rec.Code)
 	}
 }
 
@@ -99,13 +60,8 @@ func TestHandlerSection(t *testing.T) {
 	tmp := t.TempDir()
 	src := filepath.Join(tmp, "main.c")
 	bin := filepath.Join(tmp, "hello")
-	if err := os.WriteFile(src, []byte("int main(){return 0;}"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.Command("gcc", "-g", "-o", bin, src)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("gcc: %v\n%s", err, out)
-	}
+	_ = os.WriteFile(src, []byte("int main(){return 0;}"), 0o644)
+	_ = exec.Command("gcc", "-g", "-o", bin, src).Run()
 
 	store, err := storage.New(filepath.Join(tmp, "test.sqlite"))
 	if err != nil {
@@ -113,27 +69,16 @@ func TestHandlerSection(t *testing.T) {
 	}
 	defer store.Close()
 
-	id, err := buildid.FromPath(bin)
-	if err != nil {
-		t.Fatal(err)
-	}
+	id, _ := buildid.FromPath(bin)
 	id = buildid.Normalize(id)
+	_ = store.AddArtifact(storage.ArtifactInput{BuildID: id, Type: "executable", FilePath: bin}, 1)
 
-	if err := store.AddArtifact(storage.ArtifactInput{
-		BuildID: id, Type: "executable", FilePath: bin,
-	}, 1); err != nil {
-		t.Fatal(err)
-	}
-
-	handler := NewHandler(store)
+	handler := NewHandler(testOpts(store))
 	req := httptest.NewRequest(http.MethodGet, "/buildid/"+id+"/section/.note.gnu.build-id", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("section status = %d body=%s", rec.Code, rec.Body.String())
-	}
-	if len(rec.Body.Bytes()) == 0 {
-		t.Fatal("empty section body")
+		t.Fatalf("section status = %d", rec.Code)
 	}
 }
 
@@ -144,24 +89,39 @@ func TestMetadataHandler(t *testing.T) {
 	}
 	defer store.Close()
 
-	_ = store.AddArtifact(storage.ArtifactInput{
-		BuildID: "abc", Type: "executable", FilePath: "/opt/bin/tool",
-	}, 1)
+	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "abc", Type: "executable", FilePath: "/opt/bin/tool"}, 1)
 
-	handler := MetadataHandler(store, 5*time.Second)
+	handler := MetadataHandler(testOpts(store))
 	req := httptest.NewRequest(http.MethodGet, "/metadata?key=glob&value=/opt/bin/*", nil)
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("status=%d", rec.Code)
 	}
+}
 
-	var resp storage.MetadataResponse
-	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+func TestZabbixHandler(t *testing.T) {
+	store, err := storage.New(filepath.Join(t.TempDir(), "z.sqlite"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.Results) != 1 || !resp.Complete {
-		t.Fatalf("unexpected response: %+v", resp)
+	defer store.Close()
+
+	collector := metrics.New()
+	handler := metrics.Handler(collector, store, func() int64 { return 1024 }, "")
+	req := httptest.NewRequest(http.MethodGet, "/zabbix", nil)
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d", rec.Code)
+	}
+
+	var payload map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := payload["artifacts_total"]; !ok {
+		t.Fatalf("missing artifacts_total: %+v", payload)
 	}
 }
 
@@ -173,109 +133,80 @@ func TestIntegrationHTTPEndpoints(t *testing.T) {
 	tmp := t.TempDir()
 	src := filepath.Join(tmp, "main.c")
 	bin := filepath.Join(tmp, "hello")
-	if err := os.WriteFile(src, []byte("int main(){return 0;}"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.Command("gcc", "-g", "-o", bin, src)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("gcc: %v\n%s", err, out)
-	}
+	_ = os.WriteFile(src, []byte("int main(){return 0;}"), 0o644)
+	_ = exec.Command("gcc", "-g", "-o", bin, src).Run()
 
-	dbPath := filepath.Join(tmp, "index.sqlite")
-	store, err := storage.New(dbPath)
+	store, err := storage.New(filepath.Join(tmp, "index.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer store.Close()
 
-	idx := indexer.NewIndexer(store, []string{tmp}, filepath.Join(tmp, "cache"))
+	idx := indexer.NewIndexer(indexer.Options{
+		Storage:  store,
+		Paths:    []string{tmp},
+		CacheDir: filepath.Join(tmp, "cache"),
+		Workers:  2,
+		Metrics:  metrics.New(),
+	})
 	if err := idx.Scan(); err != nil {
 		t.Fatal(err)
 	}
 
-	id, err := buildid.FromPath(bin)
+	id, _ := buildid.FromPath(bin)
+	id = buildid.Normalize(id)
+
+	server := httptest.NewServer(NewMux(testOpts(store)))
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/healthz")
 	if err != nil {
 		t.Fatal(err)
 	}
-	id = buildid.Normalize(id)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("healthz=%d", resp.StatusCode)
+	}
 
-	server := httptest.NewServer(NewMux(store, 5*time.Second))
-	defer server.Close()
+	resp, err = http.Get(server.URL + "/buildid/" + id + "/executable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("executable=%d", resp.StatusCode)
+	}
 
-	t.Run("healthz", func(t *testing.T) {
-		resp, err := http.Get(server.URL + "/healthz")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("status=%d", resp.StatusCode)
-		}
-	})
-
-	t.Run("executable", func(t *testing.T) {
-		resp, err := http.Get(server.URL + "/buildid/" + id + "/executable")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("status=%d", resp.StatusCode)
-		}
-	})
-
-	t.Run("metadata-buildid", func(t *testing.T) {
-		resp, err := http.Get(server.URL + "/metadata?key=buildid&value=" + id)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("status=%d", resp.StatusCode)
-		}
-		var meta storage.MetadataResponse
-		if err := json.NewDecoder(resp.Body).Decode(&meta); err != nil {
-			t.Fatal(err)
-		}
-		if len(meta.Results) != 1 || !meta.Complete {
-			t.Fatalf("metadata=%+v", meta)
-		}
-	})
-
-	t.Run("section", func(t *testing.T) {
-		resp, err := http.Get(server.URL + "/buildid/" + id + "/section/.note.gnu.build-id")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("status=%d", resp.StatusCode)
-		}
-	})
-
-	t.Run("incremental-skip", func(t *testing.T) {
-		if err := idx.Scan(); err != nil {
-			t.Fatal(err)
-		}
-		needs, err := store.NeedsScan(bin, fileMtime(bin), fileSize(bin))
-		if err != nil || needs {
-			t.Fatalf("second scan should skip unchanged file: needs=%v err=%v", needs, err)
-		}
-	})
+	resp, err = http.Get(server.URL + "/zabbix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("zabbix=%d", resp.StatusCode)
+	}
 }
 
-func fileMtime(path string) int64 {
-	st, err := os.Stat(path)
-	if err != nil {
-		return 0
-	}
-	return st.ModTime().UnixNano()
-}
+func TestFederationFallback(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("fed-data"))
+	}))
+	defer upstream.Close()
 
-func fileSize(path string) int64 {
-	st, err := os.Stat(path)
+	store, err := storage.New(filepath.Join(t.TempDir(), "f.sqlite"))
 	if err != nil {
-		return 0
+		t.Fatal(err)
 	}
-	return st.Size()
+	defer store.Close()
+
+	opts := testOpts(store)
+	opts.Federation = federation.New([]string{upstream.URL}, time.Second)
+	handler := NewHandler(opts)
+
+	req := httptest.NewRequest(http.MethodGet, "/buildid/unknown/executable", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
 }

@@ -37,25 +37,30 @@ type MetadataResponse struct {
 
 // Storage — SQLite-хранилище метаданных debuginfod.
 type Storage struct {
-	db *sql.DB
+	db      *sql.DB
+	dialect Dialect
 }
 
-// New открывает (или создаёт) базу данных и схему таблиц.
+// New открывает SQLite по пути (обратная совместимость).
 func New(dbPath string) (*Storage, error) {
+	return openSQLite(dbPath)
+}
+
+func openSQLite(dbPath string) (*Storage, error) {
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := migrate(db); err != nil {
+	if err := migrateSQLite(db); err != nil {
 		db.Close()
 		return nil, err
 	}
 
-	return &Storage{db: db}, nil
+	return &Storage{db: db, dialect: DialectSQLite}, nil
 }
 
-func migrate(db *sql.DB) error {
+func migrateSQLite(db *sql.DB) error {
 	schema := `
 		CREATE TABLE IF NOT EXISTS artifacts (
 			build_id TEXT NOT NULL,
@@ -129,7 +134,7 @@ type artifactRow struct {
 
 // AddArtifact сохраняет или обновляет артефакт.
 func (s *Storage) AddArtifact(in ArtifactInput, mtimeNS int64) error {
-	_, err := s.db.Exec(`
+	q := rebind(`
 		INSERT INTO artifacts (
 			build_id, file_path, type, archive_path, member_path,
 			build_id_kind, raw_build_id, mtime_ns
@@ -142,7 +147,9 @@ func (s *Storage) AddArtifact(in ArtifactInput, mtimeNS int64) error {
 			raw_build_id = excluded.raw_build_id,
 			mtime_ns = excluded.mtime_ns
 		WHERE excluded.mtime_ns >= artifacts.mtime_ns
-	`, in.BuildID, in.FilePath, in.Type, in.ArchivePath, in.MemberPath,
+	`, s.dialect)
+	_, err := s.db.Exec(q,
+		in.BuildID, in.FilePath, in.Type, in.ArchivePath, in.MemberPath,
 		in.BuildIDKind, in.RawBuildID, mtimeNS)
 	return err
 }
@@ -151,7 +158,7 @@ func (s *Storage) AddArtifact(in ArtifactInput, mtimeNS int64) error {
 func (s *Storage) GetArtifactPath(buildID, artifactType string) (string, error) {
 	var filePath string
 	err := s.db.QueryRow(
-		`SELECT file_path FROM artifacts WHERE build_id = ? AND type = ?`,
+		rebind(`SELECT file_path FROM artifacts WHERE build_id = ? AND type = ?`, s.dialect),
 		buildID, artifactType,
 	).Scan(&filePath)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -185,7 +192,7 @@ func (s *Storage) getOptionalPath(buildID, artifactType string) (string, error) 
 func (s *Storage) NeedsScan(path string, mtimeNS, size int64) (bool, error) {
 	var storedMtime, storedSize int64
 	err := s.db.QueryRow(
-		`SELECT mtime_ns, size FROM scanned_files WHERE path = ?`, path,
+		rebind(`SELECT mtime_ns, size FROM scanned_files WHERE path = ?`, s.dialect), path,
 	).Scan(&storedMtime, &storedSize)
 	if errors.Is(err, sql.ErrNoRows) {
 		return true, nil
@@ -198,27 +205,27 @@ func (s *Storage) NeedsScan(path string, mtimeNS, size int64) (bool, error) {
 
 // MarkScanned сохраняет метаданные успешно просканированного файла.
 func (s *Storage) MarkScanned(path string, mtimeNS, size int64, kind string) error {
-	_, err := s.db.Exec(`
+	_, err := s.db.Exec(rebind(`
 		INSERT INTO scanned_files (path, mtime_ns, size, kind)
 		VALUES (?, ?, ?, ?)
 		ON CONFLICT(path) DO UPDATE SET
 			mtime_ns = excluded.mtime_ns,
 			size = excluded.size,
 			kind = excluded.kind
-	`, path, mtimeNS, size, kind)
+	`, s.dialect), path, mtimeNS, size, kind)
 	return err
 }
 
 // AddSource сохраняет или обновляет исходный файл, привязанный к build-id.
 func (s *Storage) AddSource(buildID, sourcePath, filePath string, mtimeNS int64) error {
-	_, err := s.db.Exec(`
+	_, err := s.db.Exec(rebind(`
 		INSERT INTO sources (build_id, source_path, file_path, mtime_ns)
 		VALUES (?, ?, ?, ?)
 		ON CONFLICT(build_id, source_path) DO UPDATE SET
 			file_path = excluded.file_path,
 			mtime_ns = excluded.mtime_ns
 		WHERE excluded.mtime_ns >= sources.mtime_ns
-	`, buildID, sourcePath, filePath, mtimeNS)
+	`, s.dialect), buildID, sourcePath, filePath, mtimeNS)
 	return err
 }
 
@@ -226,7 +233,7 @@ func (s *Storage) AddSource(buildID, sourcePath, filePath string, mtimeNS int64)
 func (s *Storage) GetSource(buildID, sourcePath string) (string, error) {
 	var filePath string
 	err := s.db.QueryRow(
-		`SELECT file_path FROM sources WHERE build_id = ? AND source_path = ?`,
+		rebind(`SELECT file_path FROM sources WHERE build_id = ? AND source_path = ?`, s.dialect),
 		buildID, sourcePath,
 	).Scan(&filePath)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -239,7 +246,7 @@ func (s *Storage) GetSource(buildID, sourcePath string) (string, error) {
 func (s *Storage) HasBuildID(buildID string) (bool, error) {
 	var count int
 	err := s.db.QueryRow(
-		`SELECT COUNT(1) FROM artifacts WHERE build_id = ?`,
+		rebind(`SELECT COUNT(1) FROM artifacts WHERE build_id = ?`, s.dialect),
 		buildID,
 	).Scan(&count)
 	return count > 0, err
@@ -260,10 +267,10 @@ func (s *Storage) SearchMetadata(ctx context.Context, key, value string) (Metada
 }
 
 func (s *Storage) searchGlob(ctx context.Context, pattern string) (MetadataResponse, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.db.QueryContext(ctx, rebind(`
 		SELECT build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id
 		FROM artifacts
-	`)
+	`, s.dialect))
 	if err != nil {
 		return MetadataResponse{}, err
 	}
@@ -274,10 +281,10 @@ func (s *Storage) searchGlob(ctx context.Context, pattern string) (MetadataRespo
 }
 
 func (s *Storage) searchFile(ctx context.Context, path string) (MetadataResponse, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.db.QueryContext(ctx, rebind(`
 		SELECT build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id
 		FROM artifacts
-	`)
+	`, s.dialect))
 	if err != nil {
 		return MetadataResponse{}, err
 	}
@@ -289,10 +296,10 @@ func (s *Storage) searchFile(ctx context.Context, path string) (MetadataResponse
 }
 
 func (s *Storage) searchBuildID(ctx context.Context, query string) (MetadataResponse, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.db.QueryContext(ctx, rebind(`
 		SELECT build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id
 		FROM artifacts
-	`)
+	`, s.dialect))
 	if err != nil {
 		return MetadataResponse{}, err
 	}
