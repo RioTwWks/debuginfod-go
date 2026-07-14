@@ -9,7 +9,7 @@ HTTP-сервер [debuginfod](https://sourceware.org/elfutils/Debuginfod.html) 
 | Область | Что реализовано |
 |---------|-----------------|
 | Индексация | ELF на диске, GNU + Go build-id, `.deb`/`.rpm`/`.apk`/pacman/tar, SRPM/DSC → исходники, отложенное извлечение |
-| HTTP API | `/buildid/*`, `/metadata`, `/healthz` |
+| HTTP API | `/buildid/*`, `/metadata`, `/healthz`, `/ui/` (Web UI) |
 | Хранение | SQLite, кэш извлечённых файлов из архивов |
 | Конфигурация | `.env`, переменные окружения, флаги CLI |
 | Эксплуатация | Периодический rescan, graceful shutdown, Docker |
@@ -67,6 +67,7 @@ docker compose up --build
 | `DEBUGINFOD_METADATA_MAXTIME` | `-metadata-maxtime` | Лимит metadata-запросов | `5s` |
 | `DEBUGINFOD_CACHE_DIR` | `-cache` | Кэш ELF из архивов | `.debuginfod-cache` |
 | `DEBUGINFOD_LAZY_EXTRACT` | `-lazy-extract` | Не кэшировать ELF при индексации | `true` |
+| `DEBUGINFOD_UI_ENABLED` | `-ui` | Web UI на `/ui/` | `true` |
 | `DEBUGINFOD_CACHE_MAX_BYTES` | `-cache-max-bytes` | Лимит кэша (0=∞) | `0` |
 | `DEBUGINFOD_SCAN_WORKERS` | `-scan-workers` | Параллельные воркеры scan | `4` |
 | `DEBUGINFOD_URLS` | `-upstream` | Upstream для федерации | — |
@@ -121,6 +122,16 @@ GET /zabbix    → JSON-метрики для Zabbix HTTP agent
 
 Настройка Zabbix: [deploy/zabbix/README.md](deploy/zabbix/README.md).
 
+### Web UI
+
+```http
+GET /ui/              → дашборд (статистика + поиск)
+GET /ui/api/stats     → JSON счётчиков индекса
+GET /ui/api/search?q= → поиск артефактов по префиксу build-id
+```
+
+Отключить: `DEBUGINFOD_UI_ENABLED=false` или флаг `-ui=false`.
+
 ## Использование с GDB
 
 ```bash
@@ -158,6 +169,7 @@ scan paths ──► indexer ──► SQLite ◄── webapi ◄── HTTP cl
 | `internal/indexer` | Обход FS, DWARF, запись в БД |
 | `internal/storage` | SQLite: артефакты, sources, metadata |
 | `internal/webapi` | HTTP-обработчики |
+| `internal/webui` | Web UI дашборд (`/ui/`) |
 | `internal/fnmatch` | Shell-glob с FNM_PATHNAME для metadata |
 | `pkg/elfsection` | Извлечение сырых ELF-секций |
 

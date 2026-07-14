@@ -62,6 +62,7 @@ func main() {
 		ZabbixKey:       cfg.ZabbixKey,
 		CacheBytes:      cacheBytes,
 		CacheDir:        cfg.CacheDir,
+		UIEnabled:       cfg.UIEnabled,
 	}
 
 	server := &http.Server{

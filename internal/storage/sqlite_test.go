@@ -107,6 +107,35 @@ func TestNeedsScanIncremental(t *testing.T) {
 	}
 }
 
+func TestSearchBuildIDForUI(t *testing.T) {
+	store, err := New(filepath.Join(t.TempDir(), "search.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	_ = store.AddArtifact(ArtifactInput{BuildID: "deadbeef", Type: "executable", FilePath: "/a"}, 1)
+	_ = store.AddArtifact(ArtifactInput{BuildID: "deadcafe", Type: "debuginfo", FilePath: "/b"}, 1)
+	_ = store.AddArtifact(ArtifactInput{BuildID: "cafebabe", Type: "executable", FilePath: "/c"}, 1)
+
+	ctx := context.Background()
+	results, err := store.SearchBuildIDForUI(ctx, "dead", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("results=%d, want 2", len(results))
+	}
+
+	all, err := store.SearchBuildIDForUI(ctx, "", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("empty query limit=2: got %d", len(all))
+	}
+}
+
 func TestSearchMetadataGlobNoNestedMatch(t *testing.T) {
 	store, err := New(filepath.Join(t.TempDir(), "glob.sqlite"))
 	if err != nil {

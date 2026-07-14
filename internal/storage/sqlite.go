@@ -341,6 +341,54 @@ func (s *Storage) HasBuildID(buildID string) (bool, error) {
 	return count > 0, err
 }
 
+// SearchBuildIDForUI ищет артефакты по префиксу build-id для Web UI.
+func (s *Storage) SearchBuildIDForUI(ctx context.Context, query string, limit int) ([]ArtifactRecord, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	query = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(query), "0x"))
+
+	var rows *sql.Rows
+	var err error
+	if query == "" {
+		rows, err = s.db.QueryContext(ctx, rebind(`
+			SELECT build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id
+			FROM artifacts
+			ORDER BY build_id
+			LIMIT ?
+		`, s.dialect), limit)
+	} else {
+		pattern := query + "%"
+		rows, err = s.db.QueryContext(ctx, rebind(`
+			SELECT build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id
+			FROM artifacts
+			WHERE build_id LIKE ? OR lower(raw_build_id) LIKE ?
+			ORDER BY build_id
+			LIMIT ?
+		`, s.dialect), pattern, pattern, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []ArtifactRecord
+	for rows.Next() {
+		if err := ctx.Err(); err != nil {
+			return results, err
+		}
+		rec, err := scanArtifactRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, rec)
+	}
+	if results == nil {
+		results = []ArtifactRecord{}
+	}
+	return results, rows.Err()
+}
+
 // SearchMetadata ищет артефакты по ключу debuginfod metadata API.
 func (s *Storage) SearchMetadata(ctx context.Context, key, value string) (MetadataResponse, error) {
 	switch key {
