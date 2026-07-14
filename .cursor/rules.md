@@ -28,7 +28,7 @@ internal/logging/        # log/slog JSON
 internal/pathsafe/        # path traversal validation
 pkg/buildid/             # GNU + Go build-id из ELF notes
 pkg/elfsection/          # сырые ELF-секции для /section
-deploy/                  # systemd unit, Zabbix docs
+deploy/                  # systemd unit, Zabbix docs, OPERATIONS.md
 ```
 
 ## Принципы
@@ -110,6 +110,10 @@ deploy/                  # systemd unit, Zabbix docs
 | `DEBUGINFOD_BASIC_AUTH_USER/PASSWORD` | — | Basic Auth |
 | `DEBUGINFOD_TLS_CERT/KEY/CLIENT_CA` | — | TLS и mTLS |
 | `DEBUGINFOD_METADATA_PAGE_SIZE` | `100` | Размер страницы metadata |
+
+## Документация для операторов
+
+Эксплуатация (backup, PostgreSQL, Zabbix, troubleshooting): [deploy/OPERATIONS.md](../deploy/OPERATIONS.md).
 
 ## База данных
 

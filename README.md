@@ -15,7 +15,7 @@ HTTP-сервер [debuginfod](https://sourceware.org/elfutils/Debuginfod.html) 
 | Мониторинг | Zabbix HTTP agent (`/zabbix`), Web UI дашборд (`/ui/`) |
 | CI | GitHub Actions: `vet`, `test -race`, `build` |
 
-Подробный план — [TODO.md](./TODO.md). Архитектура — [DEVELOPMENT.md](./DEVELOPMENT.md).
+Подробный план — [TODO.md](./TODO.md). Архитектура — [DEVELOPMENT.md](./DEVELOPMENT.md). Эксплуатация — [deploy/OPERATIONS.md](./deploy/OPERATIONS.md).
 
 ## Целевые ОС развёртывания
 
@@ -245,6 +245,7 @@ scan paths ──► indexer (workers) ──► SQLite/PostgreSQL ◄── web
 | [deploy/offline/README.md](./deploy/offline/README.md) | Оффлайн bundle `.deb`/`.rpm` |
 | [deploy/backup/README.md](./deploy/backup/README.md) | Backup и restore |
 | [deploy/postgresql/README.md](./deploy/postgresql/README.md) | PostgreSQL в проде |
+| [deploy/OPERATIONS.md](./deploy/OPERATIONS.md) | Руководство по эксплуатации |
 | [deploy/security/README.md](./deploy/security/README.md) | Path traversal, IMA, systemd hardening |
 
 ## Лицензия
