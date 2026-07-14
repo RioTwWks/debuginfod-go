@@ -211,6 +211,9 @@ curl 'http://localhost:8002/ui/api/search?q='
 | `make lint` | `golangci-lint run` |
 | `make build` | Собрать `./debuginfod` |
 | `make build-find` | Собрать `./debuginfod-find` |
+| `make package` | Собрать `.deb` и `.rpm` (nfpm) |
+| `make offline-bundle-deb` | Оффлайн bundle для Debian/Ubuntu/Astra |
+| `make offline-bundle-rpm` | Оффлайн bundle для RedOS/CentOS |
 | `make run-env` | Запуск с `.env` |
 | `make clean` | Бинарник, sqlite, cache |
 
@@ -307,9 +310,11 @@ cd examples && make demo
 
 ## Деплой
 
+- **Пакеты:** [deploy/README.md](./deploy/README.md) — `make package`, nfpm
+- **Оффлайн:** [deploy/offline/README.md](./deploy/offline/README.md) — bundle без интернета
 - **systemd:** [deploy/debuginfod-go.service](./deploy/debuginfod-go.service)
 - **Zabbix:** [deploy/zabbix/README.md](./deploy/zabbix/README.md)
-- **Docker:** `docker compose up --build`
+- **Docker:** `docker compose up --build` (только dev/demo)
 
 ## Cursor / MCP
 

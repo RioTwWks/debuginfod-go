@@ -74,6 +74,18 @@ go run ./cmd/debuginfod -s /usr/lib/debug -p 8002
 docker compose up --build
 ```
 
+### Пакеты и оффлайн-установка (production)
+
+На целевых ОС (Astra/Ubuntu/RedOS/CentOS) — нативные пакеты и установка **без интернета**:
+
+```bash
+make package                    # .deb + .rpm в dist/
+make offline-bundle-deb         # bundle для переноса (online build-хост)
+# на оффлайн-хосте: tar xf … && sudo ./install-offline.sh
+```
+
+Подробно: [deploy/README.md](deploy/README.md), [deploy/offline/README.md](deploy/offline/README.md).
+
 Примеры с GDB и демо stripped binary: [examples/](./examples/).
 
 ## Конфигурация
@@ -227,6 +239,8 @@ scan paths ──► indexer (workers) ──► SQLite/PostgreSQL ◄── web
 | [TODO.md](./TODO.md) | Roadmap |
 | [examples/](./examples/) | Docker-compose и GDB-скрипт |
 | [.cursor/rules.md](./.cursor/rules.md) | Правила для Cursor AI |
+| [deploy/README.md](./deploy/README.md) | Пакеты, systemd, оффлайн-установка |
+| [deploy/offline/README.md](./deploy/offline/README.md) | Оффлайн bundle `.deb`/`.rpm` |
 | [deploy/zabbix/README.md](./deploy/zabbix/README.md) | Мониторинг Zabbix |
 
 ## Лицензия

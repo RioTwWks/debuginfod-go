@@ -1,0 +1,4 @@
+# Runtime-зависимости debuginfod-go для RedOS/CentOS (x86_64).
+# Используется deploy/offline/download-deps-rpm.sh
+sqlite-libs
+ca-certificates

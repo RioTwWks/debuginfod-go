@@ -3,6 +3,7 @@
 #
 # Binaries for programs and plugins
 debuginfod
+debuginfod-find
 *.exe
 *.exe~
 *.dll
@@ -31,6 +32,9 @@ go.work.sum
 
 # Cache
 .debuginfod-cache/
+
+# Build artifacts
+dist/
 
 # env file
 .env

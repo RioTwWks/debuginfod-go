@@ -4,9 +4,17 @@ GO=go
 GOPATH?=$(shell go env GOPATH)
 SQLITE_DB=debuginfod.sqlite
 
-.PHONY: all build build-find test vet run run-env clean lint fmt docker
+.PHONY: all build build-find test vet run run-env clean lint fmt docker \
+	package package-deb package-rpm \
+	offline-download-deb offline-download-rpm \
+	offline-bundle-deb offline-bundle-rpm
 
 all: build
+
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || echo 0.1.0)
+NFPM ?= nfpm
+DIST_DIR = dist
+OFFLINE_DIR = dist/offline
 
 build:
 	$(GO) build -o $(BINARY_NAME) ./cmd/debuginfod
@@ -33,9 +41,42 @@ fmt:
 	$(GO) fmt ./...
 
 clean:
-	rm -f $(BINARY_NAME) $(SQLITE_DB)
-	rm -rf .debuginfod-cache
+	rm -f $(BINARY_NAME) debuginfod-find $(SQLITE_DB)
+	rm -rf .debuginfod-cache $(DIST_DIR)
 	$(GO) clean
+
+# --- Пакеты .deb / .rpm (nfpm) ---
+
+dist:
+	mkdir -p $(DIST_DIR)
+
+package-bin: dist build build-find
+	CGO_ENABLED=1 $(GO) build -trimpath -ldflags "-s -w" -o $(DIST_DIR)/debuginfod ./cmd/debuginfod
+	CGO_ENABLED=1 $(GO) build -trimpath -ldflags "-s -w" -o $(DIST_DIR)/debuginfod-find ./cmd/debuginfod-find
+
+package-deb: package-bin
+	VERSION=$(VERSION) $(NFPM) package -f deploy/nfpm.yaml -p deb -t $(DIST_DIR) --packager deb
+
+package-rpm: package-bin
+	VERSION=$(VERSION) $(NFPM) package -f deploy/nfpm.yaml -p rpm -t $(DIST_DIR) --packager rpm
+
+package: package-deb package-rpm
+
+# --- Оффлайн bundle (скачивание на online-хосте) ---
+
+offline-download-deb:
+	bash deploy/offline/download-deps-deb.sh
+
+offline-download-rpm:
+	bash deploy/offline/download-deps-rpm.sh
+
+offline-bundle-deb:
+	bash deploy/offline/download-deps-deb.sh
+	VERSION=$(VERSION) bash deploy/offline/make-bundle.sh deb
+
+offline-bundle-rpm:
+	bash deploy/offline/download-deps-rpm.sh
+	VERSION=$(VERSION) bash deploy/offline/make-bundle.sh rpm
 
 docker: build
 	docker build -t debuginfod-go .

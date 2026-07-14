@@ -1,0 +1,52 @@
+# nfpm: единый манифест для .deb (Astra/Ubuntu) и .rpm (RedOS/CentOS).
+# Сборка: make package  (требуется nfpm и CGO-бинарники в dist/)
+name: debuginfod-go
+arch: amd64
+platform: linux
+version: "${VERSION}"
+version_schema: none
+section: devel
+priority: optional
+maintainer: debuginfod-go maintainers
+description: |
+  HTTP-сервер debuginfod на Go. Отдаёт debuginfo, executable и source
+  по build-id для GDB/LLDB. Целевые ОС: Astra Linux, Ubuntu, RedOS, CentOS.
+license: MIT
+homepage: https://github.com/RioTwWks/debuginfod-go
+
+depends:
+  - libsqlite3-0
+  - ca-certificates
+
+overrides:
+  rpm:
+    depends:
+      - sqlite-libs
+      - ca-certificates
+
+contents:
+  - src: dist/debuginfod
+    dst: /usr/bin/debuginfod
+    file_info:
+      mode: 0755
+  - src: dist/debuginfod-find
+    dst: /usr/bin/debuginfod-find
+    file_info:
+      mode: 0755
+  - src: deploy/debuginfod-go.service
+    dst: /lib/systemd/system/debuginfod-go.service
+    file_info:
+      mode: 0644
+  - src: deploy/package/debuginfod-go.env.example
+    dst: /etc/debuginfod-go/debuginfod-go.env.example
+    file_info:
+      mode: 0644
+    type: config|noreplace
+  - src: deploy/package/debuginfod-go.env.example
+    dst: /usr/share/doc/debuginfod-go/env.example
+    file_info:
+      mode: 0644
+
+scripts:
+  postinstall: deploy/package/postinstall.sh
+  preremove: deploy/package/preremove.sh
