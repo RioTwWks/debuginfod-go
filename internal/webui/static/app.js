@@ -4,9 +4,29 @@
   const uptimeEl = document.getElementById("uptime");
   const searchForm = document.getElementById("search-form");
   const searchInput = document.getElementById("search-input");
+  const searchHint = document.getElementById("search-hint");
   const searchStatus = document.getElementById("search-status");
   const resultsTable = document.getElementById("results-table");
   const resultsBody = document.getElementById("results-body");
+  const loadMoreBtn = document.getElementById("load-more");
+  const modeButtons = document.querySelectorAll(".mode-btn");
+
+  let searchKey = "buildid";
+  let nextOffset = 0;
+  let lastSearchValue = "";
+
+  const hints = {
+    buildid:
+      "Пустой запрос — первые 50 артефактов. Поиск по префиксу build-id (hex).",
+    glob: "Шаблон fnmatch, как в /metadata: /usr/bin/*, /usr/lib/debug/**",
+    file: "Точный путь файла, как в /metadata?key=file&value=…",
+  };
+
+  const placeholders = {
+    buildid: "Префикс build-id (hex), например deadbeef",
+    glob: "Шаблон пути, например /usr/bin/*",
+    file: "Абсолютный путь, например /usr/bin/ls",
+  };
 
   function formatNumber(n) {
     return new Intl.NumberFormat("ru-RU").format(n);
@@ -31,6 +51,21 @@
     const div = document.createElement("div");
     div.textContent = s;
     return div.innerHTML;
+  }
+
+  function setSearchMode(key) {
+    searchKey = key;
+    nextOffset = 0;
+    modeButtons.forEach(function (btn) {
+      const active = btn.dataset.key === key;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    searchInput.placeholder = placeholders[key] || "";
+    searchHint.textContent = hints[key] || "";
+    searchInput.value = "";
+    loadMoreBtn.hidden = true;
+    doSearch("", false);
   }
 
   async function loadStats() {
@@ -99,89 +134,148 @@
     scanInfo.innerHTML = scanParts.join("");
   }
 
-  async function doSearch(query) {
-    searchStatus.textContent = "Поиск…";
-    searchStatus.classList.remove("error");
-    resultsTable.hidden = true;
+  function buildSearchParams(value, append) {
+    const params = new URLSearchParams();
+    params.set("key", searchKey);
+    if (searchKey === "buildid") {
+      if (value) params.set("q", value);
+    } else {
+      params.set("value", value);
+      if (append && nextOffset > 0) {
+        params.set("offset", String(nextOffset));
+      }
+    }
+    return params;
+  }
+
+  async function doSearch(query, append) {
+    if (!append) {
+      nextOffset = 0;
+      lastSearchValue = query;
+      searchStatus.textContent = "Поиск…";
+      searchStatus.classList.remove("error");
+      resultsTable.hidden = true;
+      loadMoreBtn.hidden = true;
+    } else {
+      loadMoreBtn.disabled = true;
+      loadMoreBtn.textContent = "Загрузка…";
+    }
 
     try {
-      const params = new URLSearchParams();
-      if (query) params.set("q", query);
+      const params = buildSearchParams(append ? lastSearchValue : query, append);
       const res = await fetch("/ui/api/search?" + params.toString());
-      if (!res.ok) throw new Error("HTTP " + res.status);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "HTTP " + res.status);
+      }
       const data = await res.json();
-      renderResults(data);
+      renderResults(data, append);
     } catch (err) {
       searchStatus.textContent = "Ошибка поиска: " + err.message;
       searchStatus.classList.add("error");
+      loadMoreBtn.hidden = true;
+    } finally {
+      loadMoreBtn.disabled = false;
+      loadMoreBtn.textContent = "Ещё результаты";
     }
   }
 
-  function renderResults(data) {
-    const q = data.query ? ' по «' + data.query + '»' : "";
-    searchStatus.textContent =
-      "Найдено: " + formatNumber(data.count) + q;
+  function renderRow(row) {
+    const typeCls = row.type === "executable" ? "executable" : "debuginfo";
+    const file = row.archive ? row.archive + " → " + row.file : row.file;
+    const links =
+      '<a href="/buildid/' +
+      encodeURIComponent(row.buildid) +
+      '/debuginfo">debuginfo</a>' +
+      '<a href="/buildid/' +
+      encodeURIComponent(row.buildid) +
+      '/executable">executable</a>';
+    return (
+      "<tr>" +
+      '<td class="mono">' +
+      escapeHtml(row.buildid) +
+      "</td>" +
+      '<td><span class="type-badge ' +
+      typeCls +
+      '">' +
+      escapeHtml(row.type) +
+      "</span></td>" +
+      '<td class="mono">' +
+      escapeHtml(file) +
+      "</td>" +
+      "<td>" +
+      escapeHtml(row.buildid_kind || "—") +
+      "</td>" +
+      '<td class="links">' +
+      links +
+      "</td>" +
+      "</tr>"
+    );
+  }
+
+  function renderResults(data, append) {
+    let label = "";
+    if (searchKey === "buildid") {
+      label = data.query ? ' по «' + data.query + '»' : "";
+    } else {
+      label = data.value ? ' (' + searchKey + ': «' + data.value + '»)' : "";
+    }
+
+    const totalShown = append
+      ? resultsBody.querySelectorAll("tr").length + (data.results ? data.results.length : 0)
+      : data.count;
+
+    let status =
+      "Найдено: " + formatNumber(append ? totalShown : data.count) + label;
+    if (!data.complete) {
+      status += " (есть ещё — нажмите «Ещё результаты»)";
+    }
+    searchStatus.textContent = status;
 
     if (!data.results || data.results.length === 0) {
-      resultsTable.hidden = true;
+      if (!append) {
+        resultsTable.hidden = true;
+      }
+      loadMoreBtn.hidden = true;
       return;
     }
 
-    resultsBody.innerHTML = data.results
-      .map(function (row) {
-        const typeCls =
-          row.type === "executable" ? "executable" : "debuginfo";
-        const file = row.archive
-          ? row.archive + " → " + row.file
-          : row.file;
-        const links =
-          '<a href="/buildid/' +
-          encodeURIComponent(row.buildid) +
-          '/debuginfo">debuginfo</a>' +
-          '<a href="/buildid/' +
-          encodeURIComponent(row.buildid) +
-          '/executable">executable</a>';
-        return (
-          "<tr>" +
-          '<td class="mono">' +
-          escapeHtml(row.buildid) +
-          "</td>" +
-          '<td><span class="type-badge ' +
-          typeCls +
-          '">' +
-          escapeHtml(row.type) +
-          "</span></td>" +
-          '<td class="mono">' +
-          escapeHtml(file) +
-          "</td>" +
-          "<td>" +
-          escapeHtml(row.buildid_kind || "—") +
-          "</td>" +
-          '<td class="links">' +
-          links +
-          "</td>" +
-          "</tr>"
-        );
-      })
-      .join("");
+    const html = data.results.map(renderRow).join("");
+    if (append) {
+      resultsBody.insertAdjacentHTML("beforeend", html);
+    } else {
+      resultsBody.innerHTML = html;
+    }
 
     resultsTable.hidden = false;
+    nextOffset = data.next_offset || 0;
+    loadMoreBtn.hidden = data.complete || !nextOffset;
   }
+
+  modeButtons.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      setSearchMode(btn.dataset.key);
+    });
+  });
 
   searchForm.addEventListener("submit", function (e) {
     e.preventDefault();
-    doSearch(searchInput.value.trim());
+    doSearch(searchInput.value.trim(), false);
+  });
+
+  loadMoreBtn.addEventListener("click", function () {
+    doSearch(lastSearchValue, true);
   });
 
   let debounce;
   searchInput.addEventListener("input", function () {
     clearTimeout(debounce);
     debounce = setTimeout(function () {
-      doSearch(searchInput.value.trim());
+      doSearch(searchInput.value.trim(), false);
     }, 350);
   });
 
   loadStats();
   setInterval(loadStats, 30000);
-  doSearch("");
+  doSearch("", false);
 })();
