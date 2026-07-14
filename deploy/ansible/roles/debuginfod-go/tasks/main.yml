@@ -1,0 +1,18 @@
+---
+- name: Validate package source
+  ansible.builtin.assert:
+    that:
+      - debuginfod_package_path | length > 0 or debuginfod_package_url | default('') | length > 0
+    fail_msg: "Задайте debuginfod_package_path или debuginfod_package_url"
+
+- name: Include OS-specific install tasks
+  ansible.builtin.include_tasks: "{{ lookup('first_found', params) }}"
+  vars:
+    params:
+      files:
+        - "{{ ansible_os_family | lower }}.yml"
+        - "{{ ansible_facts['distribution'] | lower }}.yml"
+      skip: true
+
+- name: Include common configuration tasks
+  ansible.builtin.import_tasks: common.yml

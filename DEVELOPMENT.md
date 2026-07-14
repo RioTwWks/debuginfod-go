@@ -310,11 +310,12 @@ cd examples && make demo
 
 ## Деплой
 
-- **Пакеты:** [deploy/README.md](./deploy/README.md) — `make package`, nfpm
-- **Оффлайн:** [deploy/offline/README.md](./deploy/offline/README.md) — bundle без интернета
-- **systemd:** [deploy/debuginfod-go.service](./deploy/debuginfod-go.service)
+- **Обзор:** [deploy/README.md](./deploy/README.md) — продакшн-схема
+- **Пакеты / оффлайн:** [deploy/offline/README.md](./deploy/offline/README.md)
+- **Ansible:** [deploy/ansible/README.md](./deploy/ansible/README.md)
+- **nginx:** [deploy/nginx/README.md](./deploy/nginx/README.md)
 - **Zabbix:** [deploy/zabbix/README.md](./deploy/zabbix/README.md)
-- **Docker:** `docker compose up --build` (только dev/demo)
+- **systemd:** [deploy/debuginfod-go.service](./deploy/debuginfod-go.service)
 
 ## Cursor / MCP
 

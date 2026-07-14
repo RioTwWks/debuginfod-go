@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<zabbix_export>
+    <version>6.0</version>
+    <date>2026-07-14T00:00:00Z</date>
+    <groups>
+        <group>
+            <uuid>a1b2c3d4e5f6478990abcdef12345678</uuid>
+            <name>Templates/Applications</name>
+        </group>
+    </groups>
+    <templates>
+        <template>
+            <uuid>b2c3d4e5f6478990abcdef1234567890</uuid>
+            <template>debuginfod-go by HTTP</template>
+            <name>debuginfod-go by HTTP</name>
+            <description>Мониторинг debuginfod-go через /zabbix и /healthz. Импорт: Configuration → Templates → Import.</description>
+            <groups>
+                <group>
+                    <name>Templates/Applications</name>
+                </group>
+            </groups>
+            <macros>
+                <macro>
+                    <macro>{$DEBUGINFOD.URL}</macro>
+                    <value>http://127.0.0.1:8002</value>
+                    <description>Базовый URL (через nginx: https://debuginfod.example.com)</description>
+                </macro>
+                <macro>
+                    <macro>{$DEBUGINFOD.ZABBIX_KEY}</macro>
+                    <value></value>
+                    <description>X-Zabbix-Token (пусто = без заголовка)</description>
+                </macro>
+                <macro>
+                    <macro>{$DEBUGINFOD.SCAN_MAX_MS}</macro>
+                    <value>60000</value>
+                    <description>Порог длительности scan (мс)</description>
+                </macro>
+            </macros>
+            <items>
+                <item>
+                    <uuid>c3d4e5f6478990abcdef12345678901</uuid>
+                    <name>HTTP 5xx total</name>
+                    <type>HTTP_AGENT</type>
+                    <key>debuginfod.http_5xx_total</key>
+                    <delay>1m</delay>
+                    <history>7d</history>
+                    <trends>365d</trends>
+                    <url>{$DEBUGINFOD.URL}/zabbix</url>
+                    <headers>
+                        <header>
+                            <name>X-Zabbix-Token</name>
+                            <value>{$DEBUGINFOD.ZABBIX_KEY}</value>
+                        </header>
+                    </headers>
+                    <preprocessing>
+                        <step>
+                            <type>JSONPATH</type>
+                            <params>$.http_5xx_total</params>
+                        </step>
+                    </preprocessing>
+                </item>
+                <item>
+                    <uuid>d4e5f6478990abcdef123456789012</uuid>
+                    <name>Last scan errors</name>
+                    <type>HTTP_AGENT</type>
+                    <key>debuginfod.last_scan_errors</key>
+                    <delay>1m</delay>
+                    <history>7d</history>
+                    <url>{$DEBUGINFOD.URL}/zabbix</url>
+                    <headers>
+                        <header>
+                            <name>X-Zabbix-Token</name>
+                            <value>{$DEBUGINFOD.ZABBIX_KEY}</value>
+                        </header>
+                    </headers>
+                    <preprocessing>
+                        <step>
+                            <type>JSONPATH</type>
+                            <params>$.last_scan_errors</params>
+                        </step>
+                    </preprocessing>
+                </item>
+                <item>
+                    <uuid>e5f6478990abcdef1234567890123</uuid>
+                    <name>Last scan duration ms</name>
+                    <type>HTTP_AGENT</type>
+                    <key>debuginfod.last_scan_duration_ms</key>
+                    <delay>1m</delay>
+                    <history>7d</history>
+                    <url>{$DEBUGINFOD.URL}/zabbix</url>
+                    <headers>
+                        <header>
+                            <name>X-Zabbix-Token</name>
+                            <value>{$DEBUGINFOD.ZABBIX_KEY}</value>
+                        </header>
+                    </headers>
+                    <preprocessing>
+                        <step>
+                            <type>JSONPATH</type>
+                            <params>$.last_scan_duration_ms</params>
+                        </step>
+                    </preprocessing>
+                </item>
+                <item>
+                    <uuid>f6478990abcdef12345678901234</uuid>
+                    <name>Artifacts total</name>
+                    <type>HTTP_AGENT</type>
+                    <key>debuginfod.artifacts_total</key>
+                    <delay>5m</delay>
+                    <history>7d</history>
+                    <url>{$DEBUGINFOD.URL}/zabbix</url>
+                    <headers>
+                        <header>
+                            <name>X-Zabbix-Token</name>
+                            <value>{$DEBUGINFOD.ZABBIX_KEY}</value>
+                        </header>
+                    </headers>
+                    <preprocessing>
+                        <step>
+                            <type>JSONPATH</type>
+                            <params>$.artifacts_total</params>
+                        </step>
+                    </preprocessing>
+                </item>
+                <item>
+                    <uuid>478990abcdef123456789012345</uuid>
+                    <name>Cache bytes</name>
+                    <type>HTTP_AGENT</type>
+                    <key>debuginfod.cache_bytes</key>
+                    <delay>5m</delay>
+                    <history>7d</history>
+                    <url>{$DEBUGINFOD.URL}/zabbix</url>
+                    <headers>
+                        <header>
+                            <name>X-Zabbix-Token</name>
+                            <value>{$DEBUGINFOD.ZABBIX_KEY}</value>
+                        </header>
+                    </headers>
+                    <preprocessing>
+                        <step>
+                            <type>JSONPATH</type>
+                            <params>$.cache_bytes</params>
+                        </step>
+                    </preprocessing>
+                </item>
+            </items>
+            <triggers>
+                <trigger>
+                    <uuid>58990abcdef1234567890123456</uuid>
+                    <expression>last(/debuginfod-go by HTTP/debuginfod.last_scan_errors)&gt;0</expression>
+                    <name>debuginfod: ошибки при последнем scan</name>
+                    <priority>WARNING</priority>
+                    <description>last_scan_errors &gt; 0 в /zabbix JSON</description>
+                </trigger>
+                <trigger>
+                    <uuid>8990abcdef12345678901234567</uuid>
+                    <expression>last(/debuginfod-go by HTTP/debuginfod.last_scan_duration_ms)&gt;{$DEBUGINFOD.SCAN_MAX_MS}</expression>
+                    <name>debuginfod: долгий scan</name>
+                    <priority>WARNING</priority>
+                    <description>Длительность scan превышает порог {$DEBUGINFOD.SCAN_MAX_MS} мс</description>
+                </trigger>
+                <trigger>
+                    <uuid>990abcdef123456789012345678</uuid>
+                    <expression>change(/debuginfod-go by HTTP/debuginfod.http_5xx_total)&gt;0</expression>
+                    <name>debuginfod: рост HTTP 5xx</name>
+                    <priority>AVERAGE</priority>
+                    <description>Счётчик http_5xx_total увеличился с прошлой проверки</description>
+                </trigger>
+                <trigger>
+                    <uuid>a90abcdef1234567890123456789</uuid>
+                    <expression>min(/debuginfod-go by HTTP/web.test.fail[debuginfod healthz,healthz],#3)&gt;0</expression>
+                    <name>debuginfod: сервис недоступен (healthz)</name>
+                    <priority>HIGH</priority>
+                    <description>Web scenario /healthz не вернул 200 ok</description>
+                </trigger>
+            </triggers>
+            <httptests>
+                <httptest>
+                    <uuid>b90abcdef1234567890123456789</uuid>
+                    <name>debuginfod healthz</name>
+                    <delay>1m</delay>
+                    <steps>
+                        <step>
+                            <name>healthz</name>
+                            <url>{$DEBUGINFOD.URL}/healthz</url>
+                            <status_codes>200</status_codes>
+                            <required>ok</required>
+                            <follow_redirects>YES</follow_redirects>
+                        </step>
+                    </steps>
+                </httptest>
+            </httptests>
+        </template>
+    </templates>
+</zabbix_export>

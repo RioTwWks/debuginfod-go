@@ -39,6 +39,28 @@ Header: X-Zabbix-Token: <DEBUGINFOD_ZABBIX_KEY>   # если задан ключ
 
 Web UI (`/ui/api/stats`) возвращает похожие счётчики плюс `last_scan_finished_at`.
 
+## Импорт template (рекомендуется)
+
+```text
+Configuration → Templates → Import → deploy/zabbix/template_debuginfod-go.xml
+```
+
+Template **debuginfod-go by HTTP** включает:
+
+- HTTP agent items: `http_5xx_total`, `last_scan_errors`, `last_scan_duration_ms`, `artifacts_total`, `cache_bytes`
+- Web scenario: `/healthz`
+- Triggers: недоступность, рост 5xx, ошибки scan, долгий scan
+
+Макросы на хосте:
+
+| Макрос | Пример |
+|--------|--------|
+| `{$DEBUGINFOD.URL}` | `https://debuginfod.example.com` или `http://127.0.0.1:8002` |
+| `{$DEBUGINFOD.ZABBIX_KEY}` | токен из `DEBUGINFOD_ZABBIX_KEY` |
+| `{$DEBUGINFOD.SCAN_MAX_MS}` | `60000` |
+
+**Actions** (email/Telegram): см. [actions.md](./actions.md).
+
 ## Настройка хоста в Zabbix
 
 1. Host с интерфейсом Agent (или без агента).
@@ -64,7 +86,9 @@ Web UI (`/ui/api/stats`) возвращает похожие счётчики п
 X-Zabbix-Token: {$DEBUGINFOD.ZABBIX_KEY}
 ```
 
-## Триггеры (примеры)
+## Триггеры
+
+Включены в [template_debuginfod-go.xml](./template_debuginfod-go.xml). Ручная настройка (без template):
 
 | Триггер | Условие |
 |---------|---------|

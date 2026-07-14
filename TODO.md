@@ -28,11 +28,11 @@ CI (GitHub Actions) → .deb / .rpm → Ansible → systemd + nginx → Zabbix
 | Слой | Инструмент | Статус |
 |------|------------|--------|
 | Запуск | **systemd** | ✅ `deploy/debuginfod-go.service` |
-| Мониторинг | **Zabbix** (`/zabbix`, `/healthz`) | ✅ endpoint; template/triggers — в плане |
+| Мониторинг | **Zabbix** (`/zabbix`, `/healthz`) | ✅ template + triggers + actions.md |
 | Доставка | **нативные `.deb` / `.rpm`** | ✅ nfpm + `make package` |
 | Оффлайн | **bundle без интернета** | ✅ `deploy/offline/`, `make offline-bundle-*` |
-| Конфигурация | **Ansible** (или имеющийся CM) | ⬜ в плане |
-| Периметр | **nginx** (TLS, ACL, rate limit) | ⬜ в плане |
+| Конфигурация | **Ansible** | ✅ `deploy/ansible/` |
+| Периметр | **nginx** (TLS, ACL, rate limit) | ✅ `deploy/nginx/` |
 | БД (опц.) | **PostgreSQL** + backup | ✅ драйвер; backup — в плане |
 | Оркестрация | ~~Kubernetes~~ | ❌ вне scope |
 
@@ -46,16 +46,16 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 
 - [x] **Нативные пакеты `.deb` / `.rpm`** — nfpm: `deploy/nfpm.yaml`, postinstall, systemd, `/etc/debuginfod-go`
 - [x] **Оффлайн-установка** — `deploy/offline/`: скачивание зависимостей, bundle `.tar.gz`, install без сети
-- [ ] **Ansible playbook** — раскатка на Astra/Ubuntu (deb) и RedOS/CentOS (rpm): пакет, `.env`, systemd, firewall
-- [ ] **nginx reverse proxy** — пример конфига: TLS-терминация, ACL, rate limit на периметре
-- [ ] **Zabbix template** — triggers (5xx, `last_scan_errors`, недоступность `/healthz`), actions (alert)
+- [x] **Ansible playbook** — `deploy/ansible/`: deb/rpm, env, systemd, firewall (опц.)
+- [x] **nginx reverse proxy** — `deploy/nginx/`: TLS, ACL, rate limit
+- [x] **Zabbix template** — `template_debuginfod-go.xml`, triggers, [actions.md](./deploy/zabbix/actions.md)
 
 ### Средний приоритет
 
 - [x] **systemd unit** — `deploy/debuginfod-go.service`
 - [ ] **Публикация пакетов из CI** — артефакты `.deb`/`.rpm` во внутренний apt/dnf-репозиторий (Nexus, aptly, pulp)
 - [ ] **Backup** — SQLite/PostgreSQL (`pg_dump`), cache, конфиги; cron + restic/rsync
-- [ ] **Документация продакшн-схемы** — расширить `deploy/README.md`: nginx + Zabbix + federation
+- [ ] **Документация продакшн-схемы** — расширить при необходимости (базовый deploy/README.md ✅)
 - [ ] **Рекомендации PostgreSQL в проде** — когда переходить с SQLite, миграция, несколько инстансов за nginx
 
 ### Не планируется
@@ -135,7 +135,7 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 - [x] **Примеры в `examples/`** — docker-compose, GDB-скрипт
 - [x] **Диаграмма потока данных** — mermaid в DEVELOPMENT.md
 - [x] **Сравнение с upstream debuginfod** — таблица в DEVELOPMENT.md
-- [ ] **Руководство по эксплуатации** — nginx, Zabbix template (базовый deploy/README.md ✅)
+- [ ] **Руководство по эксплуатации** — backup, PostgreSQL (deploy/README.md ✅)
 
 ---
 
