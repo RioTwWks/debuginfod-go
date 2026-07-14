@@ -2,7 +2,7 @@
 
 Список улучшений по приоритету. Выполненное — `[x]`.
 
-**Статус проекта (2026-07-14):** MVP + elfutils + эксплуатация (Zabbix, offline, Ansible, nginx) + Web UI + API + security + docs.
+**Статус проекта (2026-07-14):** MVP завершён — elfutils-совместимость, эксплуатация (Zabbix, offline, Ansible, nginx), Web UI, API, security, docs, Go-экосистема, CI. Ниже — опциональные улучшения.
 
 ## Целевое развёртывание
 
@@ -133,20 +133,54 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 
 ## Документация
 
-- [x] **Примеры в `examples/`** — docker-compose, GDB-скрипт
+- [x] **Примеры в `examples/`** — docker-compose, GDB, Delve
 - [x] **Диаграмма потока данных** — mermaid в DEVELOPMENT.md
 - [x] **Сравнение с upstream debuginfod** — таблица в DEVELOPMENT.md
 - [x] **Руководство по эксплуатации** — [deploy/OPERATIONS.md](./deploy/OPERATIONS.md): backup, PostgreSQL, мониторинг, troubleshooting
 
 ---
 
+## Следующие шаги (рекомендуется)
+
+Пункты с реальной пользой для эксплуатации на целевых ОС. Приоритет — сверху вниз.
+
+### Эксплуатация
+
+- [ ] **Readiness probe `/readyz`** — 200 после первого успешного scan (Ansible/nginx: не отдавать трафик на «пустой» индекс; сейчас `/healthz` только liveness)
+- [ ] **Ручной rescan** — `SIGUSR1` или защищённый `POST /admin/rescan` без ожидания `DEBUGINFOD_RESCAN_INTERVAL` (после заливки пакетов в scan path)
+- [ ] **Designated scanner** — `DEBUGINFOD_SCAN_ENABLED=false` на read-only репликах PostgreSQL-кластера (сейчас — workaround через `RESCAN_INTERVAL=0`; см. [deploy/postgresql/README.md](./deploy/postgresql/README.md))
+- [ ] **Webhook при завершении scan** — HTTP POST с `indexed/skipped/errors/duration` (интеграция с CI, Zabbix trapper, внутренние уведомления)
+
+### CI и релизы
+
+- [ ] **E2E smoke в CI** — прогон `examples/` (docker-compose: healthz → metadata → GDB/Delve batch) на каждый PR
+- [ ] **GitHub Releases** — публикация `.deb`/`.rpm` по git tag (артефакты из CI `package` job → Release assets)
+
+### По запросу (платформы / upstream)
+
+- [ ] **Пакеты arm64** — `.deb`/`.rpm` для `aarch64` (сейчас nfpm и CI — только `amd64`; cross-build `debuginfod` для linux/arm64 уже есть)
+- [ ] **IMA verification** — опциональная проверка подписей при federation/скачивании (`DEBUGINFOD_IMA=enforcing`, parity с elfutils 0.192+; рекомендации уже в [deploy/security/README.md](./deploy/security/README.md))
+
+### UI (низкий приоритет)
+
+- [ ] **Web UI: поиск metadata** — glob/file в дашборде (сейчас `/ui/api/search` — только prefix по build-id)
+
+---
+
 ## Идеи «на будущее»
 
+Крупные изменения архитектуры — только при явной потребности (кластер, нестандартные форматы).
+
 - [x] **Web UI** — `/ui/` дашборд: статистика, поиск по build-id
-- [ ] **Webhook при завершении scan**
-- [ ] **S3/MinIO backend** — хранение извлечённых артефактов (альтернатива локальному cache)
-- [ ] **Плагинная система форматов архивов**
-- [ ] **Централизованные логи** — journald/rsyslog → ELK (если уже есть в инфраструктуре)
+- [ ] **S3/MinIO backend** — хранение извлечённых артефактов (альтернатива локальному cache; общий кэш для нескольких инстансов)
+- [ ] **Плагинная система форматов архивов** — подключение обработчиков `.deb`/`.rpm`/tar без правок `internal/archive`
+- [ ] **Централизованные логи** — journald/rsyslog → ELK (если уже есть в инфраструктуре; код не обязателен — достаточно runbook)
+
+### Не планируется
+
+- [x] ~~**Kubernetes / Helm**~~ — вне scope
+- [x] ~~**LDAP-авторизация**~~ — Basic Auth / mTLS / nginx ACL достаточно для целевого деплоя
+- [x] ~~**Prometheus**~~ — Zabbix `/zabbix`
 
 ---
 
