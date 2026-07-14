@@ -12,6 +12,7 @@ import (
 	"github.com/your-username/debuginfod-go/internal/federation"
 	"github.com/your-username/debuginfod-go/internal/metrics"
 	"github.com/your-username/debuginfod-go/internal/storage"
+	"github.com/your-username/debuginfod-go/internal/webui"
 	"github.com/your-username/debuginfod-go/pkg/buildid"
 	"github.com/your-username/debuginfod-go/pkg/elfsection"
 )
@@ -25,6 +26,7 @@ type ServerOpts struct {
 	ZabbixKey        string
 	CacheBytes       func() int64
 	CacheDir         string
+	UIEnabled        bool
 }
 
 // Handler обслуживает HTTP-запросы протокола debuginfod.
@@ -235,6 +237,14 @@ func NewMux(opts ServerOpts) http.Handler {
 	mux.HandleFunc("/metadata", MetadataHandler(opts))
 	mux.HandleFunc("/zabbix", metrics.Handler(opts.Metrics, opts.Store, opts.CacheBytes, opts.ZabbixKey))
 	mux.Handle("/buildid/", NewHandler(opts))
+
+	if opts.UIEnabled {
+		webui.Register(mux, webui.Opts{
+			Store:      opts.Store,
+			Metrics:    opts.Metrics,
+			CacheBytes: opts.CacheBytes,
+		})
+	}
 
 	var handler http.Handler = mux
 	if opts.Metrics != nil {
