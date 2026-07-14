@@ -179,13 +179,13 @@ func clientIP(r *http.Request) string {
 	return host
 }
 
-// BasicAuthMiddleware защищает эндпоинты Basic Auth (/healthz без auth).
+// BasicAuthMiddleware защищает эндпоинты Basic Auth (/healthz и /readyz без auth).
 func BasicAuthMiddleware(user, pass string, next http.Handler) http.Handler {
 	if user == "" || pass == "" {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" {
+		if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
 			next.ServeHTTP(w, r)
 			return
 		}

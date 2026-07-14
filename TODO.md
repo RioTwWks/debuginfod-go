@@ -146,10 +146,10 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 
 ### Эксплуатация
 
-- [ ] **Readiness probe `/readyz`** — 200 после первого успешного scan (Ansible/nginx: не отдавать трафик на «пустой» индекс; сейчас `/healthz` только liveness)
-- [ ] **Ручной rescan** — `SIGUSR1` или защищённый `POST /admin/rescan` без ожидания `DEBUGINFOD_RESCAN_INTERVAL` (после заливки пакетов в scan path)
-- [ ] **Designated scanner** — `DEBUGINFOD_SCAN_ENABLED=false` на read-only репликах PostgreSQL-кластера (сейчас — workaround через `RESCAN_INTERVAL=0`; см. [deploy/postgresql/README.md](./deploy/postgresql/README.md))
-- [ ] **Webhook при завершении scan** — HTTP POST с `indexed/skipped/errors/duration` (интеграция с CI, Zabbix trapper, внутренние уведомления)
+- [x] **Readiness probe `/readyz`** — 200 после первого успешного scan (Ansible/nginx: не отдавать трафик на «пустой» индекс; сейчас `/healthz` только liveness)
+- [x] **Ручной rescan** — `SIGUSR1` или защищённый `POST /admin/rescan` без ожидания `DEBUGINFOD_RESCAN_INTERVAL` (после заливки пакетов в scan path)
+- [x] **Designated scanner** — `DEBUGINFOD_SCAN_ENABLED=false` на read-only репликах PostgreSQL-кластера (сейчас — workaround через `RESCAN_INTERVAL=0`; см. [deploy/postgresql/README.md](./deploy/postgresql/README.md))
+- [x] **Webhook при завершении scan** — HTTP POST с `indexed/skipped/errors/duration` (интеграция с CI, Zabbix trapper, внутренние уведомления)
 
 ### CI и релизы
 

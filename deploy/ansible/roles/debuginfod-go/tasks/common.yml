@@ -32,3 +32,14 @@
   delay: 2
   until: healthz.status == 200 and 'ok' in healthz.content
   changed_when: false
+
+- name: Wait for readyz
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ debuginfod_port }}/readyz"
+    return_content: true
+  register: readyz
+  retries: 30
+  delay: 2
+  until: readyz.status == 200 and 'ready' in readyz.content
+  changed_when: false
+  when: debuginfod_scan_enabled | default(true) | bool

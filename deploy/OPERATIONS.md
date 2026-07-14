@@ -124,8 +124,25 @@ curl -s "http://127.0.0.1:8002/metadata?key=glob&value=*" | head -c 200
 ### Принудительный rescan
 
 ```bash
-sudo systemctl restart debuginfod-go
+# HTTP (требует DEBUGINFOD_ADMIN_KEY или DEBUGINFOD_ZABBIX_KEY)
+curl -X POST "http://127.0.0.1:8002/admin/rescan?key=${DEBUGINFOD_ZABBIX_KEY}"
+
+# Или сигнал systemd (без перезапуска)
+sudo systemctl kill -s USR1 debuginfod-go
 ```
+
+Альтернатива: `sudo systemctl restart debuginfod-go`.
+
+### Readiness
+
+- `/healthz` — liveness (процесс жив)
+- `/readyz` — readiness (первый scan завершён, или `DEBUGINFOD_SCAN_ENABLED=false`)
+
+```bash
+curl -sf http://127.0.0.1:8002/readyz
+```
+
+Для nginx/Ansible: не направлять трафик, пока `/readyz` не вернёт `200`.
 
 Инкрементальный scan пропускает неизменённые файлы (`scanned_files` по mtime/size).
 

@@ -16,6 +16,8 @@ debuginfod_log_level: info
 debuginfod_ui_enabled: true
 debuginfod_lazy_extract: true
 debuginfod_scan_workers: 4
+debuginfod_scan_enabled: true
+debuginfod_scan_webhook_url: ""
 debuginfod_zabbix_key: ""
 debuginfod_upstream_urls: ""
 debuginfod_database_url: ""

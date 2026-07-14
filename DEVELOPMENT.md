@@ -69,7 +69,8 @@ flowchart TB
 | `internal/archive` | ELF и исходники из deb/rpm/tar/SRPM/DSC |
 | `internal/indexer` | `WalkDir`, worker pool, инкрементальный scan, DWARF sources |
 | `internal/storage` | CRUD артефактов, sources, metadata search, `Stats()` |
-| `internal/webapi` | `/buildid`, `/metadata`, `/healthz`, `/zabbix`, gzip, federation |
+| `internal/webapi` | `/buildid`, `/metadata`, `/healthz`, `/readyz`, `/admin`, `/zabbix`, gzip, federation |
+| `internal/scanrunner` | Периодический/ручной scan, webhook, `SCAN_ENABLED` |
 | `internal/webui` | `/ui/` дашборд, `/ui/api/stats`, `/ui/api/search` |
 | `internal/metrics` | HTTP/scan/federation counters → Zabbix JSON |
 | `internal/federation` | Проксирование upstream при 404 |
@@ -120,7 +121,9 @@ Backend: SQLite (`DEBUGINFOD_DB_PATH`) или PostgreSQL (`DEBUGINFOD_DATABASE_U
 | `/buildid/<id>/source/<path>` | ✅ fallback по суффиксу пути |
 | `/buildid/<id>/section/<name>` | ✅ debuginfo → executable |
 | `/metadata?key=glob\|file\|buildid` | ✅ fnmatch Pathname, timeout |
-| `/healthz` | ✅ |
+| `/healthz` | ✅ liveness |
+| `/readyz` | ✅ readiness (после первого scan) |
+| `/admin/rescan` | ✅ POST, токен |
 | `/zabbix` | ✅ JSON для Zabbix HTTP agent |
 | `/ui/` | ✅ дашборд |
 | `/ui/api/stats` | ✅ |
@@ -292,7 +295,7 @@ Middleware в `internal/webapi/security.go`:
 |-----------|--------|-----------|
 | CORS | `DEBUGINFOD_CORS_ORIGINS` | `Access-Control-*` для указанных origins (`*` = все) |
 | Rate limit | `DEBUGINFOD_RATE_LIMIT` | Token bucket на IP (0 = выкл) |
-| Basic Auth | `DEBUGINFOD_BASIC_AUTH_*` | Защита всех маршрутов кроме `/healthz` |
+| Basic Auth | `DEBUGINFOD_BASIC_AUTH_*` | Защита всех маршрутов кроме `/healthz`, `/readyz` |
 | mTLS | `DEBUGINFOD_TLS_CERT/KEY/CLIENT_CA` | TLS + опциональная проверка клиентских сертификатов |
 
 ### OpenAPI
