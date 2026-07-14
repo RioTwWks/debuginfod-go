@@ -210,6 +210,7 @@ curl 'http://localhost:8002/ui/api/search?q='
 | `make fmt` | `go fmt ./...` |
 | `make lint` | `golangci-lint run` |
 | `make build` | Собрать `./debuginfod` |
+| `make build-find` | Собрать `./debuginfod-find` |
 | `make run-env` | Запуск с `.env` |
 | `make clean` | Бинарник, sqlite, cache |
 
@@ -227,7 +228,7 @@ go test ./... -race -count=1
 | `pkg/buildid` | GNU/Go notes, `FromBytes`, `Normalize` |
 | `pkg/elfsection` | Извлечение секций |
 | `internal/storage` | CRUD, metadata, `SearchBuildIDForUI`, incremental |
-| `internal/webapi` | HTTP handlers, section, metadata, integration |
+| `internal/webapi` | HTTP handlers, CORS/rate limit/auth, OpenAPI |
 | `internal/webui` | `/ui/`, stats, search |
 | `internal/indexer` | ELF scan, lazy tar archive |
 | `internal/archive` | deb/rpm/tar, DSC parser |
@@ -237,6 +238,47 @@ go test ./... -race -count=1
 | `internal/config` | env helpers |
 
 Инструментальные тесты с `gcc`/`rpmbuild` — `t.Skip` при отсутствии.
+
+## API и клиенты
+
+### Metadata pagination
+
+`GET /metadata` принимает `offset` и `limit`. Ответ:
+
+```json
+{
+  "artifacts": [ ... ],
+  "next_offset": 100
+}
+```
+
+`next_offset` присутствует только если есть следующая страница. Реализация: `internal/storage/sqlite.go` (`SearchMetadataQuery`), handler — `parseMetadataPagination()`.
+
+### Безопасность
+
+Middleware в `internal/webapi/security.go`:
+
+| Компонент | Конфиг | Поведение |
+|-----------|--------|-----------|
+| CORS | `DEBUGINFOD_CORS_ORIGINS` | `Access-Control-*` для указанных origins (`*` = все) |
+| Rate limit | `DEBUGINFOD_RATE_LIMIT` | Token bucket на IP (0 = выкл) |
+| Basic Auth | `DEBUGINFOD_BASIC_AUTH_*` | Защита всех маршрутов кроме `/healthz` |
+| mTLS | `DEBUGINFOD_TLS_CERT/KEY/CLIENT_CA` | TLS + опциональная проверка клиентских сертификатов |
+
+### OpenAPI
+
+Спецификация: `internal/webapi/openapi.yaml` (embed). Эндпоинт: `GET /openapi.yaml`.
+
+### CLI `debuginfod-find`
+
+`cmd/debuginfod-find` — обёртка над HTTP API:
+
+```bash
+make build-find
+export DEBUGINFOD_URLS=http://localhost:8002
+./debuginfod-find debuginfo <buildid> -o out.debug
+./debuginfod-find --key glob --value '/usr/bin/*'
+```
 
 ## CI
 

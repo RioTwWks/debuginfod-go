@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,12 +22,14 @@ import (
 type ServerOpts struct {
 	Store            *storage.Storage
 	MetadataMaxTime  time.Duration
+	MetadataPageSize int
 	Federation       *federation.Client
 	Metrics          *metrics.Collector
 	ZabbixKey        string
 	CacheBytes       func() int64
 	CacheDir         string
 	UIEnabled        bool
+	Security         SecurityOpts
 }
 
 // Handler обслуживает HTTP-запросы протокола debuginfod.
@@ -102,6 +105,8 @@ func MetadataHandler(opts ServerOpts) http.HandlerFunc {
 			return
 		}
 
+		offset, limit := parseMetadataPagination(r, opts.MetadataPageSize)
+
 		ctx := r.Context()
 		if opts.MetadataMaxTime > 0 {
 			var cancel context.CancelFunc
@@ -109,7 +114,9 @@ func MetadataHandler(opts ServerOpts) http.HandlerFunc {
 			defer cancel()
 		}
 
-		resp, err := opts.Store.SearchMetadata(ctx, key, value)
+		resp, err := opts.Store.SearchMetadataQuery(ctx, storage.MetadataQuery{
+			Key: key, Value: value, Offset: offset, Limit: limit,
+		})
 		if err != nil {
 			slog.Error("SearchMetadata failed", "key", key, "value", value, "err", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -121,6 +128,33 @@ func MetadataHandler(opts ServerOpts) http.HandlerFunc {
 			slog.Error("encode metadata", "err", err)
 		}
 	}
+}
+
+func parseMetadataPagination(r *http.Request, defaultLimit int) (offset, limit int) {
+	if v := r.URL.Query().Get("offset"); v != "" {
+		offset, _ = strconv.Atoi(v)
+		if offset < 0 {
+			offset = 0
+		}
+	}
+	if v := r.URL.Query().Get("limit"); v != "" {
+		limit, _ = strconv.Atoi(v)
+	} else if r.URL.Query().Has("offset") {
+		limit = defaultLimit
+	}
+	if limit < 0 {
+		limit = 0
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	if defaultLimit <= 0 {
+		defaultLimit = 100
+	}
+	if r.URL.Query().Has("offset") && limit == 0 {
+		limit = defaultLimit
+	}
+	return offset, limit
 }
 
 func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, buildID, artifactType string) {
@@ -235,6 +269,7 @@ func NewMux(opts ServerOpts) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", HealthHandler)
 	mux.HandleFunc("/metadata", MetadataHandler(opts))
+	mux.HandleFunc("/openapi.yaml", OpenAPIHandler)
 	mux.HandleFunc("/zabbix", metrics.Handler(opts.Metrics, opts.Store, opts.CacheBytes, opts.ZabbixKey))
 	mux.Handle("/buildid/", NewHandler(opts))
 
@@ -251,5 +286,8 @@ func NewMux(opts ServerOpts) http.Handler {
 		handler = MetricsMiddleware(opts.Metrics, handler)
 	}
 	handler = GzipMiddleware(handler)
+	handler = BasicAuthMiddleware(opts.Security.BasicAuthUser, opts.Security.BasicAuthPass, handler)
+	handler = RateLimitMiddleware(opts.Security.RateLimitRPS, handler)
+	handler = CORSMiddleware(opts.Security.CORSOrigins, handler)
 	return handler
 }

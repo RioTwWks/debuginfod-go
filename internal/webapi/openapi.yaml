@@ -1,0 +1,186 @@
+openapi: 3.0.3
+info:
+  title: debuginfod-go HTTP API
+  description: |
+    Совместимый с elfutils debuginfod HTTP API.
+    Целевые ОС: Astra Linux, Ubuntu, RedOS, CentOS.
+  version: 1.0.0
+  license:
+    name: MIT
+servers:
+  - url: http://localhost:8002
+    description: Локальный сервер
+paths:
+  /healthz:
+    get:
+      summary: Проверка живости
+      responses:
+        "200":
+          description: Сервис доступен
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "ok\n"
+  /metadata:
+    get:
+      summary: Поиск артефактов
+      parameters:
+        - name: key
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [glob, file, buildid]
+        - name: value
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+      responses:
+        "200":
+          description: Результаты поиска
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetadataResponse"
+        "400":
+          description: Неверные параметры
+  /buildid/{buildid}/debuginfo:
+    get:
+      summary: Debuginfo по build-id
+      parameters:
+        - $ref: "#/components/parameters/BuildID"
+      responses:
+        "200":
+          description: ELF debuginfo
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Не найдено
+  /buildid/{buildid}/executable:
+    get:
+      summary: Executable по build-id
+      parameters:
+        - $ref: "#/components/parameters/BuildID"
+      responses:
+        "200":
+          description: ELF executable
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Не найдено
+  /buildid/{buildid}/source/{sourcepath}:
+    get:
+      summary: Исходный файл
+      parameters:
+        - $ref: "#/components/parameters/BuildID"
+        - name: sourcepath
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Исходник
+        "404":
+          description: Не найдено
+  /buildid/{buildid}/section/{name}:
+    get:
+      summary: Сырая ELF-секция
+      parameters:
+        - $ref: "#/components/parameters/BuildID"
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Содержимое секции
+        "404":
+          description: Не найдено
+  /zabbix:
+    get:
+      summary: Метрики для Zabbix HTTP agent
+      security:
+        - ZabbixToken: []
+      responses:
+        "200":
+          description: JSON-метрики
+  /ui/:
+    get:
+      summary: Web UI дашборд
+      responses:
+        "200":
+          description: HTML-страница
+  /openapi.yaml:
+    get:
+      summary: Эта спецификация OpenAPI
+      responses:
+        "200":
+          description: OpenAPI YAML
+components:
+  parameters:
+    BuildID:
+      name: buildid
+      in: path
+      required: true
+      schema:
+        type: string
+        description: Lowercase hex build-id
+  schemas:
+    ArtifactRecord:
+      type: object
+      properties:
+        buildid:
+          type: string
+        type:
+          type: string
+          enum: [executable, debuginfo]
+        file:
+          type: string
+        archive:
+          type: string
+        buildid_kind:
+          type: string
+        raw_buildid:
+          type: string
+    MetadataResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArtifactRecord"
+        complete:
+          type: boolean
+        next_offset:
+          type: integer
+  securitySchemes:
+    BasicAuth:
+      type: http
+      scheme: basic
+    ZabbixToken:
+      type: apiKey
+      in: header
+      name: X-Zabbix-Token

@@ -2,7 +2,7 @@
 
 Список улучшений по приоритету. Выполненное — `[x]`.
 
-**Статус проекта (2026-07-14):** MVP + elfutils-совместимость + эксплуатация (Zabbix, federation, PostgreSQL) + архивы (deb/rpm/tar/lazy/SRPM) + Web UI.
+**Статус проекта (2026-07-14):** MVP + elfutils-совместимость + эксплуатация (Zabbix, federation, PostgreSQL) + архивы (deb/rpm/tar/lazy/SRPM) + Web UI + API и клиенты.
 
 ## Целевое развёртывание
 
@@ -54,11 +54,11 @@
 
 ## API и клиенты
 
-- [ ] **CLI `debuginfod-find`** — обёртка над HTTP API
-- [ ] **Пагинация metadata** — cursor/offset
-- [ ] **CORS и rate limiting**
-- [ ] **Аутентификация** — Basic Auth / mTLS
-- [ ] **OpenAPI/Swagger** — `docs/openapi.yaml`
+- [x] **CLI `debuginfod-find`** — обёртка над HTTP API
+- [x] **Пагинация metadata** — offset/limit + `next_offset`
+- [x] **CORS и rate limiting**
+- [x] **Аутентификация** — Basic Auth / mTLS
+- [x] **OpenAPI/Swagger** — `internal/webapi/openapi.yaml`, `GET /openapi.yaml`
 
 ## Go-экосистема
 

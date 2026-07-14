@@ -54,33 +54,62 @@ func main() {
 		return n
 	}
 
+	security := webapi.SecurityOpts{
+		CORSOrigins:   cfg.CORSOrigins,
+		RateLimitRPS:  cfg.RateLimitRPS,
+		BasicAuthUser: cfg.BasicAuthUser,
+		BasicAuthPass: cfg.BasicAuthPass,
+		TLSCertFile:   cfg.TLSCertFile,
+		TLSKeyFile:    cfg.TLSKeyFile,
+		TLSClientCA:   cfg.TLSClientCA,
+	}
+
 	opts := webapi.ServerOpts{
-		Store:           store,
-		MetadataMaxTime: cfg.MetadataMaxTime,
-		Federation:      fed,
-		Metrics:         collector,
-		ZabbixKey:       cfg.ZabbixKey,
-		CacheBytes:      cacheBytes,
-		CacheDir:        cfg.CacheDir,
-		UIEnabled:       cfg.UIEnabled,
+		Store:            store,
+		MetadataMaxTime:  cfg.MetadataMaxTime,
+		MetadataPageSize: cfg.MetadataPageSize,
+		Federation:       fed,
+		Metrics:          collector,
+		ZabbixKey:        cfg.ZabbixKey,
+		CacheBytes:       cacheBytes,
+		CacheDir:         cfg.CacheDir,
+		UIEnabled:        cfg.UIEnabled,
+		Security:         security,
+	}
+
+	tlsConfig, err := security.BuildTLSConfig()
+	if err != nil {
+		slog.Error("tls config", "err", err)
+		os.Exit(1)
 	}
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           webapi.NewMux(opts),
 		ReadHeaderTimeout: 10 * time.Second,
+		TLSConfig:         tlsConfig,
 	}
 
 	go func() {
 		slog.Info("debuginfod started",
 			"port", cfg.Port,
+			"tls", security.TLSConfigured(),
+			"mtls", security.TLSClientCA != "",
+			"basic_auth", security.BasicAuthEnabled(),
+			"cors", len(cfg.CORSOrigins) > 0,
+			"rate_limit", cfg.RateLimitRPS,
 			"scan_paths", cfg.ScanPaths,
 			"workers", cfg.ScanWorkers,
-			"metadata_maxtime", cfg.MetadataMaxTime,
 			"federation", len(cfg.UpstreamURLs) > 0,
 		)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("server failed", "err", err)
+		var serveErr error
+		if security.TLSConfigured() {
+			serveErr = server.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile)
+		} else {
+			serveErr = server.ListenAndServe()
+		}
+		if serveErr != nil && serveErr != http.ErrServerClosed {
+			slog.Error("server failed", "err", serveErr)
 			os.Exit(1)
 		}
 	}()

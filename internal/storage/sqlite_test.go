@@ -136,6 +136,44 @@ func TestSearchBuildIDForUI(t *testing.T) {
 	}
 }
 
+func TestSearchMetadataPagination(t *testing.T) {
+	store, err := New(filepath.Join(t.TempDir(), "page.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	for _, id := range []string{"aaaa", "bbbb", "cccc", "dddd"} {
+		_ = store.AddArtifact(ArtifactInput{
+			BuildID: id, Type: "executable", FilePath: "/usr/bin/" + id,
+		}, 1)
+	}
+
+	ctx := context.Background()
+	resp, err := store.SearchMetadataQuery(ctx, MetadataQuery{
+		Key: "glob", Value: "/usr/bin/*", Offset: 0, Limit: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Results) != 2 || resp.Complete {
+		t.Fatalf("page1: %+v", resp)
+	}
+	if resp.NextOffset != 2 {
+		t.Fatalf("next_offset=%d", resp.NextOffset)
+	}
+
+	resp, err = store.SearchMetadataQuery(ctx, MetadataQuery{
+		Key: "glob", Value: "/usr/bin/*", Offset: 2, Limit: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Results) != 2 {
+		t.Fatalf("page2: %+v", resp)
+	}
+}
+
 func TestSearchMetadataGlobNoNestedMatch(t *testing.T) {
 	store, err := New(filepath.Join(t.TempDir(), "glob.sqlite"))
 	if err != nil {

@@ -19,10 +19,11 @@ import (
 
 func testOpts(store *storage.Storage) ServerOpts {
 	return ServerOpts{
-		Store:           store,
-		MetadataMaxTime: 5 * time.Second,
-		Metrics:         metrics.New(),
-		CacheBytes:      func() int64 { return 0 },
+		Store:            store,
+		MetadataMaxTime:  5 * time.Second,
+		MetadataPageSize: 100,
+		Metrics:          metrics.New(),
+		CacheBytes:       func() int64 { return 0 },
 	}
 }
 
@@ -97,6 +98,35 @@ func TestMetadataHandler(t *testing.T) {
 	handler(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d", rec.Code)
+	}
+}
+
+func TestMetadataHandlerPagination(t *testing.T) {
+	store, err := storage.New(filepath.Join(t.TempDir(), "meta-page.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	for _, id := range []string{"a1", "a2", "a3"} {
+		_ = store.AddArtifact(storage.ArtifactInput{
+			BuildID: id, Type: "executable", FilePath: "/bin/" + id,
+		}, 1)
+	}
+
+	handler := MetadataHandler(testOpts(store))
+	req := httptest.NewRequest(http.MethodGet, "/metadata?key=glob&value=/bin/*&offset=0&limit=2", nil)
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d", rec.Code)
+	}
+	var resp storage.MetadataResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Results) != 2 || resp.Complete || resp.NextOffset != 2 {
+		t.Fatalf("resp=%+v", resp)
 	}
 }
 
