@@ -17,6 +17,7 @@ Kubernetes не используется — нативные пакеты + sys
 | [zabbix/](./zabbix/) | Мониторинг: template, triggers, actions |
 | [backup/](./backup/) | Backup/restore БД, config, timer |
 | [postgresql/](./postgresql/) | PostgreSQL в проде, миграция, кластер |
+| [OPERATIONS.md](./OPERATIONS.md) | **Руководство по эксплуатации** |
 
 ## Продакшн-схема
 
@@ -58,7 +59,9 @@ sudo dnf install dist/debuginfod-go-*.rpm      # RedOS/CentOS
 
 ## Эксплуатация
 
-### systemd
+Полное руководство оператора: **[OPERATIONS.md](./OPERATIONS.md)** (backup, PostgreSQL, мониторинг, troubleshooting).
+
+Кратко:
 
 ```bash
 sudo systemctl enable --now debuginfod-go

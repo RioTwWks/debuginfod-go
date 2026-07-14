@@ -308,8 +308,9 @@ cd examples && make demo
 4. Обновить README / DEVELOPMENT / `.env.example` / TODO.
 5. `make test && go vet ./...` перед PR.
 
-## Деплой
+## Деплой и эксплуатация
 
+- **Эксплуатация (операторы):** [deploy/OPERATIONS.md](./deploy/OPERATIONS.md)
 - **Обзор:** [deploy/README.md](./deploy/README.md) — продакшн-схема
 - **Пакеты / оффлайн:** [deploy/offline/README.md](./deploy/offline/README.md)
 - **Ansible:** [deploy/ansible/README.md](./deploy/ansible/README.md)
