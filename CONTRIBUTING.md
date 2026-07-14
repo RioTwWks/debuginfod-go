@@ -1,22 +1,23 @@
 # Внесение вклада
 
-Спасибо за интерес к проекту! Ниже — краткий процесс и ожидания по качеству кода.
+Спасибо за интерес к проекту! Ниже — процесс и ожидания по качеству кода.
 
 ## Перед началом
 
-1. Посмотрите [TODO.md](./TODO.md) — возможно, задача уже описана.
-2. Прочитайте [DEVELOPMENT.md](./DEVELOPMENT.md) — архитектура и команды.
-3. Для работы в Cursor — [.cursor/rules.md](./.cursor/rules.md).
+1. [TODO.md](./TODO.md) — возможно, задача уже описана.
+2. [DEVELOPMENT.md](./DEVELOPMENT.md) — архитектура, эндпоинты, тесты.
+3. [.cursor/rules.md](./.cursor/rules.md) — соглашения для Cursor AI.
 
 ## Процесс
 
-1. **Fork** репозитория [RioTwWks/debuginfod-go](https://github.com/RioTwWks/debuginfod-go).
-2. Создайте ветку:
-   - `feature/краткое-описание` — новая функциональность
-   - `fix/issue-N` — исправление бага
-   - `docs/...` — только документация
-3. Внесите изменения и **тесты** к ним.
-4. Убедитесь локально:
+1. **Fork** [RioTwWks/debuginfod-go](https://github.com/RioTwWks/debuginfod-go).
+2. Ветка:
+   - `feature/краткое-описание` — функциональность
+   - `fix/issue-N` — баг
+   - `docs/...` — документация
+   - `cursor/<описание>-c951` — ветки Cloud Agent
+3. Изменения + **тесты**.
+4. Локальная проверка:
 
    ```bash
    go fmt ./...
@@ -24,42 +25,48 @@
    make test
    ```
 
-5. Откройте **Pull Request** в `main` с описанием:
+5. **Pull Request** в `main`:
    - что сделано и зачем;
-   - как проверить;
+   - как проверить (`curl`, UI, GDB);
    - ссылка на issue / пункт TODO.
 
 ## Код-стайл
 
-- `gofmt` / `goimports` — обязательно.
-- Экспортируемые символы — godoc-комментарии на русском или английском (единообразно в рамках файла).
-- Без `panic` в библиотечном коде; ошибки возвращать явно.
-- `internal/*` — не экспортировать наружу модуля.
-- Зависимости добавлять осознанно; предпочитать stdlib.
+- `gofmt` / `goimports`.
+- Godoc на экспортируемых символах (русский или английский — единообразно в файле).
+- Без `panic` в библиотеках; ошибки возвращать явно.
+- Логирование — `log/slog`, не `print`/`fmt.Println`.
+- `internal/*` не экспортируется из модуля.
+- Зависимости — осознанно; предпочитать stdlib.
 
 ## Тесты
 
-- Юнит-тесты в `*_test.go` рядом с кодом.
-- Интеграционные тесты с `gcc`/`rpmbuild` — через `t.Skip` если инструмент недоступен.
-- Не коммитить бинарники, `*.sqlite`, `.debuginfod-cache/`.
+- `*_test.go` рядом с кодом.
+- `gcc` / `rpmbuild` — `t.Skip` если недоступны.
+- Не коммитить: бинарник `debuginfod`, `*.sqlite`, `.debuginfod-cache/`.
 
 ## Документация
 
 При изменении API, конфига или поведения обновите:
 
-- `README.md` — пользовательская документация;
-- `DEVELOPMENT.md` — детали для разработчиков;
-- `TODO.md` — отметьте выполненные пункты;
-- `.env.example` — новые переменные окружения.
+| Файл | Когда |
+|------|-------|
+| `README.md` | Пользовательская документация, конфиг, API |
+| `DEVELOPMENT.md` | Архитектура, схема БД, dev workflow |
+| `TODO.md` | Отметить `[x]` выполненные пункты |
+| `.env.example` | Новые `DEBUGINFOD_*` переменные |
+| `.cursor/rules.md` | Новые пакеты, эндпоинты, соглашения |
+| `.cursor/mcp.json` | Новые projectScripts / hints |
+| `deploy/zabbix/README.md` | Изменения `/zabbix` |
 
 ## CI
 
-PR должен проходить GitHub Actions (`.github/workflows/ci.yml`). Падающий CI — повод для исправления до merge.
+PR должен проходить GitHub Actions (`.github/workflows/ci.yml`): `vet`, `test -race`, `build`.
 
 ## Вопросы
 
-Открывайте [GitHub Issue](https://github.com/RioTwWks/debuginfod-go/issues) с тегом `question` или описанием предлагаемой фичи.
+[GitHub Issues](https://github.com/RioTwWks/debuginfod-go/issues) с тегом `question`.
 
 ## Лицензия
 
-Отправляя PR, вы соглашаетесь с лицензией MIT проекта.
+PR под лицензией MIT проекта.

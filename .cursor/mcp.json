@@ -29,12 +29,20 @@
     "build": "make build",
     "run": "make run-env",
     "health": "curl -sf http://localhost:8002/healthz",
+    "ui": "curl -sf http://localhost:8002/ui/ | head -20",
+    "ui-stats": "curl -s http://localhost:8002/ui/api/stats",
+    "ui-search": "curl -s 'http://localhost:8002/ui/api/search?q='",
+    "zabbix": "curl -s http://localhost:8002/zabbix",
     "metadata-glob": "curl -s 'http://localhost:8002/metadata?key=glob&value=*'"
   },
   "hints": [
-    "Перед изменением storage читай схему в internal/storage/sqlite.go",
-    "Тесты buildid требуют gcc для GNU и go build для Go",
-    "Архивные тесты RPM пропускаются без rpmbuild",
-    "Документация: README.md, DEVELOPMENT.md, TODO.md"
+    "Схема БД: internal/storage/sqlite.go (artifacts, sources, scanned_files)",
+    "Архивы: internal/archive/kind.go — DetectKind, IsArchive, IsSourcePackage",
+    "Lazy extract: DEBUGINFOD_LAZY_EXTRACT=true — archive_path+member_path без file_path",
+    "Тесты buildid требуют gcc; RPM — rpmbuild; Go binary — go build",
+    "HTTP: /buildid, /metadata, /healthz, /zabbix, /ui/",
+    "Документация: README.md, DEVELOPMENT.md, TODO.md, deploy/zabbix/README.md",
+    "Конфиг: .env.example + internal/config/config.go",
+    "Roadmap: TODO.md — отмечать [x] при завершении задач"
   ]
 }

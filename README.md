@@ -8,14 +8,14 @@ HTTP-сервер [debuginfod](https://sourceware.org/elfutils/Debuginfod.html) 
 
 | Область | Что реализовано |
 |---------|-----------------|
-| Индексация | ELF на диске, GNU + Go build-id, `.deb`/`.rpm`/`.apk`/pacman/tar, SRPM/DSC → исходники, отложенное извлечение |
-| HTTP API | `/buildid/*`, `/metadata`, `/healthz`, `/ui/` (Web UI) |
-| Хранение | SQLite, кэш извлечённых файлов из архивов |
-| Конфигурация | `.env`, переменные окружения, флаги CLI |
-| Эксплуатация | Периодический rescan, graceful shutdown, Docker |
+| Индексация | ELF, GNU + Go build-id, `.deb`/`.rpm`/`.apk`/pacman/tar, SRPM/DSC, lazy extract, инкрементальный scan |
+| HTTP API | `/buildid/*`, `/metadata`, `/healthz`, `/zabbix`, `/ui/` |
+| Хранение | SQLite или PostgreSQL, LRU-кэш, отложенное извлечение из архивов |
+| Эксплуатация | slog, worker pool, федерация, gzip, graceful shutdown, systemd |
+| Мониторинг | Zabbix HTTP agent (`/zabbix`), Web UI дашборд (`/ui/`) |
 | CI | GitHub Actions: `vet`, `test -race`, `build` |
 
-Подробный план развития — в [TODO.md](./TODO.md).
+Подробный план — [TODO.md](./TODO.md). Архитектура — [DEVELOPMENT.md](./DEVELOPMENT.md).
 
 ## Быстрый старт
 
@@ -23,26 +23,20 @@ HTTP-сервер [debuginfod](https://sourceware.org/elfutils/Debuginfod.html) 
 
 - Go 1.21+
 - GCC и `libsqlite3-dev` (CGO для SQLite)
-- Для тестов с C-бинарниками: `gcc`
-- Для индексации RPM: пакеты в формате `.rpm` в scan path
-- Поддерживаются также `.apk`, `.pkg.tar.zst`, plain `.tar.gz`/`.tar.xz`/`.tar.zst`, SRPM (`.src.rpm`) и DSC
+- Для тестов: `gcc`; для RPM-тестов: `rpmbuild`
+- Scan path: ELF, `.deb`, `.rpm`, `.apk`, `.pkg.tar.zst`, plain tar, `.src.rpm`, `.dsc`
 
-### Установка
+### Установка и запуск
 
 ```bash
 git clone https://github.com/RioTwWks/debuginfod-go.git
 cd debuginfod-go
 go mod download
-```
-
-### Запуск
-
-```bash
-cp .env.example .env   # отредактируйте при необходимости
+cp .env.example .env
 make run-env
 ```
 
-Или с явными флагами:
+Или явные флаги:
 
 ```bash
 go run ./cmd/debuginfod -s /usr/lib/debug -p 8002
@@ -56,38 +50,40 @@ docker compose up --build
 
 ## Конфигурация
 
-Приоритет: **флаги CLI → переменные окружения → `.env` → значения по умолчанию**.
+Приоритет: **флаги CLI → переменные окружения → `.env` → defaults**.
 
 | Переменная | Флаг | Описание | По умолчанию |
 |------------|------|----------|--------------|
-| `DEBUGINFOD_DB_PATH` | `-d` | Путь к SQLite | `debuginfod.sqlite` |
-| `DEBUGINFOD_SCAN_PATH` | `-s` | Пути сканирования (через запятую) | `.` |
+| `DEBUGINFOD_DB_PATH` | `-d` | SQLite | `debuginfod.sqlite` |
+| `DEBUGINFOD_DATABASE_URL` | `-database-url` | PostgreSQL URL | — |
+| `DEBUGINFOD_SCAN_PATH` | `-s` | Пути scan (через запятую) | `.` |
 | `DEBUGINFOD_PORT` | `-p` | HTTP-порт | `8002` |
 | `DEBUGINFOD_RESCAN_INTERVAL` | `-r` | Интервал переиндексации | `1h` |
-| `DEBUGINFOD_METADATA_MAXTIME` | `-metadata-maxtime` | Лимит metadata-запросов | `5s` |
-| `DEBUGINFOD_CACHE_DIR` | `-cache` | Кэш ELF из архивов | `.debuginfod-cache` |
-| `DEBUGINFOD_LAZY_EXTRACT` | `-lazy-extract` | Не кэшировать ELF при индексации | `true` |
+| `DEBUGINFOD_METADATA_MAXTIME` | `-metadata-maxtime` | Лимит metadata | `5s` |
+| `DEBUGINFOD_LOG_LEVEL` | `-log-level` | Уровень slog | `info` |
+| `DEBUGINFOD_CACHE_DIR` | `-cache` | Кэш извлечённых файлов | `.debuginfod-cache` |
+| `DEBUGINFOD_CACHE_MAX_BYTES` | `-cache-max-bytes` | LRU лимит кэша (0=∞) | `0` |
+| `DEBUGINFOD_LAZY_EXTRACT` | `-lazy-extract` | Не кэшировать ELF при scan | `true` |
 | `DEBUGINFOD_UI_ENABLED` | `-ui` | Web UI на `/ui/` | `true` |
-| `DEBUGINFOD_CACHE_MAX_BYTES` | `-cache-max-bytes` | Лимит кэша (0=∞) | `0` |
-| `DEBUGINFOD_SCAN_WORKERS` | `-scan-workers` | Параллельные воркеры scan | `4` |
+| `DEBUGINFOD_SCAN_WORKERS` | `-scan-workers` | Параллельные воркеры | `4` |
 | `DEBUGINFOD_URLS` | `-upstream` | Upstream для федерации | — |
-| `DEBUGINFOD_DATABASE_URL` | `-database-url` | PostgreSQL URL | — |
-| `DEBUGINFOD_ZABBIX_KEY` | `-zabbix-key` | Токен для `/zabbix` | — |
-| `DEBUGINFOD_LOG_LEVEL` | `-log-level` | Уровень логов (пока не в slog) | `info` |
+| `DEBUGINFOD_ZABBIX_KEY` | `-zabbix-key` | Токен `/zabbix` | — |
 | `DEBUGINFOD_ENV_FILE` | `-env-file` | Путь к `.env` | `.env` |
+
+Полный пример: [.env.example](./.env.example).
 
 ## HTTP API
 
-### Артефакты по build-id
+### Артефакты
 
 ```http
 GET /buildid/<BUILDID>/debuginfo
 GET /buildid/<BUILDID>/executable
-GET /buildid/<BUILDID>/source/<абсолютный/путь/к/файлу>
+GET /buildid/<BUILDID>/source/<абсолютный/путь>
 GET /buildid/<BUILDID>/section/<имя_секции>
 ```
 
-`BUILDID` — lowercase hex. Для Go-бинарников используется SHA-256 от raw build-id (см. [DEVELOPMENT.md](./DEVELOPMENT.md#go-build-id)).
+`BUILDID` — lowercase hex. Go: SHA-256 от raw build-id ([DEVELOPMENT.md](./DEVELOPMENT.md#go-build-id)).
 
 ### Metadata
 
@@ -97,40 +93,17 @@ GET /metadata?key=file&value=/usr/bin/hello
 GET /metadata?key=buildid&value=<hex>
 ```
 
-Ответ:
-
-```json
-{
-  "results": [
-    {
-      "buildid": "…",
-      "type": "executable",
-      "file": "/usr/bin/hello",
-      "archive": "/path/to/pkg.rpm"
-    }
-  ],
-  "complete": true
-}
-```
-
-### Health и мониторинг (Zabbix)
+### Мониторинг и UI
 
 ```http
-GET /healthz   → 200 ok
-GET /zabbix    → JSON-метрики для Zabbix HTTP agent
+GET /healthz              → 200 ok
+GET /zabbix               → JSON-метрики (Zabbix HTTP agent)
+GET /ui/                  → Web UI дашборд
+GET /ui/api/stats         → счётчики индекса
+GET /ui/api/search?q=     → поиск по префиксу build-id
 ```
 
-Настройка Zabbix: [deploy/zabbix/README.md](deploy/zabbix/README.md).
-
-### Web UI
-
-```http
-GET /ui/              → дашборд (статистика + поиск)
-GET /ui/api/stats     → JSON счётчиков индекса
-GET /ui/api/search?q= → поиск артефактов по префиксу build-id
-```
-
-Отключить: `DEBUGINFOD_UI_ENABLED=false` или флаг `-ui=false`.
+Zabbix: [deploy/zabbix/README.md](deploy/zabbix/README.md).
 
 ## Использование с GDB
 
@@ -139,15 +112,12 @@ export DEBUGINFOD_URLS="http://localhost:8002"
 gdb /path/to/binary
 ```
 
-Для C/C++ бинарников GDB берёт GNU build-id из ELF. Для Go — см. раздел про Go build-id в DEVELOPMENT.md.
-
-## Проверка работы
+## Проверка
 
 ```bash
-make test
-make build
-
+make test && make build
 curl http://localhost:8002/healthz
+curl http://localhost:8002/ui/api/stats
 readelf -n /bin/ls | grep 'Build ID'
 curl 'http://localhost:8002/metadata?key=glob&value=/bin/*'
 ```
@@ -155,32 +125,39 @@ curl 'http://localhost:8002/metadata?key=glob&value=/bin/*'
 ## Архитектура
 
 ```
-scan paths ──► indexer ──► SQLite ◄── webapi ◄── HTTP clients (GDB, curl)
-                  │                        │
-                  └── archive (.deb/.rpm)  └── /buildid, /metadata
+scan paths ──► indexer (workers) ──► SQLite/PostgreSQL ◄── webapi / webui
+                    │                      ▲
+                    ├── archive (lazy)     │
+                    ├── cache (LRU)        └── federation (404 → upstream)
+                    └── metrics ──► /zabbix
 ```
 
 | Пакет | Назначение |
 |-------|------------|
-| `cmd/debuginfod` | Точка входа, HTTP-сервер, фоновый индексатор |
+| `cmd/debuginfod` | Точка входа |
 | `internal/config` | `.env` + флаги |
-| `pkg/buildid` | GNU и Go build-id из ELF notes |
-| `internal/archive` | ELF внутри `.deb`/`.rpm`/`.apk`/pacman/tar, SRPM/DSC |
-| `internal/indexer` | Обход FS, DWARF, запись в БД |
-| `internal/storage` | SQLite: артефакты, sources, metadata |
-| `internal/webapi` | HTTP-обработчики |
-| `internal/webui` | Web UI дашборд (`/ui/`) |
-| `internal/fnmatch` | Shell-glob с FNM_PATHNAME для metadata |
-| `pkg/elfsection` | Извлечение сырых ELF-секций |
+| `pkg/buildid` | GNU и Go build-id |
+| `pkg/elfsection` | ELF-секции |
+| `internal/archive` | deb/rpm/apk/pacman/tar/SRPM/DSC |
+| `internal/indexer` | Scan, DWARF, lazy extract |
+| `internal/storage` | БД, metadata, stats |
+| `internal/webapi` | debuginfod HTTP API |
+| `internal/webui` | Дашборд `/ui/` |
+| `internal/metrics` | Zabbix JSON |
+| `internal/federation` | Upstream proxy |
+| `internal/cache` | LRU prune |
+| `internal/logging` | slog |
+| `internal/fnmatch` | metadata glob |
 
 ## Документация
 
 | Файл | Содержание |
 |------|------------|
-| [DEVELOPMENT.md](./DEVELOPMENT.md) | Архитектура, dev workflow, тесты |
-| [CONTRIBUTING.md](./CONTRIBUTING.md) | Как вносить изменения |
-| [TODO.md](./TODO.md) | Roadmap и идеи |
-| [.env.example](./.env.example) | Пример конфигурации |
+| [DEVELOPMENT.md](./DEVELOPMENT.md) | Архитектура, тесты, сравнение с upstream |
+| [CONTRIBUTING.md](./CONTRIBUTING.md) | Процесс PR |
+| [TODO.md](./TODO.md) | Roadmap |
+| [.cursor/rules.md](./.cursor/rules.md) | Правила для Cursor AI |
+| [deploy/zabbix/README.md](./deploy/zabbix/README.md) | Мониторинг Zabbix |
 
 ## Лицензия
 
