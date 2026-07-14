@@ -117,12 +117,12 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 
 ## Качество и CI
 
-- [ ] **golangci-lint в CI**
-- [ ] **Сборка `.deb`/`.rpm` в CI** — upload артефактов в GitHub Actions (без внутреннего репозитория)
-- [ ] **Coverage badge** — Codecov
-- [ ] **Benchmark-тесты**
-- [ ] **Fuzzing** — ELF notes, ar/tar
-- [ ] **Кросс-компиляция** — GOOS/GOARCH матрица
+- [x] **golangci-lint в CI**
+- [x] **Сборка `.deb`/`.rpm` в CI** — upload артефактов в GitHub Actions (без внутреннего репозитория)
+- [x] **Coverage badge** — Codecov
+- [x] **Benchmark-тесты**
+- [x] **Fuzzing** — ELF notes, ar/tar
+- [x] **Кросс-компиляция** — GOOS/GOARCH матрица
 
 ## Безопасность
 

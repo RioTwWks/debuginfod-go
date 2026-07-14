@@ -1,0 +1,32 @@
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+linters-settings:
+  errcheck:
+    check-type-assertions: false
+
+issues:
+  exclude-use-default: false
+  exclude-rules:
+    # defer Close() в production-коде — осознанный trade-off
+    - linters:
+        - errcheck
+      text: "Error return value of `.*Close` is not checked"
+    - linters:
+        - errcheck
+      text: "Error return value of `os.Remove` is not checked"
+    - linters:
+        - errcheck
+      path: _test\.go
+  max-issues-per-linter: 0
+  max-same-issues: 0

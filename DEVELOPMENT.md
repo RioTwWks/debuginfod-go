@@ -171,6 +171,28 @@ readelf -n /tmp/hello-ext | grep 'Build ID'   # GNU hex
 
 Автотесты: `pkg/buildid/elf_test.go` (`-buildmode=pie`, `-linkmode=external`).
 
+## CI и качество
+
+Workflow: [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
+
+| Job | Назначение |
+|-----|------------|
+| `lint` | golangci-lint (`.golangci.yml`) |
+| `test` | `go vet`, `go test -race`, coverage → Codecov |
+| `benchmark` | `pkg/buildid`, `internal/archive`, `internal/fnmatch` |
+| `fuzz` | `FuzzParseNotes`, `FuzzListTarELFMembers`, `FuzzListDebELFMembers` |
+| `cross` | Матрица GOOS/GOARCH (`debuginfod` — linux+CGO, `debuginfod-find` — все платформы) |
+| `package` | `make package` → артефакты `.deb`/`.rpm` |
+
+Локально:
+
+```bash
+golangci-lint run ./...
+go test -race -coverprofile=coverage.out ./...
+go test -bench=. -benchmem -run='^$' ./pkg/buildid/... ./internal/archive/...
+go test -fuzz=FuzzParseNotes -fuzztime=10s ./pkg/buildid/
+```
+
 ## Локальная разработка
 
 ### Сборка

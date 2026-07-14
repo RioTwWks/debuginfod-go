@@ -13,7 +13,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 )
 
-func buildTestELF(t *testing.T, tmp string) []byte {
+func buildTestELF(t testing.TB, tmp string) []byte {
 	t.Helper()
 	if _, err := exec.LookPath("gcc"); err != nil {
 		t.Skip("gcc not available")
@@ -31,7 +31,7 @@ func buildTestELF(t *testing.T, tmp string) []byte {
 	return data
 }
 
-func writeTarGzELF(t *testing.T, path, memberName string, elfData []byte) {
+func writeTarGzELF(t testing.TB, path, memberName string, elfData []byte) {
 	t.Helper()
 	f, err := os.Create(path)
 	if err != nil {

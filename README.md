@@ -4,6 +4,9 @@ HTTP-сервер [debuginfod](https://sourceware.org/elfutils/Debuginfod.html) 
 
 Репозиторий: [github.com/RioTwWks/debuginfod-go](https://github.com/RioTwWks/debuginfod-go)
 
+[![CI](https://github.com/RioTwWks/debuginfod-go/actions/workflows/ci.yml/badge.svg)](https://github.com/RioTwWks/debuginfod-go/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/RioTwWks/debuginfod-go/graph/badge.svg)](https://codecov.io/gh/RioTwWks/debuginfod-go)
+
 ## Особенности
 
 | Область | Что реализовано |
@@ -13,7 +16,7 @@ HTTP-сервер [debuginfod](https://sourceware.org/elfutils/Debuginfod.html) 
 | Хранение | SQLite или PostgreSQL, LRU-кэш, отложенное извлечение из архивов |
 | Эксплуатация | slog, worker pool, федерация, gzip, graceful shutdown, systemd |
 | Мониторинг | Zabbix HTTP agent (`/zabbix`), Web UI дашборд (`/ui/`) |
-| CI | GitHub Actions: `vet`, `test -race`, `build` |
+| CI | GitHub Actions: lint, test+coverage, benchmark, fuzz, cross-build, `.deb`/`.rpm` |
 
 Подробный план — [TODO.md](./TODO.md). Архитектура — [DEVELOPMENT.md](./DEVELOPMENT.md). Эксплуатация — [deploy/OPERATIONS.md](./deploy/OPERATIONS.md).
 
