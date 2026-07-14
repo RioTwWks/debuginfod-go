@@ -4,11 +4,14 @@
 ARG DEBIAN_SUITE=bookworm
 FROM golang:1.21-${DEBIAN_SUITE} AS builder
 
+ARG APT_PROFILE=
 ARG APT_MIRROR=
-RUN if [ -n "${APT_MIRROR}" ]; then \
-		sed -i "s|deb.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list; \
-		sed -i "s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list || true; \
-	fi \
+
+COPY deploy/docker/sources.astra-1.7.list /astra-sources.list
+COPY deploy/docker/install-astra-apt.sh /install-astra-apt.sh
+
+RUN chmod +x /install-astra-apt.sh \
+	&& APT_PROFILE="${APT_PROFILE}" APT_MIRROR="${APT_MIRROR}" /install-astra-apt.sh \
 	&& apt-get -o Acquire::Retries=5 update \
 	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
 		gcc \
@@ -26,11 +29,14 @@ RUN CGO_ENABLED=1 go build -trimpath -ldflags "-s -w" -o /debuginfod ./cmd/debug
 ARG DEBIAN_SUITE=bookworm
 FROM debian:${DEBIAN_SUITE}-slim
 
+ARG APT_PROFILE=
 ARG APT_MIRROR=
-RUN if [ -n "${APT_MIRROR}" ]; then \
-		sed -i "s|deb.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list; \
-		sed -i "s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list || true; \
-	fi \
+
+COPY deploy/docker/sources.astra-1.7.list /astra-sources.list
+COPY deploy/docker/install-astra-apt.sh /install-astra-apt.sh
+
+RUN chmod +x /install-astra-apt.sh \
+	&& APT_PROFILE="${APT_PROFILE}" APT_MIRROR="${APT_MIRROR}" /install-astra-apt.sh \
 	&& apt-get -o Acquire::Retries=5 update \
 	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
 		ca-certificates \

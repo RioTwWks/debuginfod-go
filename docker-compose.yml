@@ -5,7 +5,7 @@
 #
 # Astra / без доступа к deb.debian.org:
 #   make build
-#   docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build
+#   make docker-astra
 #   см. deploy/docker/README.md
 #
 # Хостовый /usr/lib/debug (опционально):
@@ -20,6 +20,7 @@ services:
       network: host
       args:
         DEBIAN_SUITE: ${DEBIAN_SUITE:-bookworm}
+        APT_PROFILE: ${APT_PROFILE:-}
         APT_MIRROR: ${APT_MIRROR:-}
     ports:
       - "8002:8002"

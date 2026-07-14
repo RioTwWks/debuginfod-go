@@ -20,8 +20,10 @@ sudo apt-get install -y gcc libsqlite3-dev
 make -C examples/sample
 make build
 
-# Сборка образа только с runtime-зависимостями (без Go в Docker)
-docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build
+# APT внутри контейнера — те же репозитории, что и на хосте (download.astralinux.ru)
+make docker-astra
+# или:
+docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml -f docker-compose.astra.yml up --build
 ```
 
 Проверка:
@@ -29,6 +31,31 @@ docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build
 ```bash
 curl http://127.0.0.1:8002/healthz
 curl http://127.0.0.1:8002/readyz
+```
+
+## Профиль APT_PROFILE=astra
+
+На Astra Linux 1.7 `sudo apt update` на **хосте** ходит в `download.astralinux.ru`, а образ `debian:bookworm` внутри Docker по умолчанию — в `deb.debian.org`, который часто недоступен.
+
+Overlay `docker-compose.astra.yml` включает:
+
+| Переменная | Значение | Назначение |
+|------------|----------|------------|
+| `APT_PROFILE` | `astra` | Подмена `/etc/apt/sources.list` на репозитории Astra 1.7 |
+| `DEBIAN_SUITE` | `buster` | База образа Debian 10 (совместима с Astra 1.7) |
+
+Файлы:
+
+- `deploy/docker/sources.astra-1.7.list` — те же зеркала, что у `apt` на хосте
+- `deploy/docker/install-astra-apt.sh` — подключает sources при сборке образа
+
+Ручной запуск без overlay:
+
+```bash
+export APT_PROFILE=astra
+export DEBIAN_SUITE=buster
+make build
+docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build
 ```
 
 ## Зеркало APT внутри контейнера
@@ -69,8 +96,10 @@ docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build
 
 | Astra | База Debian | `DEBIAN_SUITE` |
 |-------|-------------|----------------|
-| 1.7.x (часто) | bullseye (11) | `bullseye` |
-| старые CE | buster (10) | `buster` |
+| 1.7.x SE | buster (10) | `buster` |
+| CE 2.12+ | bullseye (11) | `bullseye` |
+
+Для Astra 1.7 используйте `make docker-astra` или `APT_PROFILE=astra` + `DEBIAN_SUITE=buster`.
 
 Бинарник с хоста должен собираться на той же или **более старой** glibc, чем в контейнере. При `GLIBC_2.xx not found` — понизьте `DEBIAN_SUITE` или соберите бинарник в контейнере на той же базе.
 
