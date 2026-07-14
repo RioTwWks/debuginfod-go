@@ -1,12 +1,15 @@
 # Мониторинг debuginfod-go в Zabbix
 
-Сервер отдаёт метрики по HTTP для **Zabbix HTTP agent** (JSONPath). Prometheus не требуется.
+Сервер отдаёт метрики по HTTP для **Zabbix HTTP agent** (JSONPath). Prometheus не используется.
+
+> **Альтернатива для операторов:** встроенный Web UI на `/ui/` — дашборд со статистикой и поиском по build-id (без Zabbix).
 
 ## Endpoint
 
 ```http
 GET /zabbix
 Header: X-Zabbix-Token: <DEBUGINFOD_ZABBIX_KEY>   # если задан ключ
+# или: GET /zabbix?key=<DEBUGINFOD_ZABBIX_KEY>
 ```
 
 Пример ответа:
@@ -34,20 +37,26 @@ Header: X-Zabbix-Token: <DEBUGINFOD_ZABBIX_KEY>   # если задан ключ
 }
 ```
 
+Web UI (`/ui/api/stats`) возвращает похожие счётчики плюс `last_scan_finished_at`.
+
 ## Настройка хоста в Zabbix
 
-1. Создайте host с интерфейсом Agent (любой) или без агента.
-2. Добавьте макрос `{$DEBUGINFOD.URL}` = `http://debuginfod-host:8002`.
-3. При использовании токена: `{$DEBUGINFOD.ZABBIX_KEY}`.
+1. Host с интерфейсом Agent (или без агента).
+2. Макрос `{$DEBUGINFOD.URL}` = `http://debuginfod-host:8002`.
+3. При токене: `{$DEBUGINFOD.ZABBIX_KEY}`.
 
 ## Примеры items (HTTP agent)
 
-| Name | Type | URL | JSONPath |
-|------|------|-----|----------|
-| Artifacts total | HTTP agent | `{$DEBUGINFOD.URL}/zabbix` | `$.artifacts_total` |
-| Last scan duration ms | HTTP agent | `{$DEBUGINFOD.URL}/zabbix` | `$.last_scan_duration_ms` |
-| HTTP 5xx total | HTTP agent | `{$DEBUGINFOD.URL}/zabbix` | `$.http_5xx_total` |
-| Cache bytes | HTTP agent | `{$DEBUGINFOD.URL}/zabbix` | `$.cache_bytes` |
+| Name | URL | JSONPath |
+|------|-----|----------|
+| Artifacts total | `{$DEBUGINFOD.URL}/zabbix` | `$.artifacts_total` |
+| Sources total | `{$DEBUGINFOD.URL}/zabbix` | `$.sources_total` |
+| Scanned files | `{$DEBUGINFOD.URL}/zabbix` | `$.scanned_files_total` |
+| Last scan duration ms | `{$DEBUGINFOD.URL}/zabbix` | `$.last_scan_duration_ms` |
+| Last scan errors | `{$DEBUGINFOD.URL}/zabbix` | `$.last_scan_errors` |
+| HTTP 5xx total | `{$DEBUGINFOD.URL}/zabbix` | `$.http_5xx_total` |
+| Federation misses | `{$DEBUGINFOD.URL}/zabbix` | `$.federation_misses` |
+| Cache bytes | `{$DEBUGINFOD.URL}/zabbix` | `$.cache_bytes` |
 
 ### Headers (если задан ключ)
 
@@ -59,24 +68,36 @@ X-Zabbix-Token: {$DEBUGINFOD.ZABBIX_KEY}
 
 | Триггер | Условие |
 |---------|---------|
-| debuginfod down | `nodata(/zabbix,5m)=1` или web scenario на `/healthz` |
-| Много 5xx | `last(/debuginfod/zabbix.http_5xx_total)>10` за 5m |
-| Долгий scan | `last(/debuginfod/zabbix.last_scan_duration_ms)>60000` |
+| debuginfod down | web scenario `/healthz` ≠ 200 |
+| Много 5xx | `last(...http_5xx_total)` растёт |
+| Долгий scan | `last_scan_duration_ms > 60000` |
+| Ошибки scan | `last_scan_errors > 0` |
 
 ## Health check
 
-Для простой доступности используйте отдельный item:
-
 ```
 URL: {$DEBUGINFOD.URL}/healthz
-Ожидаемый код: 200
-Тело содержит: ok
+Код: 200, тело содержит: ok
 ```
+
+## Web UI (ручная проверка)
+
+```bash
+curl http://localhost:8002/ui/api/stats
+curl 'http://localhost:8002/ui/api/search?q=dead'
+```
+
+Отключить UI: `DEBUGINFOD_UI_ENABLED=false`.
 
 ## Переменные окружения
 
 ```env
 DEBUGINFOD_ZABBIX_KEY=your-secret-token
+DEBUGINFOD_UI_ENABLED=true
 ```
 
-Без ключа endpoint `/zabbix` публичен — в production задайте ключ или ограничьте firewall.
+Без ключа `/zabbix` публичен — в production задайте ключ или ограничьте firewall.
+
+## systemd
+
+Unit-файл: [../debuginfod-go.service](../debuginfod-go.service).
