@@ -120,8 +120,8 @@ DEBUGINFOD_CACHE_DIR=/var/cache/debuginfod-go
 
 ### Scan при нескольких инстансах
 
-- **Один designated scanner:** только один инстанс с активным rescan, остальные `DEBUGINFOD_RESCAN_INTERVAL=0` или отключить timer — *пока не реализовано в коде*
-- **Практичный подход сейчас:** все инстансы сканируют одни пути; `scanned_files` в PostgreSQL дедуплицирует работу по mtime/size (инкрементальный scan)
+- **Designated scanner (рекомендуется):** на read-only репликах `DEBUGINFOD_SCAN_ENABLED=false` — индекс только из PostgreSQL, `/readyz` сразу `200`
+- **Альтернатива:** все инстансы сканируют одни пути; `scanned_files` в PostgreSQL дедуплицирует работу по mtime/size (инкрементальный scan)
 
 ### Федерация как альтернатива
 

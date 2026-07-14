@@ -28,6 +28,7 @@ type Collector struct {
 	federationMisses atomic.Uint64
 
 	lastScan atomic.Value // ScanStats
+	ready    atomic.Bool
 }
 
 // New создаёт коллектор метрик.
@@ -54,6 +55,17 @@ func (c *Collector) RecordHTTP(status int, bytes int64) {
 // RecordScan сохраняет статистику индексации.
 func (c *Collector) RecordScan(stats ScanStats) {
 	c.lastScan.Store(stats)
+	c.ready.Store(true)
+}
+
+// MarkReady помечает сервис готовым (например, при отключённом scan).
+func (c *Collector) MarkReady() {
+	c.ready.Store(true)
+}
+
+// Ready возвращает true после первого завершённого scan или MarkReady.
+func (c *Collector) Ready() bool {
+	return c.ready.Load()
 }
 
 // RecordFederationHit — артефакт найден на upstream-сервере.

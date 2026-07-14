@@ -35,6 +35,9 @@ type Config struct {
 	TLSKeyFile       string
 	TLSClientCA      string
 	MetadataPageSize int
+	ScanEnabled      bool
+	AdminKey         string
+	ScanWebhookURL   string
 }
 
 // Load читает .env, переменные окружения и флаги командной строки.
@@ -65,6 +68,9 @@ func Load() Config {
 		TLSKeyFile:       envOr("DEBUGINFOD_TLS_KEY", ""),
 		TLSClientCA:      envOr("DEBUGINFOD_TLS_CLIENT_CA", ""),
 		MetadataPageSize: envInt("DEBUGINFOD_METADATA_PAGE_SIZE", 100),
+		ScanEnabled:      envBool("DEBUGINFOD_SCAN_ENABLED", true),
+		AdminKey:         envOr("DEBUGINFOD_ADMIN_KEY", ""),
+		ScanWebhookURL:   envOr("DEBUGINFOD_SCAN_WEBHOOK_URL", ""),
 	}
 
 	if cfg.EnvFile != "" && cfg.EnvFile != ".env" {
@@ -96,8 +102,19 @@ func Load() Config {
 	flag.StringVar(&cfg.TLSKeyFile, "tls-key", cfg.TLSKeyFile, "TLS ключ")
 	flag.StringVar(&cfg.TLSClientCA, "tls-client-ca", cfg.TLSClientCA, "CA для mTLS клиентов")
 	flag.IntVar(&cfg.MetadataPageSize, "metadata-page-size", cfg.MetadataPageSize, "размер страницы metadata")
+	flag.BoolVar(&cfg.ScanEnabled, "scan-enabled", cfg.ScanEnabled, "включить фоновую индексацию (false = только чтение индекса)")
+	adminKey := cfg.AdminKey
+	flag.StringVar(&adminKey, "admin-key", adminKey, "токен для /admin/* (по умолчанию DEBUGINFOD_ZABBIX_KEY)")
+	scanWebhook := cfg.ScanWebhookURL
+	flag.StringVar(&scanWebhook, "scan-webhook-url", scanWebhook, "URL webhook после завершения scan")
 	flag.StringVar(&cfg.EnvFile, "env-file", cfg.EnvFile, "путь к .env")
 	flag.Parse()
+
+	cfg.AdminKey = adminKey
+	cfg.ScanWebhookURL = scanWebhook
+	if cfg.AdminKey == "" {
+		cfg.AdminKey = cfg.ZabbixKey
+	}
 
 	cfg.ScanPaths = splitPaths(scanPath)
 	cfg.UpstreamURLs = splitPaths(upstreams)

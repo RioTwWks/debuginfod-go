@@ -15,6 +15,7 @@ import (
 	"github.com/your-username/debuginfod-go/internal/indexer"
 	"github.com/your-username/debuginfod-go/internal/logging"
 	"github.com/your-username/debuginfod-go/internal/metrics"
+	"github.com/your-username/debuginfod-go/internal/scanrunner"
 	"github.com/your-username/debuginfod-go/internal/storage"
 	"github.com/your-username/debuginfod-go/internal/webapi"
 )
@@ -47,7 +48,27 @@ func main() {
 		Metrics:       collector,
 		LazyExtract:   cfg.LazyExtract,
 	})
-	go runIndexer(idx, cfg.RescanInterval)
+
+	runner := scanrunner.New(scanrunner.Options{
+		Indexer:    idx,
+		Metrics:    collector,
+		Interval:   cfg.RescanInterval,
+		Enabled:    cfg.ScanEnabled,
+		WebhookURL: cfg.ScanWebhookURL,
+	})
+
+	scanCtx, cancelScan := context.WithCancel(context.Background())
+	defer cancelScan()
+	go runner.Run(scanCtx)
+
+	rescanSig := make(chan os.Signal, 1)
+	signal.Notify(rescanSig, syscall.SIGUSR1)
+	go func() {
+		for range rescanSig {
+			slog.Info("SIGUSR1 received, triggering rescan")
+			runner.Trigger()
+		}
+	}()
 
 	cacheBytes := func() int64 {
 		n, _ := cache.DirSize(cfg.CacheDir)
@@ -64,6 +85,11 @@ func main() {
 		TLSClientCA:   cfg.TLSClientCA,
 	}
 
+	var scanTrigger webapi.ScanTrigger
+	if cfg.ScanEnabled {
+		scanTrigger = runner
+	}
+
 	opts := webapi.ServerOpts{
 		Store:            store,
 		MetadataMaxTime:  cfg.MetadataMaxTime,
@@ -71,6 +97,8 @@ func main() {
 		Federation:       fed,
 		Metrics:          collector,
 		ZabbixKey:        cfg.ZabbixKey,
+		AdminKey:         cfg.AdminKey,
+		ScanTrigger:      scanTrigger,
 		CacheBytes:       cacheBytes,
 		CacheDir:         cfg.CacheDir,
 		ScanPaths:        cfg.ScanPaths,
@@ -100,8 +128,10 @@ func main() {
 			"cors", len(cfg.CORSOrigins) > 0,
 			"rate_limit", cfg.RateLimitRPS,
 			"scan_paths", cfg.ScanPaths,
+			"scan_enabled", cfg.ScanEnabled,
 			"workers", cfg.ScanWorkers,
 			"federation", len(cfg.UpstreamURLs) > 0,
+			"scan_webhook", cfg.ScanWebhookURL != "",
 		)
 		var serveErr error
 		if security.TLSConfigured() {
@@ -119,24 +149,12 @@ func main() {
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
 
+	cancelScan()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
 		slog.Error("shutdown", "err", err)
 	}
 	slog.Info("server stopped")
-}
-
-func runIndexer(idx *indexer.Indexer, interval time.Duration) {
-	if err := idx.Scan(); err != nil {
-		slog.Error("index scan", "err", err)
-	}
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for range ticker.C {
-		if err := idx.Scan(); err != nil {
-			slog.Error("index scan", "err", err)
-		}
-	}
 }

@@ -119,6 +119,34 @@ paths:
           description: Содержимое секции
         "404":
           description: Не найдено
+  /healthz:
+    get:
+      summary: Liveness probe
+      responses:
+        "200":
+          description: ok
+  /readyz:
+    get:
+      summary: Readiness probe (после первого scan)
+      responses:
+        "200":
+          description: ready
+        "503":
+          description: not ready
+  /admin/rescan:
+    post:
+      summary: Внеочередной rescan
+      security:
+        - AdminToken: []
+      responses:
+        "200":
+          description: accepted
+        "401":
+          description: unauthorized
+        "403":
+          description: admin API disabled
+        "409":
+          description: scan disabled
   /zabbix:
     get:
       summary: Метрики для Zabbix HTTP agent
@@ -184,3 +212,7 @@ components:
       type: apiKey
       in: header
       name: X-Zabbix-Token
+    AdminToken:
+      type: apiKey
+      in: header
+      name: X-Admin-Token

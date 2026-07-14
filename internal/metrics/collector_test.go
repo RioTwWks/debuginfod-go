@@ -20,9 +20,15 @@ func TestCollectorHTTP(t *testing.T) {
 
 func TestCollectorScan(t *testing.T) {
 	c := New()
+	if c.Ready() {
+		t.Fatal("expected not ready before scan")
+	}
 	c.RecordScan(ScanStats{Duration: time.Second, Indexed: 5, Skipped: 10})
 	s := c.LastScan()
 	if s.Indexed != 5 || s.Skipped != 10 {
 		t.Fatalf("scan stats=%+v", s)
+	}
+	if !c.Ready() {
+		t.Fatal("expected ready after RecordScan")
 	}
 }

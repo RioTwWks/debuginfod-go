@@ -27,6 +27,8 @@ type ServerOpts struct {
 	Federation       *federation.Client
 	Metrics          *metrics.Collector
 	ZabbixKey        string
+	AdminKey         string
+	ScanTrigger      ScanTrigger
 	CacheBytes       func() int64
 	CacheDir         string
 	ScanPaths        []string
@@ -328,6 +330,8 @@ func HealthHandler(w http.ResponseWriter, _ *http.Request) {
 func NewMux(opts ServerOpts) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", HealthHandler)
+	mux.HandleFunc("/readyz", ReadyHandler(opts.Metrics))
+	mux.HandleFunc("/admin/rescan", AdminRescanHandler(opts.ScanTrigger, opts.AdminKey))
 	mux.HandleFunc("/metadata", MetadataHandler(opts))
 	mux.HandleFunc("/openapi.yaml", OpenAPIHandler)
 	mux.HandleFunc("/zabbix", metrics.Handler(opts.Metrics, opts.Store, opts.CacheBytes, opts.ZabbixKey))
