@@ -280,6 +280,16 @@ export DEBUGINFOD_URLS=http://localhost:8002
 ./debuginfod-find --key glob --value '/usr/bin/*'
 ```
 
+### Примеры (`examples/`)
+
+Демо stripped binary + GDB + docker compose:
+
+```bash
+cd examples && make demo
+```
+
+См. [examples/README.md](./examples/README.md).
+
 ## CI
 
 `.github/workflows/ci.yml`: push/PR в `main` и `cursor/**`.

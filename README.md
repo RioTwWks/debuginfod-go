@@ -74,6 +74,8 @@ go run ./cmd/debuginfod -s /usr/lib/debug -p 8002
 docker compose up --build
 ```
 
+Примеры с GDB и демо stripped binary: [examples/](./examples/).
+
 ## Конфигурация
 
 Приоритет: **флаги CLI → переменные окружения → `.env` → defaults**.
@@ -223,6 +225,7 @@ scan paths ──► indexer (workers) ──► SQLite/PostgreSQL ◄── web
 | [DEVELOPMENT.md](./DEVELOPMENT.md) | Архитектура, тесты, сравнение с upstream |
 | [CONTRIBUTING.md](./CONTRIBUTING.md) | Процесс PR |
 | [TODO.md](./TODO.md) | Roadmap |
+| [examples/](./examples/) | Docker-compose и GDB-скрипт |
 | [.cursor/rules.md](./.cursor/rules.md) | Правила для Cursor AI |
 | [deploy/zabbix/README.md](./deploy/zabbix/README.md) | Мониторинг Zabbix |
 

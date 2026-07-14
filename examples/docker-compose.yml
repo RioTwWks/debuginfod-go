@@ -1,0 +1,51 @@
+# Демо debuginfod-go: stripped hello + debuginfo через HTTP.
+#
+#   cd examples
+#   make demo          # собрать sample, поднять сервер и прогнать GDB
+#   make up            # только сервер
+#   make gdb           # GDB-клиент (сервер должен быть запущен)
+#   make down          # остановить и удалить volumes
+
+services:
+  debuginfod:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    volumes:
+      - debuginfod-data:/data
+      - ./sample/bin:/sample:ro
+    environment:
+      DEBUGINFOD_DB_PATH: /data/debuginfod.sqlite
+      DEBUGINFOD_SCAN_PATH: /sample
+      DEBUGINFOD_CACHE_DIR: /data/cache
+      DEBUGINFOD_PORT: "8002"
+      DEBUGINFOD_UI_ENABLED: "true"
+      DEBUGINFOD_LOG_LEVEL: info
+      DEBUGINFOD_LAZY_EXTRACT: "true"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8002/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  gdb:
+    build:
+      context: ./gdb
+    depends_on:
+      debuginfod:
+        condition: service_healthy
+    environment:
+      DEBUGINFOD_URLS: http://debuginfod:8002
+    volumes:
+      - ./sample/bin:/sample:ro
+      - ./gdb/debug.gdb:/gdb/debug.gdb:ro
+      - ./gdb/run-demo.sh:/gdb/run-demo.sh:ro
+    entrypoint: ["/bin/bash", "/gdb/run-demo.sh", "/sample/hello"]
+    profiles:
+      - gdb
+
+volumes:
+  debuginfod-data:
