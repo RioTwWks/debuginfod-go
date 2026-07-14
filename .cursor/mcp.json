@@ -49,6 +49,7 @@
     "Security: CORS, rate limit, Basic Auth, TLS/mTLS — internal/webapi/security.go",
     "Документация: README.md, DEVELOPMENT.md, TODO.md, deploy/zabbix/README.md",
     "Конфиг: .env.example + internal/config/config.go",
-    "Roadmap: TODO.md — отмечать [x] при завершении задач"
+    "Roadmap: TODO.md — отмечать [x] при завершении задач",
+    "Examples: examples/ — docker-compose + GDB demo (make demo)"
   ]
 }

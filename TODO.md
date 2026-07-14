@@ -2,7 +2,7 @@
 
 Список улучшений по приоритету. Выполненное — `[x]`.
 
-**Статус проекта (2026-07-14):** MVP + elfutils-совместимость + эксплуатация (Zabbix, federation, PostgreSQL) + архивы (deb/rpm/tar/lazy/SRPM) + Web UI + API и клиенты.
+**Статус проекта (2026-07-14):** MVP + elfutils-совместимость + эксплуатация (Zabbix, federation, PostgreSQL) + архивы (deb/rpm/tar/lazy/SRPM) + Web UI + API и клиенты + examples.
 
 ## Целевое развёртывание
 
@@ -82,7 +82,7 @@
 
 ## Документация
 
-- [ ] **Примеры в `examples/`** — docker-compose, GDB-скрипт
+- [x] **Примеры в `examples/`** — docker-compose, GDB-скрипт
 - [x] **Диаграмма потока данных** — mermaid в DEVELOPMENT.md
 - [x] **Сравнение с upstream debuginfod** — таблица в DEVELOPMENT.md
 
