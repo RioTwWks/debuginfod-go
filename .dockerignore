@@ -1,0 +1,9 @@
+.git
+.github
+data
+dist
+*.sqlite
+.debuginfod-cache
+examples/sample/bin
+examples/delve/sample/bin
+**/node_modules

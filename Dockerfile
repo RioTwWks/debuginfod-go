@@ -1,20 +1,33 @@
-# Сборка бинарника debuginfod
-FROM golang:1.21-alpine AS builder
+# Сборка debuginfod-go (Debian bookworm — совместимо с Astra/Ubuntu, без Alpine apk).
+FROM golang:1.21-bookworm AS builder
 
-RUN apk add --no-cache gcc musl-dev sqlite-dev
+RUN apt-get update \
+	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+		gcc \
+		libc6-dev \
+		libsqlite3-dev \
+	&& rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=1 go build -o /debuginfod ./cmd/debuginfod
+RUN CGO_ENABLED=1 go build -trimpath -ldflags "-s -w" -o /debuginfod ./cmd/debuginfod
 
-FROM alpine:3.19
-RUN apk add --no-cache ca-certificates sqlite-libs
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+		ca-certificates \
+		curl \
+		libsqlite3-0 \
+	&& rm -rf /var/lib/apt/lists/*
+
+WORKDIR /data
 
 COPY --from=builder /debuginfod /usr/local/bin/debuginfod
 
 EXPOSE 8002
 ENTRYPOINT ["/usr/local/bin/debuginfod"]
-CMD ["-s", "/usr/lib/debug", "-p", "8002", "-d", "/data/debuginfod.sqlite"]
+CMD ["-p", "8002"]

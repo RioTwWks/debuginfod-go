@@ -1,16 +1,33 @@
-version: '3.8'
+# Локальный dev-запуск (Docker). Для production на Astra/Ubuntu — пакеты + systemd.
+#
+#   make -C examples/sample    # демо-бинарники для индексации
+#   docker compose up --build
+#
+# Хостовый /usr/lib/debug (опционально):
+#   DEBUGINFOD_SCAN_PATH=/sample,/usr/lib/debug
+#   volumes: - /usr/lib/debug:/usr/lib/debug:ro
+
 services:
   debuginfod:
     build: .
     ports:
       - "8002:8002"
-    env_file:
-      - .env
     volumes:
-      - ./data:/data
-      - ./.env:/app/.env:ro
-      - /usr/lib/debug:/usr/lib/debug:ro
+      - debuginfod-data:/data
+      - ./examples/sample/bin:/sample:ro
     environment:
-      - DEBUGINFOD_DB_PATH=/data/debuginfod.sqlite
-      - DEBUGINFOD_SCAN_PATH=/usr/lib/debug
-      - DEBUGINFOD_CACHE_DIR=/data/cache
+      DEBUGINFOD_DB_PATH: /data/debuginfod.sqlite
+      DEBUGINFOD_SCAN_PATH: /sample
+      DEBUGINFOD_CACHE_DIR: /data/cache
+      DEBUGINFOD_PORT: "8002"
+      DEBUGINFOD_LOG_LEVEL: info
+      DEBUGINFOD_UI_ENABLED: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8002/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 15s
+
+volumes:
+  debuginfod-data:
