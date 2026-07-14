@@ -8,7 +8,7 @@
 - **Тип:** HTTP-сервер debuginfod + SQLite/PostgreSQL + индексация ELF/архивов
 - **Модуль:** `github.com/your-username/debuginfod-go`
 - **Репозиторий:** https://github.com/RioTwWks/debuginfod-go
-- **Целевые ОС:** Astra Linux, Ubuntu, RedOS, CentOS (deb/rpm-стек). Arch/Alpine — вне scope развёртывания.
+- **Целевые ОС:** Astra Linux, Ubuntu, RedOS, CentOS (deb/rpm). `.apk` / `.pacman` / `.pkg.tar.*` не поддерживаются.
 
 ## Структура пакетов
 
@@ -19,7 +19,7 @@ internal/indexer/        # scan FS (worker pool), DWARF sources, lazy extract
 internal/storage/        # SQLite / PostgreSQL: artifacts, sources, metadata
 internal/webapi/         # /buildid, /metadata, /healthz, /zabbix, gzip, federation
 internal/webui/          # /ui/ дашборд (embed static)
-internal/archive/        # .deb, .rpm (целевые ОС), tar, SRPM, DSC; apk/pacman — опционально
+internal/archive/        # .deb, .rpm, tar, SRPM, DSC (целевые ОС)
 internal/metrics/        # runtime counters + /zabbix JSON
 internal/federation/     # upstream proxy при 404
 internal/cache/          # LRU prune кэша
@@ -70,12 +70,7 @@ deploy/                  # systemd unit, Zabbix docs
 | SRPM | `.src.rpm` | RedOS, CentOS |
 | DSC | `.dsc` | Astra, Ubuntu |
 
-**Вне целевых ОС** (код есть, не приоритет для развёртывания/тестов):
-
-| Формат | Расширения | Примечание |
-|--------|-----------|------------|
-| Alpine | `.apk` | не развёртывается |
-| Arch | `.pacman`, `.pkg.tar.*` | не развёртывается |
+**Не поддерживается:** `.apk`, `.pacman`, `.pkg.tar.*` (Alpine/Arch — вне целевых ОС).
 
 ### Отложенное извлечение
 

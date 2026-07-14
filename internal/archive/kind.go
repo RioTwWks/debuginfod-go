@@ -12,16 +12,22 @@ const (
 	KindNone Kind = iota
 	KindDeb
 	KindRPM
-	KindAPK
-	KindPacman
 	KindTar
 	KindSRPM
 	KindDSC
 )
 
+// Целевые ОС: Astra Linux, Ubuntu (deb), RedOS, CentOS (rpm).
+// Alpine (.apk) и Arch (.pacman, .pkg.tar.*) намеренно не поддерживаются.
+
 // DetectKind определяет тип архива по имени файла.
 func DetectKind(path string) Kind {
 	lower := strings.ToLower(filepath.ToSlash(path))
+
+	if isUnsupportedDistroPackage(lower) {
+		return KindNone
+	}
+
 	switch {
 	case strings.HasSuffix(lower, ".deb"):
 		return KindDeb
@@ -29,14 +35,6 @@ func DetectKind(path string) Kind {
 		return KindSRPM
 	case strings.HasSuffix(lower, ".rpm"):
 		return KindRPM
-	case strings.HasSuffix(lower, ".apk"):
-		return KindAPK
-	case strings.HasSuffix(lower, ".pacman"),
-		strings.HasSuffix(lower, ".pkg.tar.zst"),
-		strings.HasSuffix(lower, ".pkg.tar.gz"),
-		strings.HasSuffix(lower, ".pkg.tar.xz"),
-		strings.HasSuffix(lower, ".pkg.tar"):
-		return KindPacman
 	case strings.HasSuffix(lower, ".tar.zst"),
 		strings.HasSuffix(lower, ".tar.gz"),
 		strings.HasSuffix(lower, ".tar.xz"),
@@ -50,10 +48,16 @@ func DetectKind(path string) Kind {
 	}
 }
 
-// IsArchive возвращает true для пакетов с ELF-членами.
+func isUnsupportedDistroPackage(lower string) bool {
+	return strings.HasSuffix(lower, ".apk") ||
+		strings.HasSuffix(lower, ".pacman") ||
+		strings.Contains(lower, ".pkg.tar.")
+}
+
+// IsArchive возвращает true для пакетов с ELF-членами на целевых ОС.
 func IsArchive(path string) bool {
 	switch DetectKind(path) {
-	case KindDeb, KindRPM, KindAPK, KindPacman, KindTar:
+	case KindDeb, KindRPM, KindTar:
 		return true
 	default:
 		return false
