@@ -16,9 +16,10 @@ services:
     volumes:
       - debuginfod-data:/data
       - ./sample/bin:/sample:ro
+      - ./delve/sample/bin:/sample-go:ro
     environment:
       DEBUGINFOD_DB_PATH: /data/debuginfod.sqlite
-      DEBUGINFOD_SCAN_PATH: /sample
+      DEBUGINFOD_SCAN_PATH: /sample,/sample-go
       DEBUGINFOD_CACHE_DIR: /data/cache
       DEBUGINFOD_PORT: "8002"
       DEBUGINFOD_UI_ENABLED: "true"
@@ -46,6 +47,21 @@ services:
     entrypoint: ["/bin/bash", "/gdb/run-demo.sh", "/sample/hello"]
     profiles:
       - gdb
+
+  delve:
+    build:
+      context: ./delve
+    depends_on:
+      debuginfod:
+        condition: service_healthy
+    environment:
+      DEBUGINFOD_URLS: http://debuginfod:8002
+    volumes:
+      - ./delve/sample/bin:/sample-go:ro
+      - ./delve/run-demo.sh:/delve/run-demo.sh:ro
+    entrypoint: ["/bin/bash", "/delve/run-demo.sh", "/sample-go/hello"]
+    profiles:
+      - delve
 
 volumes:
   debuginfod-data:

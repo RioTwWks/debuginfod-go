@@ -148,6 +148,8 @@ Backend: SQLite (`DEBUGINFOD_DB_PATH`) или PostgreSQL (`DEBUGINFOD_DATABASE_U
 
 ## Go build-id
 
+См. полное руководство: [docs/GO_ECOSYSTEM.md](docs/GO_ECOSYSTEM.md).
+
 Go записывает `.note.go.buildid` (owner `Go`, type `4`). Строка вида `action/module/sum` содержит `/` и **не подходит** для URL.
 
 Канонический ID:
@@ -156,15 +158,18 @@ Go записывает `.note.go.buildid` (owner `Go`, type `4`). Строка 
 build_id = hex(sha256(raw_go_build_id))
 ```
 
-В metadata отдаётся `raw_buildid`. GNU build-id имеет приоритет, если есть оба типа заметок.
+В metadata отдаётся `raw_buildid`. GNU build-id имеет приоритет, если есть оба типа заметок (типично при `-ldflags="-linkmode=external"`).
 
 Проверка:
 
 ```bash
 go build -o /tmp/hello .
 go tool buildid /tmp/hello          # raw
-readelf -n /tmp/hello               # GNU (если external linker)
+go build -ldflags="-linkmode=external" -o /tmp/hello-ext .
+readelf -n /tmp/hello-ext | grep 'Build ID'   # GNU hex
 ```
+
+Автотесты: `pkg/buildid/elf_test.go` (`-buildmode=pie`, `-linkmode=external`).
 
 ## Локальная разработка
 
