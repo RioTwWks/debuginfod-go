@@ -20,14 +20,17 @@ ENV HTTP_PROXY=${HTTP_PROXY} \
 	no_proxy=${NO_PROXY}
 
 COPY .docker-build/ssl-certs/ /host-ssl-certs/
+COPY .docker-build/apt-trust/ /host-apt-trust/
 COPY deploy/docker/sources.astra-1.7.list /astra-sources.list
 COPY deploy/docker/install-astra-apt.sh /install-astra-apt.sh
 COPY deploy/docker/configure-proxy.sh /configure-proxy.sh
 COPY deploy/docker/install-host-certs.sh /install-host-certs.sh
+COPY deploy/docker/install-host-apt-trust.sh /install-host-apt-trust.sh
 
-RUN chmod +x /install-astra-apt.sh /configure-proxy.sh /install-host-certs.sh \
+RUN chmod +x /install-astra-apt.sh /configure-proxy.sh /install-host-certs.sh /install-host-apt-trust.sh \
 	&& APT_INSECURE="${APT_INSECURE}" /configure-proxy.sh \
 	&& /install-host-certs.sh \
+	&& /install-host-apt-trust.sh \
 	&& APT_PROFILE="${APT_PROFILE}" APT_MIRROR="${APT_MIRROR}" /install-astra-apt.sh \
 	&& apt-get -o Acquire::Retries=5 update \
 	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -61,14 +64,17 @@ ENV HTTP_PROXY=${HTTP_PROXY} \
 	no_proxy=${NO_PROXY}
 
 COPY .docker-build/ssl-certs/ /host-ssl-certs/
+COPY .docker-build/apt-trust/ /host-apt-trust/
 COPY deploy/docker/sources.astra-1.7.list /astra-sources.list
 COPY deploy/docker/install-astra-apt.sh /install-astra-apt.sh
 COPY deploy/docker/configure-proxy.sh /configure-proxy.sh
 COPY deploy/docker/install-host-certs.sh /install-host-certs.sh
+COPY deploy/docker/install-host-apt-trust.sh /install-host-apt-trust.sh
 
-RUN chmod +x /install-astra-apt.sh /configure-proxy.sh /install-host-certs.sh \
+RUN chmod +x /install-astra-apt.sh /configure-proxy.sh /install-host-certs.sh /install-host-apt-trust.sh \
 	&& APT_INSECURE="${APT_INSECURE}" /configure-proxy.sh \
 	&& /install-host-certs.sh \
+	&& /install-host-apt-trust.sh \
 	&& APT_PROFILE="${APT_PROFILE}" APT_MIRROR="${APT_MIRROR}" /install-astra-apt.sh \
 	&& apt-get -o Acquire::Retries=5 update \
 	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \

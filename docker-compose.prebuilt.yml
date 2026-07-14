@@ -28,7 +28,7 @@ services:
         NO_PROXY: ${NO_PROXY:-${no_proxy:-}}
         APT_INSECURE: ${APT_INSECURE:-false}
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8002/healthz"]
+      test: ["CMD", "curl", "-sf", "--noproxy", "*", "http://127.0.0.1:8002/healthz"]
       interval: 5s
       timeout: 3s
       retries: 6

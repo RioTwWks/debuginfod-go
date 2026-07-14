@@ -86,18 +86,18 @@ sudo systemctl restart docker
 
 ## Рекомендуемый способ (Astra)
 
+Как в [PVS-Studio-Tracker](https://github.com/RioTwWks/PVS-Studio-Tracker): **в контейнере — стандартные репозитории Debian** (`deb.debian.org`), на хосте — сборка Go-бинарника. Прокси передаётся через `HTTP_PROXY`/`HTTPS_PROXY`.
+
 ```bash
 # Зависимости на хосте (один раз)
 sudo apt-get install -y gcc libsqlite3-dev
 
 make -C examples/sample
 make build
-
-# APT внутри контейнера — те же репозитории, что и на хосте (download.astralinux.ru)
 make docker-astra
-# или:
-docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml -f docker-compose.astra.yml up --build
 ```
+
+`docker-compose.astra.yml` задаёт только `DEBIAN_SUITE=buster` (совместимость glibc с Astra 1.7), **не** подменяет APT на `download.astralinux.ru`.
 
 Проверка:
 
@@ -106,16 +106,21 @@ curl http://127.0.0.1:8002/healthz
 curl http://127.0.0.1:8002/readyz
 ```
 
-## Профиль APT_PROFILE=astra
+## Профиль APT_PROFILE=astra (редко)
 
-Опционально: если `deb.debian.org` недоступен, а `download.astralinux.ru` — доступен (часто через тот же прокси), overlay `docker-compose.astra.yml` подменяет sources.list:
+По умолчанию **не используется**. Репозитории Astra внутри `debian:buster-slim` требуют GPG-ключи хоста (`NO_PUBKEY 7DB1E284F89C2962` без них).
 
-Overlay `docker-compose.astra.yml` включает:
+Если всё же нужны Astra-репозитории в контейнере:
 
-| Переменная | Значение | Назначение |
-|------------|----------|------------|
-| `APT_PROFILE` | `astra` | Подмена `/etc/apt/sources.list` на репозитории Astra 1.7 |
-| `DEBIAN_SUITE` | `buster` | База образа Debian 10 (совместима с Astra 1.7) |
+```bash
+export APT_PROFILE=astra
+make docker-astra   # prepare-build-certs.sh копирует также /etc/apt/trusted.gpg.d
+```
+
+| Переменная | По умолчанию | Назначение |
+|------------|--------------|------------|
+| `DEBIAN_SUITE` | `buster` | База образа Debian 10 (glibc Astra 1.7) |
+| `APT_PROFILE` | *(пусто)* | `astra` — sources `download.astralinux.ru` + GPG с хоста |
 
 Файлы:
 
