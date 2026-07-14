@@ -1,0 +1,34 @@
+---
+- name: Ensure config directory exists
+  ansible.builtin.file:
+    path: /etc/debuginfod-go
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy debuginfod-go environment
+  ansible.builtin.template:
+    src: debuginfod-go.env.j2
+    dest: /etc/debuginfod-go/debuginfod-go.env
+    owner: root
+    group: debuginfod
+    mode: "0640"
+  notify: Restart debuginfod-go
+
+- name: Enable and start debuginfod-go
+  ansible.builtin.systemd:
+    name: debuginfod-go
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for healthz
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ debuginfod_port }}/healthz"
+    return_content: true
+  register: healthz
+  retries: 5
+  delay: 2
+  until: healthz.status == 200 and 'ok' in healthz.content
+  changed_when: false

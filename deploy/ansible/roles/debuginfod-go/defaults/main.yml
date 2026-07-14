@@ -1,0 +1,27 @@
+---
+# Переменные роли debuginfod-go (см. deploy/ansible/README.md)
+
+# Установка пакета (укажите один из вариантов)
+# debuginfod_package_path: /tmp/debuginfod-go_0.1.0_amd64.deb
+# debuginfod_package_url: https://repo.example.com/debuginfod-go_0.1.0_amd64.deb
+
+debuginfod_package_path: ""
+debuginfod_package_url: ""
+
+# Конфигурация сервиса
+debuginfod_scan_path: /usr/lib/debug
+debuginfod_port: 8002
+debuginfod_rescan_interval: 1h
+debuginfod_log_level: info
+debuginfod_ui_enabled: true
+debuginfod_lazy_extract: true
+debuginfod_scan_workers: 4
+debuginfod_zabbix_key: ""
+debuginfod_upstream_urls: ""
+debuginfod_database_url: ""
+
+# Firewall (опционально; при nginx на периметре откройте только 443)
+debuginfod_firewall_enabled: false
+debuginfod_firewall_allowed_cidrs:
+  - 10.0.0.0/8
+  - 192.168.0.0/16

@@ -1,0 +1,6 @@
+---
+- name: Deploy debuginfod-go (Debian family)
+  hosts: debuginfod_deb
+  become: true
+  roles:
+    - role: debuginfod-go

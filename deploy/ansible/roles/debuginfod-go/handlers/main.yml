@@ -1,0 +1,10 @@
+---
+- name: Restart debuginfod-go
+  ansible.builtin.systemd:
+    name: debuginfod-go
+    state: restarted
+    daemon_reload: true
+
+- name: Reload firewalld
+  ansible.builtin.command: firewall-cmd --reload
+  changed_when: false

@@ -1,0 +1,49 @@
+---
+- name: Set package destination path
+  ansible.builtin.set_fact:
+    debuginfod_pkg_dest: "/tmp/{{ debuginfod_package_path | basename if (debuginfod_package_path | length > 0) else (debuginfod_package_url | basename) }}"
+
+- name: Copy rpm package to target
+  ansible.builtin.copy:
+    src: "{{ debuginfod_package_path }}"
+    dest: "{{ debuginfod_pkg_dest }}"
+    mode: "0644"
+  when: debuginfod_package_path | length > 0
+
+- name: Download rpm package
+  ansible.builtin.get_url:
+    url: "{{ debuginfod_package_url }}"
+    dest: "{{ debuginfod_pkg_dest }}"
+    mode: "0644"
+  when:
+    - debuginfod_package_url | length > 0
+    - debuginfod_package_path | length == 0
+
+- name: Install debuginfod-go rpm (dnf)
+  ansible.builtin.dnf:
+    name: "{{ debuginfod_pkg_dest }}"
+    state: present
+    disable_gpg_check: true
+  when: ansible_pkg_mgr == "dnf"
+
+- name: Install debuginfod-go rpm (yum)
+  ansible.builtin.yum:
+    name: "{{ debuginfod_pkg_dest }}"
+    state: present
+    disable_gpg_check: true
+  when: ansible_pkg_mgr == "yum"
+
+- name: Install runtime dependencies (online)
+  ansible.builtin.package:
+    name:
+      - sqlite-libs
+      - ca-certificates
+    state: present
+
+- name: Allow debuginfod port in firewalld
+  ansible.builtin.command: >-
+    firewall-cmd --permanent --add-rich-rule='rule family="ipv4"
+    source address="{{ item }}" port port="{{ debuginfod_port }}" protocol="tcp" accept'
+  loop: "{{ debuginfod_firewall_allowed_cidrs }}"
+  when: debuginfod_firewall_enabled
+  notify: Reload firewalld

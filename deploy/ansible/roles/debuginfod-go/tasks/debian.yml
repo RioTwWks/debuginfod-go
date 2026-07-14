@@ -1,0 +1,39 @@
+---
+- name: Set package destination path
+  ansible.builtin.set_fact:
+    debuginfod_pkg_file: "{{ debuginfod_package_path if (debuginfod_package_path | length > 0) else (debuginfod_package_url | basename) }}"
+    debuginfod_pkg_dest: "/tmp/{{ debuginfod_package_path | basename if (debuginfod_package_path | length > 0) else (debuginfod_package_url | basename) }}"
+
+- name: Copy deb package to target
+  ansible.builtin.copy:
+    src: "{{ debuginfod_package_path }}"
+    dest: "{{ debuginfod_pkg_dest }}"
+    mode: "0644"
+  when: debuginfod_package_path | length > 0
+
+- name: Download deb package
+  ansible.builtin.get_url:
+    url: "{{ debuginfod_package_url }}"
+    dest: "{{ debuginfod_pkg_dest }}"
+    mode: "0644"
+  when:
+    - debuginfod_package_url | length > 0
+    - debuginfod_package_path | length == 0
+
+- name: Install debuginfod-go deb
+  ansible.builtin.apt:
+    deb: "{{ debuginfod_pkg_dest }}"
+    state: present
+
+- name: Install runtime dependencies (online)
+  ansible.builtin.apt:
+    name:
+      - libsqlite3-0
+      - ca-certificates
+    state: present
+
+- name: Allow debuginfod port in UFW
+  ansible.builtin.command: "ufw allow from {{ item }} to any port {{ debuginfod_port }} proto tcp"
+  loop: "{{ debuginfod_firewall_allowed_cidrs }}"
+  when: debuginfod_firewall_enabled
+  changed_when: false

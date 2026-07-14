@@ -1,0 +1,6 @@
+---
+- name: Deploy debuginfod-go (RHEL family)
+  hosts: debuginfod_rpm
+  become: true
+  roles:
+    - role: debuginfod-go

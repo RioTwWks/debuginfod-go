@@ -1,0 +1,22 @@
+all:
+  children:
+    debuginfod:
+      children:
+        debuginfod_deb:
+          hosts:
+            astra-01:
+              ansible_host: 192.168.1.10
+            ubuntu-01:
+              ansible_host: 192.168.1.11
+        debuginfod_rpm:
+          hosts:
+            redos-01:
+              ansible_host: 192.168.1.20
+            centos-01:
+              ansible_host: 192.168.1.21
+      vars:
+        # Путь к пакету на control-node (ansible-playbook запускается из корня репозитория)
+        debuginfod_package_path: "{{ playbook_dir }}/../../../dist/debuginfod-go_0.1.0_amd64.deb"
+        debuginfod_scan_path: /usr/lib/debug,/var/cache/apt/archives
+        debuginfod_zabbix_key: change-me
+        debuginfod_firewall_enabled: false

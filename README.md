@@ -239,9 +239,11 @@ scan paths ──► indexer (workers) ──► SQLite/PostgreSQL ◄── web
 | [TODO.md](./TODO.md) | Roadmap |
 | [examples/](./examples/) | Docker-compose и GDB-скрипт |
 | [.cursor/rules.md](./.cursor/rules.md) | Правила для Cursor AI |
-| [deploy/README.md](./deploy/README.md) | Пакеты, systemd, оффлайн-установка |
+| [deploy/README.md](./deploy/README.md) | Пакеты, Ansible, nginx, Zabbix, продакшн-схема |
+| [deploy/ansible/README.md](./deploy/ansible/README.md) | Ansible playbook |
+| [deploy/nginx/README.md](./deploy/nginx/README.md) | Reverse proxy |
 | [deploy/offline/README.md](./deploy/offline/README.md) | Оффлайн bundle `.deb`/`.rpm` |
-| [deploy/zabbix/README.md](./deploy/zabbix/README.md) | Мониторинг Zabbix |
+| [deploy/zabbix/README.md](./deploy/zabbix/README.md) | Zabbix template и мониторинг |
 
 ## Лицензия
 

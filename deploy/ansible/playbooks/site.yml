@@ -1,0 +1,6 @@
+---
+- name: Deploy debuginfod-go
+  hosts: debuginfod
+  become: true
+  roles:
+    - role: debuginfod-go
