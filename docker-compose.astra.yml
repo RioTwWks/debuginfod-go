@@ -1,13 +1,9 @@
-# Overlay для Astra Linux 1.7: Debian buster runtime (glibc), как в PVS-Studio-Tracker.
+# Overlay для Astra Linux 1.7: buster runtime + репозитории download.astralinux.ru.
 #
-# В контейнере — стандартные репозитории Debian (deb.debian.org) + HTTP_PROXY с хоста.
-# НЕ используйте APT_PROFILE=astra без копирования GPG-ключей хоста (NO_PUBKEY).
+# deb.debian.org/buster — 404 (EOL, снят с main mirror). На Astra 1.7 нужны
+# репозитории хоста + CA/GPG с хоста (prepare-build-certs.sh) + HTTP_PROXY.
 #
 #   make build
-#   make docker-astra
-#
-# Явно Astra-репозитории (редко нужно):
-#   export APT_PROFILE=astra
 #   make docker-astra
 
 services:
@@ -16,7 +12,7 @@ services:
       network: host
       args:
         DEBIAN_SUITE: ${DEBIAN_SUITE:-buster}
-        APT_PROFILE: ${APT_PROFILE:-}
+        APT_PROFILE: ${APT_PROFILE:-astra}
         APT_MIRROR: ${APT_MIRROR:-}
         HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
         HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}

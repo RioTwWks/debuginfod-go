@@ -86,7 +86,16 @@ sudo systemctl restart docker
 
 ## Рекомендуемый способ (Astra)
 
-Как в [PVS-Studio-Tracker](https://github.com/RioTwWks/PVS-Studio-Tracker): **в контейнере — стандартные репозитории Debian** (`deb.debian.org`), на хосте — сборка Go-бинарника. Прокси передаётся через `HTTP_PROXY`/`HTTPS_PROXY`.
+На Astra 1.7 `make docker-astra` по умолчанию:
+
+| Что | Где |
+|-----|-----|
+| Go-бинарник | собирается **на хосте** (`make build`) |
+| Runtime-пакеты (`ca-certificates`, `curl`, `libsqlite3-0`) | APT **Astra** в контейнере (`APT_PROFILE=astra`) |
+| CA + GPG | копируются с хоста (`prepare-build-certs.sh`) |
+| Прокси | `HTTP_PROXY` / `HTTPS_PROXY` с хоста |
+
+Почему не `deb.debian.org`, как в [PVS-Studio-Tracker](https://github.com/RioTwWks/PVS-Studio-Tracker)? Там `python:3.12-slim` (bookworm) — актуальный Debian. У нас `debian:buster-slim` для glibc Astra 1.7, а **buster снят с deb.debian.org** (`404 Not Found`). Доступны репозитории `download.astralinux.ru` — те же, что у `sudo apt update` на хосте.
 
 ```bash
 # Зависимости на хосте (один раз)
@@ -97,7 +106,14 @@ make build
 make docker-astra
 ```
 
-`docker-compose.astra.yml` задаёт только `DEBIAN_SUITE=buster` (совместимость glibc с Astra 1.7), **не** подменяет APT на `download.astralinux.ru`.
+В логе build:
+
+```text
+APT proxy: http://…
+Installed host ca-certificates.crt (… bytes)
+Installed host APT trust keys (… files)
+Using Astra Linux APT repositories
+```
 
 Проверка:
 
@@ -106,21 +122,16 @@ curl http://127.0.0.1:8002/healthz
 curl http://127.0.0.1:8002/readyz
 ```
 
-## Профиль APT_PROFILE=astra (редко)
+Фоновый запуск: `make docker-up-astra`
 
-По умолчанию **не используется**. Репозитории Astra внутри `debian:buster-slim` требуют GPG-ключи хоста (`NO_PUBKEY 7DB1E284F89C2962` без них).
+## Профиль APT_PROFILE=astra
 
-Если всё же нужны Astra-репозитории в контейнере:
-
-```bash
-export APT_PROFILE=astra
-make docker-astra   # prepare-build-certs.sh копирует также /etc/apt/trusted.gpg.d
-```
+Включён **по умолчанию** в `docker-compose.astra.yml`. Без него `debian:buster-slim` обращается к `deb.debian.org` → `404`. С профилем `astra` нужны GPG-ключи хоста — `prepare-build-certs.sh` копирует `/etc/apt/trusted.gpg*`.
 
 | Переменная | По умолчанию | Назначение |
 |------------|--------------|------------|
 | `DEBIAN_SUITE` | `buster` | База образа Debian 10 (glibc Astra 1.7) |
-| `APT_PROFILE` | *(пусто)* | `astra` — sources `download.astralinux.ru` + GPG с хоста |
+| `APT_PROFILE` | `astra` | sources `download.astralinux.ru` + GPG с хоста |
 
 Файлы:
 
