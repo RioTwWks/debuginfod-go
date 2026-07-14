@@ -11,6 +11,7 @@ Kubernetes не используется — нативные пакеты + sys
 | [nfpm.yaml](./nfpm.yaml) | Манифест `.deb` / `.rpm` |
 | [package/](./package/) | postinstall, env example |
 | [offline/](./offline/) | Оффлайн-установка пакетов и зависимостей |
+| [security/](./security/) | Path traversal, IMA, systemd hardening |
 | [ansible/](./ansible/) | Ansible playbook (deb/rpm) |
 | [nginx/](./nginx/) | Reverse proxy (TLS, ACL, rate limit, cluster) |
 | [zabbix/](./zabbix/) | Мониторинг: template, triggers, actions |

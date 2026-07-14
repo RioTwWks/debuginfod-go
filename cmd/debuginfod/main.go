@@ -73,6 +73,7 @@ func main() {
 		ZabbixKey:        cfg.ZabbixKey,
 		CacheBytes:       cacheBytes,
 		CacheDir:         cfg.CacheDir,
+		ScanPaths:        cfg.ScanPaths,
 		UIEnabled:        cfg.UIEnabled,
 		Security:         security,
 	}
