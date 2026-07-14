@@ -1,0 +1,13 @@
+[Unit]
+Description=Backup debuginfod-go database and config
+Documentation=file:///usr/share/doc/debuginfod-go/backup/README.md
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/debuginfod-go/debuginfod-go.env
+ExecStart=/usr/libexec/debuginfod-go/backup.sh
+IOSchedulingClass=best-effort
+
+[Install]
+WantedBy=multi-user.target

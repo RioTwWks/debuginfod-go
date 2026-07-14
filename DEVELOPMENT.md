@@ -314,7 +314,8 @@ cd examples && make demo
 - **Пакеты / оффлайн:** [deploy/offline/README.md](./deploy/offline/README.md)
 - **Ansible:** [deploy/ansible/README.md](./deploy/ansible/README.md)
 - **nginx:** [deploy/nginx/README.md](./deploy/nginx/README.md)
-- **Zabbix:** [deploy/zabbix/README.md](./deploy/zabbix/README.md)
+- **Backup:** [deploy/backup/README.md](./deploy/backup/README.md)
+- **PostgreSQL:** [deploy/postgresql/README.md](./deploy/postgresql/README.md)
 - **systemd:** [deploy/debuginfod-go.service](./deploy/debuginfod-go.service)
 
 ## Cursor / MCP

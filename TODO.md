@@ -33,7 +33,7 @@ CI (GitHub Actions) → .deb / .rpm → Ansible → systemd + nginx → Zabbix
 | Оффлайн | **bundle без интернета** | ✅ `deploy/offline/`, `make offline-bundle-*` |
 | Конфигурация | **Ansible** | ✅ `deploy/ansible/` |
 | Периметр | **nginx** (TLS, ACL, rate limit) | ✅ `deploy/nginx/` |
-| БД (опц.) | **PostgreSQL** + backup | ✅ драйвер; backup — в плане |
+| БД (опц.) | **PostgreSQL** + backup | ✅ драйвер + [backup/](./deploy/backup/), [postgresql/](./deploy/postgresql/) |
 | Оркестрация | ~~Kubernetes~~ | ❌ вне scope |
 
 Docker — только для dev/demo (`examples/`, корневой `docker-compose.yml`), не для продакшн-развёртывания на целевых ОС.
@@ -53,16 +53,17 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 ### Средний приоритет
 
 - [x] **systemd unit** — `deploy/debuginfod-go.service`
-- [ ] **Публикация пакетов из CI** — артефакты `.deb`/`.rpm` во внутренний apt/dnf-репозиторий (Nexus, aptly, pulp)
-- [ ] **Backup** — SQLite/PostgreSQL (`pg_dump`), cache, конфиги; cron + restic/rsync
-- [ ] **Документация продакшн-схемы** — расширить при необходимости (базовый deploy/README.md ✅)
-- [ ] **Рекомендации PostgreSQL в проде** — когда переходить с SQLite, миграция, несколько инстансов за nginx
+- [x] ~~**Публикация пакетов из CI**~~ — не планируется (достаточно offline bundle + ручная/Ansible доставка)
+- [x] **Backup** — `deploy/backup/`: SQLite/PostgreSQL, config, timer, restic/rsync
+- [x] **Документация продакшн-схемы** — `deploy/README.md` (чеклист, эксплуатация)
+- [x] **Рекомендации PostgreSQL в проде** — `deploy/postgresql/`: миграция, кластер за nginx
 
 ### Не планируется
 
 - [x] ~~**Kubernetes / Helm chart**~~ — вне scope, не будет
 - [x] ~~**Prometheus + Grafana**~~ — сознательно заменены Zabbix `/zabbix`
 - [x] ~~**Docker в продакшн**~~ — только dev/demo; на целевых ОС — пакеты + systemd
+- [x] ~~**CI → Nexus/aptly/pulp**~~ — не требуется при offline bundle
 
 ---
 
@@ -117,7 +118,7 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 ## Качество и CI
 
 - [ ] **golangci-lint в CI**
-- [ ] **Сборка `.deb`/`.rpm` в CI** — nfpm + upload артефактов (Makefile готов локально)
+- [ ] **Сборка `.deb`/`.rpm` в CI** — upload артефактов в GitHub Actions (без внутреннего репозитория)
 - [ ] **Coverage badge** — Codecov
 - [ ] **Benchmark-тесты**
 - [ ] **Fuzzing** — ELF notes, ar/tar
