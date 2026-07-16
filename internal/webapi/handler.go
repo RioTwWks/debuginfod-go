@@ -29,6 +29,8 @@ type ServerOpts struct {
 	ZabbixKey        string
 	AdminKey         string
 	ScanTrigger      ScanTrigger
+	DedupRunner      DedupRunner
+	DedupRestorer    DedupRestorer
 	CacheBytes       func() int64
 	CacheDir         string
 	ScanPaths        []string
@@ -43,16 +45,18 @@ type Handler struct {
 	metrics       *metrics.Collector
 	cacheDir      string
 	allowedRoots  []string
+	dedupRestorer DedupRestorer
 }
 
 // NewHandler создаёт HTTP-обработчик.
 func NewHandler(opts ServerOpts) *Handler {
 	return &Handler{
-		store:        opts.Store,
-		federation:   opts.Federation,
-		metrics:      opts.Metrics,
-		cacheDir:     opts.CacheDir,
-		allowedRoots: pathsafe.AllowedRoots(opts.ScanPaths, opts.CacheDir),
+		store:         opts.Store,
+		federation:    opts.Federation,
+		metrics:       opts.Metrics,
+		cacheDir:      opts.CacheDir,
+		allowedRoots:  pathsafe.AllowedRoots(opts.ScanPaths, opts.CacheDir),
+		dedupRestorer: opts.DedupRestorer,
 	}
 }
 
@@ -197,7 +201,7 @@ func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, buildID,
 		return
 	}
 
-	path, err := resolveFilePath(h.cacheDir, loc)
+	path, err := resolveFilePathWithDedup(h.cacheDir, loc, h.dedupRestorer)
 	if err != nil {
 		logResolveError("resolveArtifact", err, "build_id", buildID)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -282,7 +286,7 @@ func (h *Handler) serveSection(w http.ResponseWriter, r *http.Request, buildID, 
 		return
 	}
 
-	data, err := extractSectionFromLocations(h.cacheDir, debuginfo, executable, sectionName)
+	data, err := extractSectionFromLocations(h.cacheDir, debuginfo, executable, sectionName, h.dedupRestorer)
 	if errors.Is(err, elfsection.ErrNotFound) {
 		h.tryFederation(w, r)
 		return
@@ -332,6 +336,7 @@ func NewMux(opts ServerOpts) http.Handler {
 	mux.HandleFunc("/healthz", HealthHandler)
 	mux.HandleFunc("/readyz", ReadyHandler(opts.Metrics))
 	mux.HandleFunc("/admin/rescan", AdminRescanHandler(opts.ScanTrigger, opts.AdminKey))
+	mux.HandleFunc("/admin/dedup-backfill", AdminDedupBackfillHandler(opts.DedupRunner, opts.AdminKey))
 	mux.HandleFunc("/metadata", MetadataHandler(opts))
 	mux.HandleFunc("/openapi.yaml", OpenAPIHandler)
 	mux.HandleFunc("/zabbix", metrics.Handler(opts.Metrics, opts.Store, opts.CacheBytes, opts.ZabbixKey))

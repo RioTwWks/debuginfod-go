@@ -14,7 +14,20 @@ import (
 
 // resolveFilePath возвращает путь на диске, при необходимости извлекая из архива.
 func resolveFilePath(cacheDir string, loc storage.ArtifactLocation) (string, error) {
+	return resolveFilePathWithDedup(cacheDir, loc, nil)
+}
+
+// DedupRestorer восстанавливает delta-файлы в кэш.
+type DedupRestorer interface {
+	RestoreToCache(cacheDir, filePath string) (string, error)
+}
+
+// resolveFilePathWithDedup учитывает xdelta dedup и cache-aside.
+func resolveFilePathWithDedup(cacheDir string, loc storage.ArtifactLocation, restorer DedupRestorer) (string, error) {
 	if loc.FilePath != "" {
+		if restorer != nil {
+			return restorer.RestoreToCache(cacheDir, loc.FilePath)
+		}
 		return loc.FilePath, nil
 	}
 	if loc.ArchivePath == "" || loc.MemberPath == "" {
@@ -40,15 +53,14 @@ func resolveSourcePath(cacheDir string, loc storage.SourceLocation) (string, err
 }
 
 // openArtifact открывает ELF-файл для section API (с отложенным извлечением).
-func openArtifact(cacheDir string, loc storage.ArtifactLocation) (string, func(), error) {
-	path, err := resolveFilePath(cacheDir, loc)
+func openArtifact(cacheDir string, loc storage.ArtifactLocation, restorer DedupRestorer) (string, func(), error) {
+	path, err := resolveFilePathWithDedup(cacheDir, loc, restorer)
 	if err != nil {
 		return "", nil, err
 	}
 	if loc.FilePath != "" {
 		return path, func() {}, nil
 	}
-	// Временно извлечённый файл — удаляем после использования, если не в кэше.
 	return path, func() { _ = os.Remove(path) }, nil
 }
 
@@ -58,14 +70,14 @@ func serveResolvedFile(w http.ResponseWriter, r *http.Request, path string) {
 }
 
 // extractSectionFromLocations извлекает секцию ELF с поддержкой lazy-архивов.
-func extractSectionFromLocations(cacheDir string, debuginfo, executable storage.ArtifactLocation, sectionName string) ([]byte, error) {
-	debugPath, cleanupDebug, err := openArtifactIfPresent(cacheDir, debuginfo)
+func extractSectionFromLocations(cacheDir string, debuginfo, executable storage.ArtifactLocation, sectionName string, restorer DedupRestorer) ([]byte, error) {
+	debugPath, cleanupDebug, err := openArtifactIfPresent(cacheDir, debuginfo, restorer)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanupDebug()
 
-	execPath, cleanupExec, err := openArtifactIfPresent(cacheDir, executable)
+	execPath, cleanupExec, err := openArtifactIfPresent(cacheDir, executable, restorer)
 	if err != nil {
 		return nil, err
 	}
@@ -74,11 +86,11 @@ func extractSectionFromLocations(cacheDir string, debuginfo, executable storage.
 	return elfsection.ExtractFirst(debugPath, execPath, sectionName)
 }
 
-func openArtifactIfPresent(cacheDir string, loc storage.ArtifactLocation) (string, func(), error) {
+func openArtifactIfPresent(cacheDir string, loc storage.ArtifactLocation, restorer DedupRestorer) (string, func(), error) {
 	if loc.FilePath == "" && loc.ArchivePath == "" {
 		return "", func() {}, nil
 	}
-	return openArtifact(cacheDir, loc)
+	return openArtifact(cacheDir, loc, restorer)
 }
 
 // streamMember отдаёт содержимое члена архива без сохранения на диск (опционально).

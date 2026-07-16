@@ -20,6 +20,12 @@ type Options struct {
 	Interval   time.Duration
 	Enabled    bool
 	WebhookURL string
+	Dedup      DedupAfterScan
+}
+
+// DedupAfterScan запускается после успешного scan.
+type DedupAfterScan interface {
+	RunIngestAfterScan() error
 }
 
 // Runner управляет периодическим и ручным scan.
@@ -29,6 +35,7 @@ type Runner struct {
 	interval   time.Duration
 	enabled    bool
 	webhookURL string
+	dedup      DedupAfterScan
 	client     *http.Client
 
 	trigger chan struct{}
@@ -46,6 +53,7 @@ func New(opts Options) *Runner {
 		interval:   opts.Interval,
 		enabled:    opts.Enabled,
 		webhookURL: opts.WebhookURL,
+		dedup:      opts.Dedup,
 		client:     client,
 		trigger:    make(chan struct{}, 1),
 	}
@@ -131,6 +139,12 @@ func (r *Runner) executeScan() {
 	if err := r.indexer.Scan(); err != nil {
 		slog.Error("index scan", "err", err)
 		return
+	}
+
+	if r.dedup != nil {
+		if err := r.dedup.RunIngestAfterScan(); err != nil {
+			slog.Warn("dedup ingest", "err", err)
+		}
 	}
 
 	if r.metrics != nil {
