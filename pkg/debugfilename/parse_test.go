@@ -41,6 +41,16 @@ func TestParseBuildDir(t *testing.T) {
 	}
 }
 
+func TestMetadataFromNameArbitrary(t *testing.T) {
+	info, err := MetadataFromName("my-custom-binary.debug")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Stem != "my-custom-binary" || info.Version != "" || info.BuildNum != 0 {
+		t.Fatalf("unexpected: %+v", info)
+	}
+}
+
 func TestParseInvalid(t *testing.T) {
 	cases := []string{
 		"foo.debug",
