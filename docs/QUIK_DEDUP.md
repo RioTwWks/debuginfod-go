@@ -1,6 +1,8 @@
-# Quik debuginfo dedup (xdelta3)
+# Quik debuginfo storage (zstd + CAS dedup)
 
-Сжатие дублирующихся `.debug` ELF-файлов Quik/Front через xdelta3.
+Гибридное сжатие `.debug` ELF-файлов Quik/Front: **per-file zstd** + **SHA256 content-addressable dedup**.
+
+xdelta **не используется** — инкрементальные патчи между сборками дают низкую экономию на DWARF.
 
 ## Layout на диске
 
@@ -17,18 +19,15 @@ DEBUGINFOD_SCAN_PATH/
         lib.so.19.1.5.2899.debug
 ```
 
-В Web UI такой проект отобразится как `Released/QuikServer_16.0_Common_Linux`.
-
-Классический layout тоже поддерживается:
+Сжатые blob хранятся в CAS-каталоге (по умолчанию `{DEBUGINFOD_CACHE_DIR}/dedup-blobs/`):
 
 ```text
-DEBUGINFOD_SCAN_PATH/
-  QuikServer/
-    build_482_2025-03-26_…/
-      lib.so.19.1.5.2899.debug
+dedup-blobs/
+  ab/
+    abcdef…<sha256>.zst
 ```
 
-Файлы уже приходят как `*.debug` (без `.7zip.debug`).
+Оригинальные `.debug` удаляются после успешного сжатия и проверки SHA256.
 
 ## Имена файлов
 
@@ -40,30 +39,23 @@ DEBUGINFOD_SCAN_PATH/
 | version | `19.1.5` |
 | build_num | `2899` |
 
-Каталог сборки: `build_<num>_YYYY-MM-DD_…` — `num` используется только для идентификации каталога.
-
-## Группировка
-
-Ключ группы для xdelta: **`(normalize(project), file_stem)`** — одна библиотека между каталогами `build_*`.
-
-`normalize(project)` схлопывает хвостовые версионные сегменты пути (`16/16.0.0` → продукт `Released/QuikServer_16.0_Release_Linux`).
-Имя проекта в UI остаётся полным (`Released/.../16/16.0.0`).
-
-`version` в имени файла (`16.0.0` → `16.0.1`) и метка в `.comment` **не влияют** на группировку.
-Метка из `.comment` (git-тег, JIRA, `tag:` / `commit:` — если есть) сохраняется в БД
-для справки, но не обязательна.
-
-Внутри группы **base** — файл с минимальным `build_num` в имени. Остальные кодируются как delta относительно base.
-
 ## Pipeline
+
+Для каждого pending `.debug`:
+
+1. Вычислить SHA256 содержимого.
+2. Если blob с таким SHA уже есть → **CAS ref** (удалить оригинал, ссылка на существующий blob).
+3. Иначе → **zstd-сжатие** в CAS, проверка распаковки, удаление оригинала.
+
+Группировка по `(project, file_stem)` **не требуется** — каждый файл обрабатывается независимо.
 
 ### Ingest (после scan)
 
 1. Рекурсивно обнаружить каталоги `build_*` под scan path.
 2. Зарегистрировать `.debug` в таблице `dedup_files`.
-3. Сгруппировать pending-файлы и выполнить xdelta.
+3. Сжать все pending-файлы (zstd + CAS).
 
-### Backfill (обязателен для старых сборок)
+### Backfill (для старых сборок)
 
 ```http
 POST /admin/dedup-backfill?project=Released/QuikServer_16.0_Common_Linux&batch=50&dry_run=false
@@ -72,30 +64,25 @@ X-Admin-Token: <DEBUGINFOD_ADMIN_KEY>
 
 Параметр `project` — полный путь проекта как в UI. Без `project` — все обнаруженные папки.
 
-### xdelta3
-
-```bash
-xdelta3 -e -s base.debug target.debug target.debug.xdelta
-xdelta3 -d -s base.debug target.debug.xdelta restored.debug
-```
-
-После encode: SHA256(restored) == SHA256(original) → удалить original, сохранить `.xdelta`.
+При обновлении с xdelta legacy-записи (`storage_kind=base|delta`) автоматически сбрасываются в `pending` для повторной обработки.
 
 ## Отдача (cache-aside)
 
 При запросе `/buildid/<id>/debuginfo`:
 
 1. Найти `file_path` в `artifacts`.
-2. Проверить `dedup_files`: если `storage_kind=delta`, восстановить `base + delta` в `DEBUGINFOD_CACHE_DIR/dedup-restored/`.
-3. Отдать восстановленный файл (`http.ServeFile`).
+2. Проверить `dedup_files`: если `storage_kind=compressed|ref`, распаковать blob в `DEBUGINFOD_CACHE_DIR/dedup-restored/`.
+3. Отдать распакованный файл (`http.ServeFile`).
 
-Повторные запросы используют кэш (проверка mtime/size delta и base).
+Повторные запросы используют кэш (проверка size + SHA256).
 
 ## БД
 
 Таблицы `dedup_projects`, `dedup_build_dirs`, `dedup_files` — см. `internal/storage/dedup.go`.
 
-`storage_kind`: `full` | `base` | `delta`.
+`storage_kind`: `full` | `compressed` | `ref`.
+
+Колонка `delta_path` хранит путь к zstd-blob (историческое имя).
 
 ## Конфигурация
 
@@ -104,11 +91,16 @@ DEBUGINFOD_DEDUP_ENABLED=true
 # Пусто = все найденные папки; иначе фильтр по полному пути проекта (через запятую):
 # DEBUGINFOD_DEDUP_PROJECTS=Released/QuikServer_16.0_Common_Linux
 DEBUGINFOD_DEDUP_WORKERS=4
-DEBUGINFOD_XDELTA_PATH=xdelta3
+# Каталог CAS-blob (по умолчанию: {DEBUGINFOD_CACHE_DIR}/dedup-blobs)
+# DEBUGINFOD_DEDUP_BLOB_DIR=/var/lib/debuginfod-go/blobs
 ```
 
 ## Ограничения
 
 - Только plain `.debug` на диске (не архивы).
-- xdelta эффективен для Quik при группировке по одному commit tag; для других проектов dedup можно отключить.
-- Требуется `xdelta3` в PATH (пакет ОС: Astra/RedOS).
+- Внешние зависимости не требуются — zstd встроен в бинарник (klauspost/compress).
+- Экономия CAS заметна только при **байт-идентичных** файлах между сборками; zstd даёт выигрыш на каждом файле.
+
+## Отложено (build-time)
+
+См. [TODO.md](../TODO.md) — оптимизации на стороне CI: `dwz`, `-gz`/`zlib-gnu`, split-dwarf.

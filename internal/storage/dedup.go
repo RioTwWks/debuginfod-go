@@ -22,9 +22,9 @@ const (
 type DedupStorageKind string
 
 const (
-	DedupKindFull  DedupStorageKind = "full"
-	DedupKindBase  DedupStorageKind = "base"
-	DedupKindDelta DedupStorageKind = "delta"
+	DedupKindFull       DedupStorageKind = "full"
+	DedupKindCompressed DedupStorageKind = "compressed"
+	DedupKindRef        DedupStorageKind = "ref"
 )
 
 // DedupProject — проект Quik (QuikServer, Front).
@@ -56,16 +56,17 @@ type DedupFile struct {
 	Version      string
 	FileBuildNum int
 	CommitTag    string
-	StorageKind  DedupStorageKind
-	BaseFileID   sql.NullInt64
-	DeltaPath    string
-	SHA256       string
-	OriginalSize int64
+	StorageKind    DedupStorageKind
+	BaseFileID     sql.NullInt64
+	BlobPath       string // колонка delta_path в БД (историческое имя)
+	SHA256         string
+	OriginalSize   int64
+	CompressedSize int64
 	Status       DedupBuildStatus
 	ErrorMsg     string
 }
 
-// DedupGroupKey — ключ группировки для xdelta.
+// DedupGroupKey — ключ группировки (метаданные, для UI/отчётов).
 type DedupGroupKey struct {
 	Project   string
 	FileStem  string
@@ -106,6 +107,7 @@ func dedupSchemaSQLite() string {
 			delta_path TEXT NOT NULL DEFAULT '',
 			sha256 TEXT NOT NULL DEFAULT '',
 			original_size INTEGER NOT NULL DEFAULT 0,
+			compressed_size INTEGER NOT NULL DEFAULT 0,
 			status TEXT NOT NULL DEFAULT 'pending',
 			error_msg TEXT NOT NULL DEFAULT '',
 			FOREIGN KEY (build_dir_id) REFERENCES dedup_build_dirs(id),
@@ -148,6 +150,7 @@ func dedupSchemaPostgres() string {
 			delta_path TEXT NOT NULL DEFAULT '',
 			sha256 TEXT NOT NULL DEFAULT '',
 			original_size BIGINT NOT NULL DEFAULT 0,
+			compressed_size BIGINT NOT NULL DEFAULT 0,
 			status TEXT NOT NULL DEFAULT 'pending',
 			error_msg TEXT NOT NULL DEFAULT ''
 		);
@@ -164,7 +167,47 @@ func migrateDedup(db *sql.DB, dialect Dialect) error {
 	if _, err := db.Exec(schema); err != nil {
 		return fmt.Errorf("migrate dedup: %w", err)
 	}
+	if err := migrateDedupColumns(db, dialect); err != nil {
+		return err
+	}
+	return migrateDedupFromXdelta(db, dialect)
+}
+
+func migrateDedupColumns(db *sql.DB, dialect Dialect) error {
+	alters := []string{
+		"ALTER TABLE dedup_files ADD COLUMN compressed_size INTEGER NOT NULL DEFAULT 0",
+	}
+	if dialect == DialectPostgres {
+		alters = []string{
+			"ALTER TABLE dedup_files ADD COLUMN IF NOT EXISTS compressed_size BIGINT NOT NULL DEFAULT 0",
+		}
+	}
+	for _, q := range alters {
+		if _, err := db.Exec(q); err != nil {
+			// SQLite: column may already exist
+			if dialect != DialectPostgres {
+				continue
+			}
+			return fmt.Errorf("migrate dedup column: %w", err)
+		}
+	}
 	return nil
+}
+
+// migrateDedupFromXdelta сбрасывает legacy xdelta-записи для повторной обработки.
+func migrateDedupFromXdelta(db *sql.DB, dialect Dialect) error {
+	q := rebind(`
+		UPDATE dedup_files SET
+			status = 'pending',
+			storage_kind = 'full',
+			base_file_id = NULL,
+			delta_path = '',
+			compressed_size = 0,
+			error_msg = ''
+		WHERE storage_kind IN ('base', 'delta')
+	`, dialect)
+	_, err := db.Exec(q)
+	return err
 }
 
 // EnsureDedupProject создаёт проект, если его ещё нет.
@@ -225,8 +268,13 @@ func (s *Storage) UpsertDedupFile(f DedupFile) (int64, error) {
 			commit_tag = excluded.commit_tag,
 			original_size = excluded.original_size,
 			status = CASE
-				WHEN dedup_files.storage_kind IN ('full', 'base') AND dedup_files.delta_path = '' THEN 'pending'
+				WHEN dedup_files.storage_kind IN ('full', 'compressed', 'ref') AND dedup_files.delta_path = '' THEN 'pending'
+				WHEN dedup_files.storage_kind IN ('base', 'delta') THEN 'pending'
 				ELSE dedup_files.status
+			END,
+			storage_kind = CASE
+				WHEN dedup_files.storage_kind IN ('base', 'delta') THEN 'full'
+				ELSE dedup_files.storage_kind
 			END
 	`, s.dialect)
 	if s.dialect == DialectPostgres {
@@ -239,8 +287,13 @@ func (s *Storage) UpsertDedupFile(f DedupFile) (int64, error) {
 				commit_tag = EXCLUDED.commit_tag,
 				original_size = EXCLUDED.original_size,
 				status = CASE
-					WHEN dedup_files.storage_kind IN ('full', 'base') AND dedup_files.delta_path = '' THEN 'pending'
+					WHEN dedup_files.storage_kind IN ('full', 'compressed', 'ref') AND dedup_files.delta_path = '' THEN 'pending'
+					WHEN dedup_files.storage_kind IN ('base', 'delta') THEN 'pending'
 					ELSE dedup_files.status
+				END,
+				storage_kind = CASE
+					WHEN dedup_files.storage_kind IN ('base', 'delta') THEN 'full'
+					ELSE dedup_files.storage_kind
 				END
 			RETURNING id
 		`, s.dialect)
@@ -294,7 +347,7 @@ func (s *Storage) ListPendingDedupFiles(buildDirIDs []int64) ([]DedupFile, error
 		SELECT f.id, f.build_dir_id, p.name, f.file_path, f.filename,
 			f.file_stem, f.version, f.file_build_num, f.commit_tag,
 			f.storage_kind, f.base_file_id, f.delta_path, f.sha256,
-			f.original_size, f.status, f.error_msg
+			f.original_size, f.compressed_size, f.status, f.error_msg
 		FROM dedup_files f
 		JOIN dedup_build_dirs b ON b.id = f.build_dir_id
 		JOIN dedup_projects p ON p.id = b.project_id
@@ -314,7 +367,7 @@ func (s *Storage) ListPendingDedupFilesByProject(projectName string) ([]DedupFil
 		SELECT f.id, f.build_dir_id, p.name, f.file_path, f.filename,
 			f.file_stem, f.version, f.file_build_num, f.commit_tag,
 			f.storage_kind, f.base_file_id, f.delta_path, f.sha256,
-			f.original_size, f.status, f.error_msg
+			f.original_size, f.compressed_size, f.status, f.error_msg
 		FROM dedup_files f
 		JOIN dedup_build_dirs b ON b.id = f.build_dir_id
 		JOIN dedup_projects p ON p.id = b.project_id
@@ -334,7 +387,7 @@ func (s *Storage) ListAllPendingDedupFiles() ([]DedupFile, error) {
 		SELECT f.id, f.build_dir_id, p.name, f.file_path, f.filename,
 			f.file_stem, f.version, f.file_build_num, f.commit_tag,
 			f.storage_kind, f.base_file_id, f.delta_path, f.sha256,
-			f.original_size, f.status, f.error_msg
+			f.original_size, f.compressed_size, f.status, f.error_msg
 		FROM dedup_files f
 		JOIN dedup_build_dirs b ON b.id = f.build_dir_id
 		JOIN dedup_projects p ON p.id = b.project_id
@@ -359,7 +412,7 @@ func (s *Storage) GetDedupFileByID(id int64) (DedupFile, error) {
 		SELECT f.id, f.build_dir_id, p.name, f.file_path, f.filename,
 			f.file_stem, f.version, f.file_build_num, f.commit_tag,
 			f.storage_kind, f.base_file_id, f.delta_path, f.sha256,
-			f.original_size, f.status, f.error_msg
+			f.original_size, f.compressed_size, f.status, f.error_msg
 		FROM dedup_files f
 		JOIN dedup_build_dirs b ON b.id = f.build_dir_id
 		JOIN dedup_projects p ON p.id = b.project_id
@@ -377,7 +430,7 @@ func (s *Storage) GetDedupFileByID(id int64) (DedupFile, error) {
 }
 
 // MarkDedupFileDone обновляет статус файла после успешного dedup.
-func (s *Storage) MarkDedupFileDone(id int64, kind DedupStorageKind, baseID int64, deltaPath, sha256 string) error {
+func (s *Storage) MarkDedupFileDone(id int64, kind DedupStorageKind, baseID int64, blobPath, sha256 string, compressedSize int64) error {
 	var base sql.NullInt64
 	if baseID > 0 {
 		base = sql.NullInt64{Int64: baseID, Valid: true}
@@ -385,10 +438,30 @@ func (s *Storage) MarkDedupFileDone(id int64, kind DedupStorageKind, baseID int6
 	_, err := s.db.Exec(rebind(`
 		UPDATE dedup_files SET
 			storage_kind = ?, base_file_id = ?, delta_path = ?,
-			sha256 = ?, status = 'done', error_msg = ''
+			sha256 = ?, compressed_size = ?, status = 'done', error_msg = ''
 		WHERE id = ?
-	`, s.dialect), string(kind), base, deltaPath, sha256, id)
+	`, s.dialect), string(kind), base, blobPath, sha256, compressedSize, id)
 	return err
+}
+
+// FindBlobPathBySHA возвращает путь существующего blob по SHA256 содержимого.
+func (s *Storage) FindBlobPathBySHA(sha string) (string, error) {
+	if sha == "" {
+		return "", nil
+	}
+	var blobPath string
+	err := s.db.QueryRow(rebind(`
+		SELECT delta_path FROM dedup_files
+		WHERE sha256 = ? AND status = 'done'
+			AND storage_kind IN ('compressed', 'ref')
+			AND delta_path != ''
+		ORDER BY id ASC
+		LIMIT 1
+	`, s.dialect), sha).Scan(&blobPath)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return blobPath, err
 }
 
 // MarkDedupFileError сохраняет ошибку обработки файла.
@@ -446,14 +519,15 @@ func (s *Storage) ListDedupProjectNames() ([]string, error) {
 
 // DedupProjectTotals — сводка dedup по папке для Web UI.
 type DedupProjectTotals struct {
-	Project       string  `json:"project"`
-	BuildDirs     int64   `json:"build_dirs"`
-	FilesDone     int64   `json:"files_done"`
-	FilesDelta    int64   `json:"files_delta"`
-	BytesOriginal int64   `json:"bytes_original"`
-	BytesOnDisk   int64   `json:"bytes_on_disk"`
-	BytesSaved    int64   `json:"bytes_saved"`
-	SavedPercent  float64 `json:"saved_percent"`
+	Project         string  `json:"project"`
+	BuildDirs       int64   `json:"build_dirs"`
+	FilesDone       int64   `json:"files_done"`
+	FilesCompressed int64   `json:"files_compressed"`
+	FilesCASRef       int64   `json:"files_cas_ref"`
+	BytesOriginal   int64   `json:"bytes_original"`
+	BytesOnDisk     int64   `json:"bytes_on_disk"`
+	BytesSaved      int64   `json:"bytes_saved"`
+	SavedPercent    float64 `json:"saved_percent"`
 }
 
 // DedupTotalsByProject возвращает статистику dedup, сгруппированную по папке.
@@ -492,8 +566,14 @@ func (s *Storage) dedupTotalsForProject(projectName string) (DedupProjectTotals,
 		SELECT COUNT(1) FROM dedup_files f
 		JOIN dedup_build_dirs b ON b.id = f.build_dir_id
 		JOIN dedup_projects p ON p.id = b.project_id
-		WHERE p.name = ? AND f.storage_kind = 'delta'
-	`, s.dialect), projectName).Scan(&t.FilesDelta)
+		WHERE p.name = ? AND f.storage_kind = 'compressed'
+	`, s.dialect), projectName).Scan(&t.FilesCompressed)
+	_ = s.db.QueryRow(rebind(`
+		SELECT COUNT(1) FROM dedup_files f
+		JOIN dedup_build_dirs b ON b.id = f.build_dir_id
+		JOIN dedup_projects p ON p.id = b.project_id
+		WHERE p.name = ? AND f.storage_kind = 'ref'
+	`, s.dialect), projectName).Scan(&t.FilesCASRef)
 	_ = s.db.QueryRow(rebind(`
 		SELECT COALESCE(SUM(f.original_size), 0) FROM dedup_files f
 		JOIN dedup_build_dirs b ON b.id = f.build_dir_id
@@ -502,7 +582,7 @@ func (s *Storage) dedupTotalsForProject(projectName string) (DedupProjectTotals,
 	`, s.dialect), projectName).Scan(&t.BytesOriginal)
 
 	rows, err := s.db.Query(rebind(`
-		SELECT f.storage_kind, f.file_path, f.delta_path, f.original_size
+		SELECT f.storage_kind, f.file_path, f.delta_path, f.original_size, f.compressed_size
 		FROM dedup_files f
 		JOIN dedup_build_dirs b ON b.id = f.build_dir_id
 		JOIN dedup_projects p ON p.id = b.project_id
@@ -513,14 +593,18 @@ func (s *Storage) dedupTotalsForProject(projectName string) (DedupProjectTotals,
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var kind, filePath, deltaPath string
-		var origSize int64
-		if err := rows.Scan(&kind, &filePath, &deltaPath, &origSize); err != nil {
+		var kind, filePath, blobPath string
+		var origSize, compSize int64
+		if err := rows.Scan(&kind, &filePath, &blobPath, &origSize, &compSize); err != nil {
 			return t, err
 		}
 		switch DedupStorageKind(kind) {
-		case DedupKindDelta:
-			if st, err := fileSize(deltaPath); err == nil {
+		case DedupKindRef:
+			// blob уже учтён у canonical compressed-записи
+		case DedupKindCompressed:
+			if compSize > 0 {
+				t.BytesOnDisk += compSize
+			} else if st, err := fileSize(blobPath); err == nil {
 				t.BytesOnDisk += st
 			}
 		default:
@@ -543,12 +627,13 @@ func (s *Storage) dedupTotalsForProject(projectName string) (DedupProjectTotals,
 
 // DedupStats — агрегаты для мониторинга dedup.
 type DedupStats struct {
-	FilesTotal    int64
-	FilesPending  int64
-	FilesDone     int64
-	FilesDelta    int64
-	BytesOriginal int64
-	BytesDelta    int64
+	FilesTotal      int64
+	FilesPending    int64
+	FilesDone       int64
+	FilesCompressed int64
+	FilesCASRef       int64
+	BytesOriginal   int64
+	BytesCompressed int64
 }
 
 // DedupStats возвращает счётчики dedup.
@@ -557,13 +642,13 @@ func (s *Storage) DedupStats() (DedupStats, error) {
 	_ = s.db.QueryRow(rebind(`SELECT COUNT(1) FROM dedup_files`, s.dialect)).Scan(&st.FilesTotal)
 	_ = s.db.QueryRow(rebind(`SELECT COUNT(1) FROM dedup_files WHERE status = 'pending'`, s.dialect)).Scan(&st.FilesPending)
 	_ = s.db.QueryRow(rebind(`SELECT COUNT(1) FROM dedup_files WHERE status = 'done'`, s.dialect)).Scan(&st.FilesDone)
-	_ = s.db.QueryRow(rebind(`SELECT COUNT(1) FROM dedup_files WHERE storage_kind = 'delta'`, s.dialect)).Scan(&st.FilesDelta)
+	_ = s.db.QueryRow(rebind(`SELECT COUNT(1) FROM dedup_files WHERE storage_kind = 'compressed'`, s.dialect)).Scan(&st.FilesCompressed)
+	_ = s.db.QueryRow(rebind(`SELECT COUNT(1) FROM dedup_files WHERE storage_kind = 'ref'`, s.dialect)).Scan(&st.FilesCASRef)
 	_ = s.db.QueryRow(rebind(`SELECT COALESCE(SUM(original_size), 0) FROM dedup_files`, s.dialect)).Scan(&st.BytesOriginal)
 	_ = s.db.QueryRow(rebind(`
-		SELECT COALESCE(SUM(
-			CASE WHEN delta_path != '' THEN original_size ELSE 0 END
-		), 0) FROM dedup_files WHERE storage_kind = 'delta'
-	`, s.dialect)).Scan(&st.BytesDelta)
+		SELECT COALESCE(SUM(compressed_size), 0) FROM dedup_files
+		WHERE storage_kind IN ('compressed', 'ref') AND status = 'done'
+	`, s.dialect)).Scan(&st.BytesCompressed)
 	return st, nil
 }
 
@@ -593,8 +678,8 @@ func scanDedupFiles(rows *sql.Rows) ([]DedupFile, error) {
 		if err := rows.Scan(
 			&f.ID, &f.BuildDirID, &f.ProjectName, &f.FilePath, &f.Filename,
 			&f.FileStem, &f.Version, &f.FileBuildNum, &f.CommitTag,
-			&f.StorageKind, &f.BaseFileID, &f.DeltaPath, &f.SHA256,
-			&f.OriginalSize, &f.Status, &f.ErrorMsg,
+			&f.StorageKind, &f.BaseFileID, &f.BlobPath, &f.SHA256,
+			&f.OriginalSize, &f.CompressedSize, &f.Status, &f.ErrorMsg,
 		); err != nil {
 			return nil, err
 		}

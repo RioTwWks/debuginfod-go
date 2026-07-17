@@ -1,60 +1,114 @@
 package dedup
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/your-username/debuginfod-go/internal/storage"
 )
 
-func TestGroupFilesBaseSelection(t *testing.T) {
-	files := []storage.DedupFile{
-		{ID: 1, ProjectName: "QuikServer", FileStem: "lib.so", Version: "19.1.5", FileBuildNum: 3000, CommitTag: "DEVOPS-110"},
-		{ID: 2, ProjectName: "QuikServer", FileStem: "lib.so", Version: "19.1.5", FileBuildNum: 2899, CommitTag: "DEVOPS-110"},
+func TestCompressAndVerify(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "test.debug")
+	content := []byte("ELF debuginfo payload for zstd test\n")
+	if err := os.WriteFile(src, content, 0o644); err != nil {
+		t.Fatal(err)
 	}
-	groups := GroupFiles(files)
-	if len(groups) != 1 {
-		t.Fatalf("expected 1 group, got %d", len(groups))
+
+	sha, err := FileSHA256(src)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, g := range groups {
-		if len(g) != 2 {
-			t.Fatalf("expected 2 files in group")
-		}
+
+	blobStore := NewBlobStore(filepath.Join(dir, "blobs"))
+	blobPath := blobStore.PathForSHA(sha)
+
+	compSize, err := CompressFileTo(src, blobPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if compSize <= 0 {
+		t.Fatalf("compressed size=%d", compSize)
+	}
+	if err := VerifyDecompress(blobPath, sha); err != nil {
+		t.Fatal(err)
 	}
 }
 
-func TestGroupFilesEmptyCommitTag(t *testing.T) {
-	files := []storage.DedupFile{
-		{ID: 1, ProjectName: "Released/Quik", FileStem: "lib.so", Version: "16.0.1", FileBuildNum: 1, CommitTag: ""},
-		{ID: 2, ProjectName: "Released/Quik", FileStem: "lib.so", Version: "16.0.1", FileBuildNum: 2, CommitTag: ""},
+func TestProcessFilesCompressAndCASRef(t *testing.T) {
+	store, err := storage.New(t.TempDir() + "/dedup.sqlite")
+	if err != nil {
+		t.Fatal(err)
 	}
-	groups := GroupFiles(files)
-	if len(groups) != 1 {
-		t.Fatalf("expected 1 group, got %d", len(groups))
-	}
-	compressed, skipped, _, _, _ := processGroups(Options{DryRun: true, Xdelta: NewXdelta("xdelta3")}, groups)
-	if compressed != 1 {
-		t.Fatalf("compressed=%d want 1", compressed)
-	}
-	if skipped != 1 {
-		t.Fatalf("skipped=%d want 1 (base)", skipped)
-	}
-}
+	defer store.Close()
 
-func TestGroupFilesDifferentVersionSameStem(t *testing.T) {
-	files := []storage.DedupFile{
-		{ID: 1, ProjectName: "Released/Quik", FileStem: "libquik_db_pg.so", Version: "16.0.0", FileBuildNum: 1, CommitTag: ""},
-		{ID: 2, ProjectName: "Released/Quik", FileStem: "libquik_db_pg.so", Version: "16.0.1", FileBuildNum: 2, CommitTag: ""},
+	dir := t.TempDir()
+	blobDir := filepath.Join(dir, "blobs")
+	buildDir := filepath.Join(dir, "proj", "build_1_2025-01-01")
+	if err := os.MkdirAll(buildDir, 0o755); err != nil {
+		t.Fatal(err)
 	}
-	groups := GroupFiles(files)
-	if len(groups) != 1 {
-		t.Fatalf("expected 1 group across versions, got %d", len(groups))
+
+	content := []byte("identical debug content\n")
+	file1 := filepath.Join(buildDir, "lib.so.1.0.0.100.debug")
+	file2 := filepath.Join(buildDir, "lib.so.1.0.0.101.debug")
+	if err := os.WriteFile(file1, content, 0o644); err != nil {
+		t.Fatal(err)
 	}
-	compressed, skipped, _, _, _ := processGroups(Options{DryRun: true, Xdelta: NewXdelta("xdelta3")}, groups)
+	if err := os.WriteFile(file2, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pid, _ := store.EnsureDedupProject("proj")
+	bid, _ := store.UpsertDedupBuildDir(pid, buildDir, 1)
+	id1, _ := store.UpsertDedupFile(storage.DedupFile{
+		BuildDirID: bid, FilePath: file1, Filename: "lib.so.1.0.0.100.debug",
+		FileStem: "lib.so", Version: "1.0.0", FileBuildNum: 100, OriginalSize: int64(len(content)),
+	})
+	id2, _ := store.UpsertDedupFile(storage.DedupFile{
+		BuildDirID: bid, FilePath: file2, Filename: "lib.so.1.0.0.101.debug",
+		FileStem: "lib.so", Version: "1.0.0", FileBuildNum: 101, OriginalSize: int64(len(content)),
+	})
+
+	opts := Options{
+		Store:     store,
+		BlobStore: NewBlobStore(blobDir),
+	}
+	files, _ := store.ListPendingDedupFiles([]int64{bid})
+	compressed, dedupRef, _, errs, _, _ := processFiles(opts, files)
+	if errs != 0 {
+		t.Fatalf("errors=%d", errs)
+	}
 	if compressed != 1 {
 		t.Fatalf("compressed=%d want 1", compressed)
 	}
-	if skipped != 1 {
-		t.Fatalf("skipped=%d want 1 (base)", skipped)
+	if dedupRef != 1 {
+		t.Fatalf("dedupRef=%d want 1", dedupRef)
+	}
+
+	f1, err := store.GetDedupFileByID(id1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f2, err := store.GetDedupFileByID(id2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f1.StorageKind != storage.DedupKindCompressed {
+		t.Fatalf("f1 kind=%s", f1.StorageKind)
+	}
+	if f2.StorageKind != storage.DedupKindRef {
+		t.Fatalf("f2 kind=%s", f2.StorageKind)
+	}
+	if f1.BlobPath == "" || f1.BlobPath != f2.BlobPath {
+		t.Fatalf("blob paths: %q vs %q", f1.BlobPath, f2.BlobPath)
+	}
+	if _, err := os.Stat(file1); !os.IsNotExist(err) {
+		t.Fatal("original file1 should be removed")
+	}
+	if _, err := os.Stat(file2); !os.IsNotExist(err) {
+		t.Fatal("original file2 should be removed")
 	}
 }
 
@@ -68,7 +122,7 @@ func TestRunBackfillDryRun(t *testing.T) {
 	opts := Options{
 		Store:     store,
 		ScanPaths: []string{t.TempDir()},
-		Xdelta:    NewXdelta("xdelta3"),
+		BlobStore: NewBlobStore(t.TempDir()),
 		Projects:  []string{"QuikServer"},
 		DryRun:    true,
 	}
@@ -78,5 +132,54 @@ func TestRunBackfillDryRun(t *testing.T) {
 	}
 	if !result.DryRun {
 		t.Fatal("expected dry run")
+	}
+}
+
+func TestRestoreToCache(t *testing.T) {
+	store, err := storage.New(t.TempDir() + "/dedup.sqlite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	dir := t.TempDir()
+	cacheDir := filepath.Join(dir, "cache")
+	blobDir := filepath.Join(dir, "blobs")
+	buildDir := filepath.Join(dir, "build_1")
+	if err := os.MkdirAll(buildDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	content := []byte("restore me\n")
+	origPath := filepath.Join(buildDir, "lib.so.1.0.0.1.debug")
+	if err := os.WriteFile(origPath, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sha, _ := FileSHA256(origPath)
+	blobPath := NewBlobStore(blobDir).PathForSHA(sha)
+	compSize, err := CompressFileTo(origPath, blobPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Remove(origPath)
+
+	pid, _ := store.EnsureDedupProject("p")
+	bid, _ := store.UpsertDedupBuildDir(pid, buildDir, 1)
+	fid, _ := store.UpsertDedupFile(storage.DedupFile{
+		BuildDirID: bid, FilePath: origPath, Filename: "lib.so.1.0.0.1.debug",
+		FileStem: "lib.so", Version: "1.0.0", FileBuildNum: 1, OriginalSize: int64(len(content)),
+	})
+	_ = store.MarkDedupFileDone(fid, storage.DedupKindCompressed, 0, blobPath, sha, compSize)
+
+	out, err := RestoreToCache(store, cacheDir, origPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := FileSHA256(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != sha {
+		t.Fatalf("sha mismatch: %s vs %s", got, sha)
 	}
 }

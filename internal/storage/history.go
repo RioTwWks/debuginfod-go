@@ -197,56 +197,46 @@ func (s *Storage) ListDedupRuns(limit int) ([]DedupRunRecord, error) {
 
 // DedupStorageTotals — суммарная экономия dedup по всем обработанным файлам.
 type DedupStorageTotals struct {
-	FilesDone      int64 `json:"files_done"`
-	FilesDelta     int64 `json:"files_delta"`
-	BytesOriginal  int64 `json:"bytes_original"`
-	BytesOnDisk    int64 `json:"bytes_on_disk"`
-	BytesSaved     int64 `json:"bytes_saved"`
-	SavedPercent   float64 `json:"saved_percent"`
+	FilesDone       int64   `json:"files_done"`
+	FilesCompressed int64   `json:"files_compressed"`
+	FilesCASRef       int64   `json:"files_cas_ref"`
+	BytesOriginal   int64   `json:"bytes_original"`
+	BytesOnDisk     int64   `json:"bytes_on_disk"`
+	BytesSaved      int64   `json:"bytes_saved"`
+	SavedPercent    float64 `json:"saved_percent"`
 }
 
 // DedupStorageTotals вычисляет текущую экономию хранения.
 func (s *Storage) DedupStorageTotals() (DedupStorageTotals, error) {
 	var out DedupStorageTotals
 	_ = s.db.QueryRow(rebind(`SELECT COUNT(1) FROM dedup_files WHERE status = 'done'`, s.dialect)).Scan(&out.FilesDone)
-	_ = s.db.QueryRow(rebind(`SELECT COUNT(1) FROM dedup_files WHERE storage_kind = 'delta'`, s.dialect)).Scan(&out.FilesDelta)
+	_ = s.db.QueryRow(rebind(`SELECT COUNT(1) FROM dedup_files WHERE storage_kind = 'compressed'`, s.dialect)).Scan(&out.FilesCompressed)
+	_ = s.db.QueryRow(rebind(`SELECT COUNT(1) FROM dedup_files WHERE storage_kind = 'ref'`, s.dialect)).Scan(&out.FilesCASRef)
 	_ = s.db.QueryRow(rebind(`SELECT COALESCE(SUM(original_size), 0) FROM dedup_files WHERE status = 'done'`, s.dialect)).Scan(&out.BytesOriginal)
 
-	rows, err := s.db.Query(rebind(`
-		SELECT storage_kind, file_path, delta_path, original_size
-		FROM dedup_files WHERE status = 'done'
-	`, s.dialect))
-	if err != nil {
-		return out, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var kind, filePath, deltaPath string
-		var origSize int64
-		if err := rows.Scan(&kind, &filePath, &deltaPath, &origSize); err != nil {
-			return out, err
-		}
-		switch DedupStorageKind(kind) {
-		case DedupKindDelta:
-			if st, err := fileSize(deltaPath); err == nil {
-				out.BytesOnDisk += st
-			}
-		default:
-			if st, err := fileSize(filePath); err == nil {
-				out.BytesOnDisk += st
-			} else {
-				out.BytesOnDisk += origSize
-			}
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return out, err
-	}
+	// Уникальные blob по SHA256 (без двойного подсчёта ref).
+	_ = s.db.QueryRow(rebind(`
+		SELECT COALESCE(SUM(blob_size), 0) FROM (
+			SELECT sha256, MAX(compressed_size) AS blob_size
+			FROM dedup_files
+			WHERE status = 'done' AND storage_kind IN ('compressed', 'ref') AND sha256 != ''
+			GROUP BY sha256
+		) t
+	`, s.dialect)).Scan(&out.BytesOnDisk)
+
+	// Несжатые full-файлы (pending pipeline или legacy).
+	var fullBytes int64
+	_ = s.db.QueryRow(rebind(`
+		SELECT COALESCE(SUM(original_size), 0) FROM dedup_files
+		WHERE status = 'done' AND storage_kind = 'full'
+	`, s.dialect)).Scan(&fullBytes)
+	out.BytesOnDisk += fullBytes
+
 	if out.BytesOriginal > 0 && out.BytesOnDisk < out.BytesOriginal {
 		out.BytesSaved = out.BytesOriginal - out.BytesOnDisk
 		out.SavedPercent = float64(out.BytesSaved) / float64(out.BytesOriginal) * 100
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func scanScanRuns(rows *sql.Rows) ([]ScanRunRecord, error) {

@@ -176,6 +176,15 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 - [ ] **Плагинная система форматов архивов** — подключение обработчиков `.deb`/`.rpm`/tar без правок `internal/archive`
 - [ ] **Централизованные логи** — journald/rsyslog → ELK (если уже есть в инфраструктуре; код не обязателен — достаточно runbook)
 
+### Dedup / хранение debuginfo (Quik)
+
+- [x] **zstd + SHA256 CAS dedup** — гибридное сжатие `.debug` вместо xdelta (см. [docs/QUIK_DEDUP.md](./docs/QUIK_DEDUP.md))
+- [ ] **Build-time оптимизации DWARF** *(отложено, решение за эксплуатацией)* — уменьшение объёма ещё до ingest:
+  - `dwz` — дедупликация строк и debug-секций внутри одного ELF
+  - `-gz=zlib-gnu` / `zlib-gabi` — сжатие debug-секций при линковке
+  - split-dwarf (`-gsplit-dwarf`) — вынесение `.dwo`, меньше дублирования между объектниками
+  - Внедрение в CI Quik/Qt-сборок; оценить совместимость с GDB/Delve
+
 ### Не планируется
 
 - [x] ~~**Kubernetes / Helm**~~ — вне scope
@@ -184,4 +193,4 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 
 ---
 
-*Последнее обновление: 2026-07-14*
+*Последнее обновление: 2026-07-17*

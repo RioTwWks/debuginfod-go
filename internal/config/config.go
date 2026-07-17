@@ -41,12 +41,12 @@ type Config struct {
 	Dedup            DedupConfig
 }
 
-// DedupConfig — параметры xdelta dedup для Quik .debug.
+// DedupConfig — параметры zstd+CAS dedup для Quik .debug.
 type DedupConfig struct {
-	Enabled    bool
-	Projects   []string
-	Workers    int
-	XdeltaPath string
+	Enabled  bool
+	Projects []string
+	Workers  int
+	BlobDir  string
 }
 
 // Load читает .env, переменные окружения и флаги командной строки.
@@ -81,10 +81,10 @@ func Load() Config {
 		AdminKey:         envOr("DEBUGINFOD_ADMIN_KEY", ""),
 		ScanWebhookURL:   envOr("DEBUGINFOD_SCAN_WEBHOOK_URL", ""),
 		Dedup: DedupConfig{
-			Enabled:    envBool("DEBUGINFOD_DEDUP_ENABLED", false),
-			Projects:   splitPaths(envOr("DEBUGINFOD_DEDUP_PROJECTS", "")),
-			Workers:    envInt("DEBUGINFOD_DEDUP_WORKERS", 4),
-			XdeltaPath: envOr("DEBUGINFOD_XDELTA_PATH", "xdelta3"),
+			Enabled:  envBool("DEBUGINFOD_DEDUP_ENABLED", false),
+			Projects: splitPaths(envOr("DEBUGINFOD_DEDUP_PROJECTS", "")),
+			Workers:  envInt("DEBUGINFOD_DEDUP_WORKERS", 4),
+			BlobDir:  envOr("DEBUGINFOD_DEDUP_BLOB_DIR", ""),
 		},
 	}
 
