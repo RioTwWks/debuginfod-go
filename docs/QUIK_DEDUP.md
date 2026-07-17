@@ -47,6 +47,8 @@ DEBUGINFOD_SCAN_PATH/
 Ключ группы: `(project, file_stem, version, commit_tag_id)`.
 
 `commit_tag_id` извлекается из ELF-секции `.comment` (например `DEVOPS-110`).
+Если JIRA-тега нет (типично для Quik: только `GCC:` / `ARQA` / `QUIKDB Library`),
+группировка выполняется по `(project, file_stem, version)` с пустым тегом.
 
 Внутри группы **base** — файл с минимальным `build_num` в имени. Остальные кодируются как delta относительно base.
 

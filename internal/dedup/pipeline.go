@@ -205,22 +205,26 @@ func processGroups(opts Options, groups map[string][]storage.DedupFile) (compres
 			return group[i].FileBuildNum < group[j].FileBuildNum
 		})
 		base := group[0]
-		if base.CommitTag == "" {
-			skipped += len(group)
-			if !opts.DryRun {
-				for _, f := range group {
-					_ = opts.Store.MarkDedupFileDone(f.ID, storage.DedupKindFull, 0, "", "")
-				}
-			}
-			continue
-		}
 		if len(group) == 1 {
 			if !opts.DryRun {
 				sha, _ := FileSHA256(base.FilePath)
-				_ = opts.Store.MarkDedupFileDone(base.ID, storage.DedupKindBase, 0, "", sha)
+				kind := storage.DedupKindBase
+				if base.CommitTag == "" {
+					kind = storage.DedupKindFull
+				}
+				_ = opts.Store.MarkDedupFileDone(base.ID, kind, 0, "", sha)
 			}
 			skipped++
 			continue
+		}
+
+		if base.CommitTag == "" {
+			slog.Info("dedup group without commit tag",
+				"project", base.ProjectName,
+				"stem", base.FileStem,
+				"version", base.Version,
+				"files", len(group),
+			)
 		}
 
 		if opts.DryRun {
