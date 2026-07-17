@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -11,20 +12,32 @@ import (
 // ErrInvalidFormat — имя файла не соответствует шаблону Quik .debug.
 var ErrInvalidFormat = errors.New("invalid quik debug filename")
 
-// Info — разобранное имя lib.so.M.m.p.BUILD.debug.
+// hyphenVersionRE — quik-16.0.0.10.debug (stem и версия разделены дефисом).
+var hyphenVersionRE = regexp.MustCompile(`^(.+)-(\d+)\.(\d+)\.(\d+)\.(\d+)\.debug$`)
+
+// Info — разобранное имя Quik .debug.
 type Info struct {
-	Filename  string
-	Stem      string
-	Version   string
-	BuildNum  int
+	Filename string
+	Stem     string
+	Version  string
+	BuildNum int
 }
 
-// Parse разбирает имя файла вида lib.so.19.1.5.2899.debug.
+// Parse разбирает имя Quik .debug:
+//   - lib.so.19.1.5.2899.debug  (stem.M.m.p.BUILD)
+//   - quik-16.0.0.10.debug      (name-M.m.p.BUILD)
 func Parse(name string) (Info, error) {
 	base := filepath.Base(name)
 	if !strings.HasSuffix(strings.ToLower(base), ".debug") {
 		return Info{}, fmt.Errorf("%w: missing .debug suffix", ErrInvalidFormat)
 	}
+	if info, err := parseDotStem(base); err == nil {
+		return info, nil
+	}
+	return parseHyphenStem(base)
+}
+
+func parseDotStem(base string) (Info, error) {
 	without := strings.TrimSuffix(base, filepath.Ext(base))
 	parts := strings.Split(without, ".")
 	if len(parts) < 5 {
@@ -49,6 +62,27 @@ func Parse(name string) (Info, error) {
 		Filename: base,
 		Stem:     stem,
 		Version:  version,
+		BuildNum: buildNum,
+	}, nil
+}
+
+func parseHyphenStem(base string) (Info, error) {
+	m := hyphenVersionRE.FindStringSubmatch(base)
+	if m == nil {
+		return Info{}, fmt.Errorf("%w: unsupported name pattern", ErrInvalidFormat)
+	}
+	buildNum, err := strconv.Atoi(m[5])
+	if err != nil || buildNum < 0 {
+		return Info{}, fmt.Errorf("%w: invalid build number", ErrInvalidFormat)
+	}
+	stem := m[1]
+	if stem == "" {
+		return Info{}, fmt.Errorf("%w: empty stem", ErrInvalidFormat)
+	}
+	return Info{
+		Filename: base,
+		Stem:     stem,
+		Version:  fmt.Sprintf("%s.%s.%s", m[2], m[3], m[4]),
 		BuildNum: buildNum,
 	}, nil
 }
