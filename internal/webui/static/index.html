@@ -98,14 +98,15 @@
                 <th>папка</th>
                 <th>build dirs</th>
                 <th>файлов</th>
-                <th>delta</th>
+                <th>zstd</th>
+                <th>CAS</th>
                 <th>было</th>
                 <th>стало</th>
                 <th>экономия</th>
               </tr>
             </thead>
             <tbody id="dedup-projects-body">
-              <tr><td colspan="7" class="muted">Загрузка…</td></tr>
+              <tr><td colspan="8" class="muted">Загрузка…</td></tr>
             </tbody>
           </table>
         </div>
@@ -135,7 +136,7 @@
       </section>
 
       <section class="panel">
-        <h2>История dedup (xdelta)</h2>
+        <h2>История dedup (zstd + CAS)</h2>
         <div class="table-wrap">
           <table class="results-table" id="dedup-runs-table">
             <thead>

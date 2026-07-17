@@ -17,14 +17,12 @@ homepage: https://github.com/RioTwWks/debuginfod-go
 depends:
   - libsqlite3-0
   - ca-certificates
-  - xdelta3
 
 overrides:
   rpm:
     depends:
       - sqlite-libs
       - ca-certificates
-      - xdelta
 
 contents:
   - src: dist/debuginfod

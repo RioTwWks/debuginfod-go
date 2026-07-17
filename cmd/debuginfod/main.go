@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -29,6 +30,12 @@ func main() {
 		slog.Error("create cache dir", "err", err)
 		os.Exit(1)
 	}
+	if cfg.Dedup.Enabled {
+		if err := os.MkdirAll(dedupBlobDir(cfg), 0o755); err != nil {
+			slog.Error("create dedup blob dir", "err", err)
+			os.Exit(1)
+		}
+	}
 
 	store, err := storage.Open(cfg.DBPath, cfg.DatabaseURL)
 	if err != nil {
@@ -50,7 +57,7 @@ func main() {
 		LazyExtract:   cfg.LazyExtract,
 	})
 
-	dedupSvc := dedup.NewService(store, cfg.Dedup, cfg.ScanPaths)
+	dedupSvc := dedup.NewService(store, cfg.Dedup, cfg.ScanPaths, dedupBlobDir(cfg))
 	dedupAdapter := webapi.NewDedupAdapter(dedupSvc)
 
 	runner := scanrunner.New(scanrunner.Options{
@@ -166,4 +173,11 @@ func main() {
 		slog.Error("shutdown", "err", err)
 	}
 	slog.Info("server stopped")
+}
+
+func dedupBlobDir(cfg config.Config) string {
+	if cfg.Dedup.BlobDir != "" {
+		return cfg.Dedup.BlobDir
+	}
+	return filepath.Join(cfg.CacheDir, "dedup-blobs")
 }

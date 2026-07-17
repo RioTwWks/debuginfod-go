@@ -12,12 +12,12 @@ import (
 	"github.com/your-username/debuginfod-go/pkg/elfsection"
 )
 
-// DedupRestorer восстанавливает delta-файлы в кэш.
+// DedupRestorer восстанавливает сжатые blob в кэш.
 type DedupRestorer interface {
 	RestoreToCache(cacheDir, filePath string) (string, error)
 }
 
-// resolveFilePathWithDedup учитывает xdelta dedup и cache-aside.
+// resolveFilePathWithDedup учитывает zstd/CAS dedup и cache-aside.
 func resolveFilePathWithDedup(cacheDir string, loc storage.ArtifactLocation, restorer DedupRestorer) (string, error) {
 	if loc.FilePath != "" {
 		if restorer != nil {

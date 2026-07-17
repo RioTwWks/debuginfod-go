@@ -16,14 +16,14 @@ type Service struct {
 }
 
 // NewService создаёт dedup service.
-func NewService(store *storage.Storage, cfg config.DedupConfig, scanPaths []string) *Service {
+func NewService(store *storage.Storage, cfg config.DedupConfig, scanPaths []string, blobDir string) *Service {
 	return &Service{
 		store: store,
 		cfg:   cfg,
 		opts: Options{
 			Store:     store,
 			ScanPaths: scanPaths,
-			Xdelta:    NewXdelta(cfg.XdeltaPath),
+			BlobStore: NewBlobStore(blobDir),
 			Projects:  cfg.Projects,
 			Workers:   cfg.Workers,
 		},
@@ -52,7 +52,7 @@ func (s *Service) RunBackfill(project string, batch int, dryRun bool) (BackfillR
 			DryRun:             dryRun,
 			BuildDirsProcessed: result.BuildDirsProcessed,
 			FilesRegistered:    result.FilesRegistered,
-			FilesCompressed:    result.FilesCompressed,
+			FilesCompressed:    result.FilesCompressed + result.FilesDedupRef,
 			FilesSkipped:       result.FilesSkipped,
 			Errors:             result.Errors,
 			BytesBefore:        result.BytesBefore,
@@ -73,9 +73,4 @@ func (s *Service) RunIngestAfterScan() (BackfillResult, error) {
 // Store возвращает хранилище.
 func (s *Service) Store() *storage.Storage {
 	return s.store
-}
-
-// Xdelta возвращает xdelta runner.
-func (s *Service) Xdelta() *Xdelta {
-	return s.opts.Xdelta
 }

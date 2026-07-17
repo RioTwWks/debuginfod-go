@@ -23,7 +23,7 @@ func (a *DedupAdapter) RestoreToCache(cacheDir, filePath string) (string, error)
 	if a == nil || a.svc == nil {
 		return filePath, nil
 	}
-	return dedup.RestoreToCache(a.svc.Store(), a.svc.Xdelta(), cacheDir, filePath)
+	return dedup.RestoreToCache(a.svc.Store(), cacheDir, filePath)
 }
 
 // RunBackfill реализует DedupRunner.

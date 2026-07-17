@@ -293,7 +293,7 @@
         '<tr><td colspan="9" class="muted">Ошибка загрузки</td></tr>';
       if (dedupProjectsBody) {
         dedupProjectsBody.innerHTML =
-          '<tr><td colspan="7" class="muted">Ошибка загрузки</td></tr>';
+          '<tr><td colspan="8" class="muted">Ошибка загрузки</td></tr>';
       }
     }
   }
@@ -318,12 +318,13 @@
         '<div class="summary-item muted"><span>Dedup выключен (DEBUGINFOD_DEDUP_ENABLED=false)</span></div>';
       if (dedupStatus) {
         dedupStatus.textContent =
-          "Включите DEBUGINFOD_DEDUP_ENABLED=true для сжатия .debug через xdelta.";
+          "Включите DEBUGINFOD_DEDUP_ENABLED=true для zstd-сжатия и CAS-dedup .debug.";
       }
     } else {
       dedupSummary.innerHTML = [
         summaryItem(formatNumber(t.files_done), "файлов dedup"),
-        summaryItem(formatNumber(t.files_delta), "delta-файлов"),
+        summaryItem(formatNumber(t.files_compressed), "zstd-сжато"),
+        summaryItem(formatNumber(t.files_cas_ref), "CAS-ссылок"),
         summaryItem(formatBytes(t.bytes_original), "исходный объём"),
         summaryItem(formatBytes(t.bytes_on_disk), "на диске сейчас"),
         summaryItem(formatBytes(t.bytes_saved) + " (" + savedPct + ")", "сэкономлено"),
@@ -393,7 +394,7 @@
     if (!dedupProjectsBody) return;
     if (!dedupEnabled) {
       dedupProjectsBody.innerHTML =
-        '<tr><td colspan="7" class="muted">Dedup выключен</td></tr>';
+        '<tr><td colspan="8" class="muted">Dedup выключен</td></tr>';
       return;
     }
     const rows = (data.dedup_by_project || []).slice().sort(function (a, b) {
@@ -401,7 +402,7 @@
     });
     if (!rows.length) {
       dedupProjectsBody.innerHTML =
-        '<tr><td colspan="7" class="muted">Нет данных (ожидается после scan с каталогами build_*)</td></tr>';
+        '<tr><td colspan="8" class="muted">Нет данных (ожидается после scan с каталогами build_*)</td></tr>';
       return;
     }
     dedupProjectsBody.innerHTML = rows
@@ -418,7 +419,8 @@
           '<td class="mono">' + escapeHtml(r.project) + "</td>" +
           "<td>" + formatNumber(r.build_dirs) + "</td>" +
           "<td>" + formatNumber(r.files_done) + "</td>" +
-          "<td>" + formatNumber(r.files_delta) + "</td>" +
+          "<td>" + formatNumber(r.files_compressed) + "</td>" +
+          "<td>" + formatNumber(r.files_cas_ref) + "</td>" +
           "<td>" + formatBytes(r.bytes_original) + "</td>" +
           "<td>" + formatBytes(r.bytes_on_disk) + "</td>" +
           "<td>" + saved + "</td>" +

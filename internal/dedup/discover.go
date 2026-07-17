@@ -132,6 +132,9 @@ func registerDebugFiles(store *storage.Storage, buildDirID int64, dirPath string
 		if strings.HasSuffix(strings.ToLower(name), ".xdelta") {
 			continue
 		}
+		if strings.HasSuffix(strings.ToLower(name), ".zst") {
+			continue
+		}
 		fullPath := filepath.Join(dirPath, name)
 		info, err := ent.Info()
 		if err != nil {
@@ -165,7 +168,7 @@ func registerDebugFiles(store *storage.Storage, buildDirID int64, dirPath string
 	return count, nil
 }
 
-// GroupKey возвращает ключ группировки для xdelta.
+// GroupKey возвращает ключ группировки (метаданные; на pipeline не влияет).
 // Тег из .comment (git, JIRA или любой другой) — опциональные метаданные в БД,
 // на группировку не влияют: сжимаем одну библиотеку между build_* каталогами.
 // ProjectName нормализуется (схлопываются хвостовые версии в пути).
