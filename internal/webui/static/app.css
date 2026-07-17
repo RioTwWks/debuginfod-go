@@ -78,6 +78,26 @@ body {
   border-color: var(--accent);
 }
 
+.rescan-btn {
+  cursor: pointer;
+  color: var(--accent);
+  font: inherit;
+}
+
+.rescan-btn:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--accent);
+}
+
+.rescan-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.rescan-status {
+  color: var(--warn);
+}
+
 .container {
   max-width: 1100px;
   margin: 0 auto;

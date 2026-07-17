@@ -235,6 +235,50 @@ func TestUIScansAPI(t *testing.T) {
 	}
 }
 
+type fakeScanTrigger struct {
+	calls int
+}
+
+func (f *fakeScanTrigger) Trigger() {
+	f.calls++
+}
+
+func TestUIRescanAPI(t *testing.T) {
+	store, err := storage.New(filepath.Join(t.TempDir(), "rescan.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	trigger := &fakeScanTrigger{}
+	mux := http.NewServeMux()
+	Register(mux, Opts{
+		Store:       store,
+		Metrics:     metrics.New(),
+		CacheBytes:  func() int64 { return 0 },
+		ScanEnabled: true,
+		ScanTrigger: trigger,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/ui/api/rescan", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if trigger.calls != 1 {
+		t.Fatalf("trigger calls=%d", trigger.calls)
+	}
+
+	disabledMux := http.NewServeMux()
+	Register(disabledMux, Opts{Store: store, ScanEnabled: false})
+	rec = httptest.NewRecorder()
+	disabledMux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("disabled status=%d", rec.Code)
+	}
+}
+
 func TestUIRedirect(t *testing.T) {
 	mux, store := testMux(t)
 	defer store.Close()

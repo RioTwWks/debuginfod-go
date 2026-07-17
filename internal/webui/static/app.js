@@ -19,11 +19,15 @@
   const scanRunsBody = document.getElementById("scan-runs-body");
   const dedupProjectsBody = document.getElementById("dedup-projects-body");
   const dedupRunsBody = document.getElementById("dedup-runs-body");
+  const rescanBtn = document.getElementById("rescan-btn");
+  const rescanStatus = document.getElementById("rescan-status");
 
   let searchKey = "buildid";
   let nextOffset = 0;
   let lastSearchValue = "";
   let scansLoaded = false;
+  let lastScanFinishedAt = "";
+  let rescanPollTimer = null;
 
   const hints = {
     buildid:
@@ -195,6 +199,81 @@
       );
     }
     scanInfo.innerHTML = scanParts.join("");
+
+    if (data.last_scan_finished_at) {
+      lastScanFinishedAt = data.last_scan_finished_at;
+    }
+
+    if (rescanBtn) {
+      rescanBtn.hidden = !data.scan_enabled;
+    }
+  }
+
+  async function triggerRescan() {
+    if (!rescanBtn || rescanBtn.disabled) return;
+    rescanBtn.disabled = true;
+    if (rescanStatus) {
+      rescanStatus.hidden = false;
+      rescanStatus.textContent = "запуск…";
+    }
+    const startedAt = lastScanFinishedAt;
+    try {
+      const res = await fetch("/ui/api/rescan", { method: "POST" });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "HTTP " + res.status);
+      }
+      if (rescanStatus) rescanStatus.textContent = "сканирование…";
+      await waitForScanComplete(startedAt);
+      await loadStats();
+      if (tabScans && !tabScans.hidden) {
+        scansLoaded = false;
+        await loadScans();
+      }
+      doSearch(lastSearchValue, false);
+      if (rescanStatus) {
+        rescanStatus.textContent = "готово";
+        setTimeout(function () {
+          rescanStatus.hidden = true;
+          rescanStatus.textContent = "";
+        }, 3000);
+      }
+    } catch (err) {
+      if (rescanStatus) {
+        rescanStatus.hidden = false;
+        rescanStatus.textContent = "ошибка";
+        rescanStatus.title = err.message;
+      }
+    } finally {
+      rescanBtn.disabled = false;
+    }
+  }
+
+  function waitForScanComplete(since) {
+    const deadline = Date.now() + 5 * 60 * 1000;
+    return new Promise(function (resolve, reject) {
+      function poll() {
+        if (Date.now() > deadline) {
+          reject(new Error("таймаут ожидания scan"));
+          return;
+        }
+        fetch("/ui/api/stats")
+          .then(function (res) {
+            if (!res.ok) throw new Error("HTTP " + res.status);
+            return res.json();
+          })
+          .then(function (data) {
+            if (data.last_scan_finished_at && data.last_scan_finished_at !== since) {
+              lastScanFinishedAt = data.last_scan_finished_at;
+              resolve();
+              return;
+            }
+            rescanPollTimer = setTimeout(poll, 2000);
+          })
+          .catch(reject);
+      }
+      poll();
+    });
   }
 
   async function loadScans() {
@@ -496,6 +575,10 @@
   loadMoreBtn.addEventListener("click", function () {
     doSearch(lastSearchValue, true);
   });
+
+  if (rescanBtn) {
+    rescanBtn.addEventListener("click", triggerRescan);
+  }
 
   let debounce;
   searchInput.addEventListener("input", function () {
