@@ -112,24 +112,33 @@ func RunIngestAll(opts Options) (BackfillResult, error) {
 	}
 	total.FilesRegistered = n
 
-	projects, err := opts.Store.ListDedupProjectNames()
+	files, err := opts.Store.ListAllPendingDedupFiles()
 	if err != nil {
 		return total, err
 	}
-	projects = filterKnownProjects(projects, opts.Projects)
+	files = filterFilesByProjects(files, opts.Projects)
+	if len(files) == 0 {
+		return total, nil
+	}
 
-	for _, project := range projects {
-		r, err := ingestProjectPending(opts, project, nil)
-		if err != nil {
-			return total, err
+	groups := GroupFiles(files)
+	total.GroupsProcessed = len(groups)
+	compressed, skipped, errs, bytesBefore, bytesAfter := processGroups(opts, groups)
+	total.FilesCompressed = compressed
+	total.FilesSkipped = skipped
+	total.Errors = errs
+	total.BytesBefore = bytesBefore
+	total.BytesAfter = bytesAfter
+
+	if !opts.DryRun {
+		seen := make(map[int64]struct{})
+		for _, f := range files {
+			if _, ok := seen[f.BuildDirID]; ok {
+				continue
+			}
+			seen[f.BuildDirID] = struct{}{}
+			_ = opts.Store.FinishBuildDirIfDone(f.BuildDirID)
 		}
-		total.GroupsProcessed += r.GroupsProcessed
-		total.FilesCompressed += r.FilesCompressed
-		total.FilesSkipped += r.FilesSkipped
-		total.Errors += r.Errors
-		total.BuildDirsProcessed += r.BuildDirsProcessed
-		total.BytesBefore += r.BytesBefore
-		total.BytesAfter += r.BytesAfter
 	}
 	return total, nil
 }
@@ -141,7 +150,7 @@ func ingestProjectPending(opts Options, project string, base *BackfillResult) (B
 	}
 	result.DryRun = opts.DryRun
 
-	files, err := opts.Store.ListPendingDedupFilesByProject(project)
+	files, err := listPendingForGroupProject(opts.Store, project)
 	if err != nil {
 		return result, err
 	}
@@ -167,15 +176,34 @@ func ingestProjectPending(opts Options, project string, base *BackfillResult) (B
 	return result, nil
 }
 
-func filterKnownProjects(all []string, filter []string) []string {
-	if len(filter) == 0 {
-		return all
+// listPendingForGroupProject собирает pending-файлы всех DB-проектов с тем же ключом группы.
+func listPendingForGroupProject(store *storage.Storage, project string) ([]storage.DedupFile, error) {
+	groupKey := NormalizeDedupGroupProject(project)
+	all, err := store.ListAllPendingDedupFiles()
+	if err != nil {
+		return nil, err
 	}
-	allowed := projectFilterSet(filter)
-	out := make([]string, 0, len(all))
-	for _, p := range all {
-		if matchesProjectFilter(p, allowed) {
-			out = append(out, p)
+	if groupKey == "" {
+		return all, nil
+	}
+	out := make([]storage.DedupFile, 0, len(all))
+	for _, f := range all {
+		if NormalizeDedupGroupProject(f.ProjectName) == groupKey {
+			out = append(out, f)
+		}
+	}
+	return out, nil
+}
+
+func filterFilesByProjects(files []storage.DedupFile, projects []string) []storage.DedupFile {
+	allowed := projectFilterSet(projects)
+	if allowed == nil {
+		return files
+	}
+	out := make([]storage.DedupFile, 0, len(files))
+	for _, f := range files {
+		if matchesProjectFilter(f.ProjectName, allowed) {
+			out = append(out, f)
 		}
 	}
 	return out
@@ -206,8 +234,9 @@ func processGroups(opts Options, groups map[string][]storage.DedupFile) (compres
 		})
 		base := group[0]
 		if len(group) == 1 {
-			slog.Info("dedup singleton, no pair for delta",
+			slog.Debug("dedup singleton, no pair for delta",
 				"project", base.ProjectName,
+				"group_project", NormalizeDedupGroupProject(base.ProjectName),
 				"stem", base.FileStem,
 				"version", base.Version,
 				"file", base.FilePath,

@@ -328,6 +328,26 @@ func (s *Storage) ListPendingDedupFilesByProject(projectName string) ([]DedupFil
 	return scanDedupFiles(rows)
 }
 
+// ListAllPendingDedupFiles возвращает все pending-файлы для глобальной группировки.
+func (s *Storage) ListAllPendingDedupFiles() ([]DedupFile, error) {
+	rows, err := s.db.Query(rebind(`
+		SELECT f.id, f.build_dir_id, p.name, f.file_path, f.filename,
+			f.file_stem, f.version, f.file_build_num, f.commit_tag,
+			f.storage_kind, f.base_file_id, f.delta_path, f.sha256,
+			f.original_size, f.status, f.error_msg
+		FROM dedup_files f
+		JOIN dedup_build_dirs b ON b.id = f.build_dir_id
+		JOIN dedup_projects p ON p.id = b.project_id
+		WHERE f.status = 'pending'
+		ORDER BY p.name, f.file_build_num
+	`, s.dialect))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanDedupFiles(rows)
+}
+
 // GetDedupFileByPath возвращает метаданные dedup по пути файла.
 func (s *Storage) GetDedupFileByPath(filePath string) (DedupFile, error) {
 	return lookupDedupByPath(s, filePath)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"debug/dwarf"
 	"debug/elf"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -100,6 +101,13 @@ func (i *Indexer) Scan() error {
 					if err == nil {
 						indexed.Add(1)
 						_ = i.storage.MarkScanned(job.path, job.mtime, job.size, "elf")
+					} else if errors.Is(err, buildid.ErrNotFound) {
+						// Qt и часть .debug без GNU build-id: не индексируем, но помечаем,
+						// чтобы не спамить WARN на каждом scan.
+						skipped.Add(1)
+						_ = i.storage.MarkScanned(job.path, job.mtime, job.size, "no_build_id")
+						slog.Debug("skip elf without build-id", "path", job.path)
+						err = nil
 					}
 				}
 				if err != nil {

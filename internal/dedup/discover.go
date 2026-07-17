@@ -168,9 +168,10 @@ func registerDebugFiles(store *storage.Storage, buildDirID int64, dirPath string
 // GroupKey возвращает ключ группировки для xdelta.
 // Тег из .comment (git, JIRA или любой другой) — опциональные метаданные в БД,
 // на группировку не влияют: сжимаем одну библиотеку между build_* каталогами.
+// ProjectName нормализуется (схлопываются хвостовые версии в пути).
 func GroupKey(f storage.DedupFile) storage.DedupGroupKey {
 	return storage.DedupGroupKey{
-		Project:  f.ProjectName,
+		Project:  NormalizeDedupGroupProject(f.ProjectName),
 		FileStem: f.FileStem,
 	}
 }
