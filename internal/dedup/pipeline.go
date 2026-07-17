@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/your-username/debuginfod-go/internal/storage"
 )
@@ -188,6 +189,19 @@ func filterProjects(all []string, single string) []string {
 	return all
 }
 
+func groupVersionSummary(group []storage.DedupFile) string {
+	seen := make(map[string]struct{})
+	parts := make([]string, 0, len(group))
+	for _, f := range group {
+		if _, ok := seen[f.Version]; ok {
+			continue
+		}
+		seen[f.Version] = struct{}{}
+		parts = append(parts, f.Version)
+	}
+	return strings.Join(parts, ",")
+}
+
 func processGroups(opts Options, groups map[string][]storage.DedupFile) (compressed, skipped, errors int, bytesBefore, bytesAfter int64) {
 	if opts.Xdelta == nil {
 		opts.Xdelta = NewXdelta("xdelta3")
@@ -206,6 +220,12 @@ func processGroups(opts Options, groups map[string][]storage.DedupFile) (compres
 		})
 		base := group[0]
 		if len(group) == 1 {
+			slog.Info("dedup singleton, no pair for delta",
+				"project", base.ProjectName,
+				"stem", base.FileStem,
+				"version", base.Version,
+				"file", base.FilePath,
+			)
 			if !opts.DryRun {
 				sha, _ := FileSHA256(base.FilePath)
 				kind := storage.DedupKindBase
@@ -222,7 +242,7 @@ func processGroups(opts Options, groups map[string][]storage.DedupFile) (compres
 			slog.Info("dedup group without commit tag",
 				"project", base.ProjectName,
 				"stem", base.FileStem,
-				"version", base.Version,
+				"versions", groupVersionSummary(group),
 				"files", len(group),
 			)
 		}
