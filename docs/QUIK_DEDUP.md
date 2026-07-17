@@ -44,7 +44,10 @@ DEBUGINFOD_SCAN_PATH/
 
 ## Группировка
 
-Ключ группы для xdelta: **`(project, file_stem)`** — одна библиотека между каталогами `build_*`.
+Ключ группы для xdelta: **`(normalize(project), file_stem)`** — одна библиотека между каталогами `build_*`.
+
+`normalize(project)` схлопывает хвостовые версионные сегменты пути (`16/16.0.0` → продукт `Released/QuikServer_16.0_Release_Linux`).
+Имя проекта в UI остаётся полным (`Released/.../16/16.0.0`).
 
 `version` в имени файла (`16.0.0` → `16.0.1`) и метка в `.comment` **не влияют** на группировку.
 Метка из `.comment` (git-тег, JIRA, `tag:` / `commit:` — если есть) сохраняется в БД
