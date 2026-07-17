@@ -82,7 +82,7 @@ func Load() Config {
 		ScanWebhookURL:   envOr("DEBUGINFOD_SCAN_WEBHOOK_URL", ""),
 		Dedup: DedupConfig{
 			Enabled:    envBool("DEBUGINFOD_DEDUP_ENABLED", false),
-			Projects:   splitPaths(envOr("DEBUGINFOD_DEDUP_PROJECTS", "QuikServer,Front")),
+			Projects:   splitPaths(envOr("DEBUGINFOD_DEDUP_PROJECTS", "")),
 			Workers:    envInt("DEBUGINFOD_DEDUP_WORKERS", 4),
 			XdeltaPath: envOr("DEBUGINFOD_XDELTA_PATH", "xdelta3"),
 		},

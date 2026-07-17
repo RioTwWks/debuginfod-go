@@ -17,6 +17,7 @@
   const dedupSummary = document.getElementById("dedup-summary");
   const dedupStatus = document.getElementById("dedup-status");
   const scanRunsBody = document.getElementById("scan-runs-body");
+  const dedupProjectsBody = document.getElementById("dedup-projects-body");
   const dedupRunsBody = document.getElementById("dedup-runs-body");
 
   let searchKey = "buildid";
@@ -211,6 +212,10 @@
         '<tr><td colspan="8" class="muted">Ошибка загрузки</td></tr>';
       dedupRunsBody.innerHTML =
         '<tr><td colspan="9" class="muted">Ошибка загрузки</td></tr>';
+      if (dedupProjectsBody) {
+        dedupProjectsBody.innerHTML =
+          '<tr><td colspan="7" class="muted">Ошибка загрузки</td></tr>';
+      }
     }
   }
 
@@ -246,6 +251,8 @@
       ].join("");
       if (dedupStatus) dedupStatus.textContent = "";
     }
+
+    renderDedupByProject(data, dedupEnabled);
 
     if (!data.index_scans || data.index_scans.length === 0) {
       scanRunsBody.innerHTML =
@@ -301,6 +308,45 @@
         })
         .join("");
     }
+  }
+
+  function renderDedupByProject(data, dedupEnabled) {
+    if (!dedupProjectsBody) return;
+    if (!dedupEnabled) {
+      dedupProjectsBody.innerHTML =
+        '<tr><td colspan="7" class="muted">Dedup выключен</td></tr>';
+      return;
+    }
+    const rows = (data.dedup_by_project || []).slice().sort(function (a, b) {
+      return String(a.project).localeCompare(String(b.project), "ru");
+    });
+    if (!rows.length) {
+      dedupProjectsBody.innerHTML =
+        '<tr><td colspan="7" class="muted">Нет данных (ожидается после scan с каталогами build_*)</td></tr>';
+      return;
+    }
+    dedupProjectsBody.innerHTML = rows
+      .map(function (r) {
+        const saved =
+          r.bytes_saved > 0
+            ? formatBytes(r.bytes_saved) +
+              " (" +
+              (r.saved_percent || 0).toFixed(1) +
+              "%)"
+            : "—";
+        return (
+          "<tr>" +
+          '<td class="mono">' + escapeHtml(r.project) + "</td>" +
+          "<td>" + formatNumber(r.build_dirs) + "</td>" +
+          "<td>" + formatNumber(r.files_done) + "</td>" +
+          "<td>" + formatNumber(r.files_delta) + "</td>" +
+          "<td>" + formatBytes(r.bytes_original) + "</td>" +
+          "<td>" + formatBytes(r.bytes_on_disk) + "</td>" +
+          "<td>" + saved + "</td>" +
+          "</tr>"
+        );
+      })
+      .join("");
   }
 
   function summaryItem(value, label) {

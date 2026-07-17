@@ -395,6 +395,124 @@ func (s *Storage) SetDedupBuildDirStatus(id int64, status DedupBuildStatus) erro
 	return err
 }
 
+// ListDedupProjectNames возвращает отсортированные имена обнаруженных папок-проектов.
+func (s *Storage) ListDedupProjectNames() ([]string, error) {
+	rows, err := s.db.Query(rebind(`SELECT name FROM dedup_projects ORDER BY name`, s.dialect))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+	}
+	if out == nil {
+		out = []string{}
+	}
+	return out, rows.Err()
+}
+
+// DedupProjectTotals — сводка dedup по папке для Web UI.
+type DedupProjectTotals struct {
+	Project       string  `json:"project"`
+	BuildDirs     int64   `json:"build_dirs"`
+	FilesDone     int64   `json:"files_done"`
+	FilesDelta    int64   `json:"files_delta"`
+	BytesOriginal int64   `json:"bytes_original"`
+	BytesOnDisk   int64   `json:"bytes_on_disk"`
+	BytesSaved    int64   `json:"bytes_saved"`
+	SavedPercent  float64 `json:"saved_percent"`
+}
+
+// DedupTotalsByProject возвращает статистику dedup, сгруппированную по папке.
+func (s *Storage) DedupTotalsByProject() ([]DedupProjectTotals, error) {
+	names, err := s.ListDedupProjectNames()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]DedupProjectTotals, 0, len(names))
+	for _, name := range names {
+		t, err := s.dedupTotalsForProject(name)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, nil
+}
+
+func (s *Storage) dedupTotalsForProject(projectName string) (DedupProjectTotals, error) {
+	var t DedupProjectTotals
+	t.Project = projectName
+
+	_ = s.db.QueryRow(rebind(`
+		SELECT COUNT(1) FROM dedup_build_dirs b
+		JOIN dedup_projects p ON p.id = b.project_id
+		WHERE p.name = ?
+	`, s.dialect), projectName).Scan(&t.BuildDirs)
+	_ = s.db.QueryRow(rebind(`
+		SELECT COUNT(1) FROM dedup_files f
+		JOIN dedup_build_dirs b ON b.id = f.build_dir_id
+		JOIN dedup_projects p ON p.id = b.project_id
+		WHERE p.name = ? AND f.status = 'done'
+	`, s.dialect), projectName).Scan(&t.FilesDone)
+	_ = s.db.QueryRow(rebind(`
+		SELECT COUNT(1) FROM dedup_files f
+		JOIN dedup_build_dirs b ON b.id = f.build_dir_id
+		JOIN dedup_projects p ON p.id = b.project_id
+		WHERE p.name = ? AND f.storage_kind = 'delta'
+	`, s.dialect), projectName).Scan(&t.FilesDelta)
+	_ = s.db.QueryRow(rebind(`
+		SELECT COALESCE(SUM(f.original_size), 0) FROM dedup_files f
+		JOIN dedup_build_dirs b ON b.id = f.build_dir_id
+		JOIN dedup_projects p ON p.id = b.project_id
+		WHERE p.name = ? AND f.status = 'done'
+	`, s.dialect), projectName).Scan(&t.BytesOriginal)
+
+	rows, err := s.db.Query(rebind(`
+		SELECT f.storage_kind, f.file_path, f.delta_path, f.original_size
+		FROM dedup_files f
+		JOIN dedup_build_dirs b ON b.id = f.build_dir_id
+		JOIN dedup_projects p ON p.id = b.project_id
+		WHERE p.name = ? AND f.status = 'done'
+	`, s.dialect), projectName)
+	if err != nil {
+		return t, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var kind, filePath, deltaPath string
+		var origSize int64
+		if err := rows.Scan(&kind, &filePath, &deltaPath, &origSize); err != nil {
+			return t, err
+		}
+		switch DedupStorageKind(kind) {
+		case DedupKindDelta:
+			if st, err := fileSize(deltaPath); err == nil {
+				t.BytesOnDisk += st
+			}
+		default:
+			if st, err := fileSize(filePath); err == nil {
+				t.BytesOnDisk += st
+			} else {
+				t.BytesOnDisk += origSize
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return t, err
+	}
+	if t.BytesOriginal > 0 && t.BytesOnDisk < t.BytesOriginal {
+		t.BytesSaved = t.BytesOriginal - t.BytesOnDisk
+		t.SavedPercent = float64(t.BytesSaved) / float64(t.BytesOriginal) * 100
+	}
+	return t, nil
+}
+
 // DedupStats — агрегаты для мониторинга dedup.
 type DedupStats struct {
 	FilesTotal    int64

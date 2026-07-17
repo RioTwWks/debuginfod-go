@@ -2,6 +2,7 @@ package dedup
 
 import (
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -12,62 +13,106 @@ import (
 	"github.com/your-username/debuginfod-go/pkg/elfcomment"
 )
 
-// Discover регистрирует build_* каталоги и .debug файлы в БД.
-func Discover(store *storage.Storage, scanRoots []string, projects []string) (int, error) {
-	projectSet := make(map[string]struct{}, len(projects))
-	for _, p := range projects {
-		projectSet[p] = struct{}{}
-	}
+// Discover рекурсивно ищет каталоги build_* под scan roots и регистрирует .debug в БД.
+// Имя «проекта» — относительный путь от scan root до родителя build_* (например Released/QuikServer_16.0).
+// projectFilter пустой — все найденные папки; иначе только точное совпадение пути проекта.
+func Discover(store *storage.Storage, scanRoots []string, projectFilter []string) (int, error) {
+	allowed := projectFilterSet(projectFilter)
 	registered := 0
+
 	for _, root := range scanRoots {
-		entries, err := os.ReadDir(root)
+		rootAbs, err := filepath.Abs(root)
 		if err != nil {
-			slog.Warn("dedup discover read root", "root", root, "err", err)
+			slog.Warn("dedup discover abs root", "root", root, "err", err)
 			continue
 		}
-		for _, ent := range entries {
-			if !ent.IsDir() {
-				continue
-			}
-			projectName := ent.Name()
-			if len(projectSet) > 0 {
-				if _, ok := projectSet[projectName]; !ok {
-					continue
-				}
-			}
-			projectID, err := store.EnsureDedupProject(projectName)
-			if err != nil {
-				return registered, err
-			}
-			projectPath := filepath.Join(root, projectName)
-			buildDirs, err := os.ReadDir(projectPath)
-			if err != nil {
-				slog.Warn("dedup discover project", "project", projectName, "err", err)
-				continue
-			}
-			for _, bd := range buildDirs {
-				if !bd.IsDir() || !strings.HasPrefix(bd.Name(), "build_") {
-					continue
-				}
-				dirPath := filepath.Join(projectPath, bd.Name())
-				dirNum, err := debugfilename.ParseBuildDir(bd.Name())
-				if err != nil {
-					slog.Debug("dedup skip dir", "path", dirPath, "err", err)
-					continue
-				}
-				buildDirID, err := store.UpsertDedupBuildDir(projectID, dirPath, dirNum)
-				if err != nil {
-					return registered, err
-				}
-				n, err := registerDebugFiles(store, buildDirID, dirPath)
-				registered += n
-				if err != nil {
-					return registered, err
-				}
-			}
+		n, err := discoverUnderRoot(store, rootAbs, allowed)
+		registered += n
+		if err != nil {
+			return registered, err
 		}
 	}
 	return registered, nil
+}
+
+func discoverUnderRoot(store *storage.Storage, rootAbs string, allowed map[string]struct{}) (int, error) {
+	registered := 0
+	err := filepath.WalkDir(rootAbs, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			slog.Debug("dedup walk", "path", path, "err", walkErr)
+			return nil
+		}
+		if !d.IsDir() {
+			return nil
+		}
+		name := d.Name()
+		if !strings.HasPrefix(name, "build_") {
+			return nil
+		}
+
+		projectName := projectNameForBuildDir(rootAbs, path)
+		if !matchesProjectFilter(projectName, allowed) {
+			return filepath.SkipDir
+		}
+
+		dirNum, err := debugfilename.ParseBuildDir(name)
+		if err != nil {
+			slog.Debug("dedup skip dir", "path", path, "err", err)
+			return filepath.SkipDir
+		}
+
+		projectID, err := store.EnsureDedupProject(projectName)
+		if err != nil {
+			return err
+		}
+		buildDirID, err := store.UpsertDedupBuildDir(projectID, path, dirNum)
+		if err != nil {
+			return err
+		}
+		n, err := registerDebugFiles(store, buildDirID, path)
+		registered += n
+		if err != nil {
+			return err
+		}
+		return filepath.SkipDir
+	})
+	return registered, err
+}
+
+func projectNameForBuildDir(scanRoot, buildDirPath string) string {
+	parent := filepath.Dir(buildDirPath)
+	rel, err := filepath.Rel(scanRoot, parent)
+	if err != nil || rel == "." {
+		return filepath.Base(scanRoot)
+	}
+	return filepath.ToSlash(rel)
+}
+
+func projectFilterSet(projects []string) map[string]struct{} {
+	if len(projects) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(projects))
+	for _, p := range projects {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		out[filepath.ToSlash(p)] = struct{}{}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func matchesProjectFilter(projectName string, allowed map[string]struct{}) bool {
+	if allowed == nil {
+		return true
+	}
+	projectName = filepath.ToSlash(projectName)
+	_, ok := allowed[projectName]
+	return ok
 }
 
 func registerDebugFiles(store *storage.Storage, buildDirID int64, dirPath string) (int, error) {
