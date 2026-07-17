@@ -9,13 +9,16 @@ import (
 	"strings"
 )
 
-// ErrNotFound — commit tag не найден в .comment.
-var ErrNotFound = errors.New("commit tag not found in .comment")
+// ErrNotFound — метка сборки не найдена в .comment.
+var ErrNotFound = errors.New("build label not found in .comment")
 
-// commitTagRe — JIRA/DevOps теги вида DEVOPS-110, PROJ-42.
-var commitTagRe = regexp.MustCompile(`[A-Z][A-Z0-9_]*-\d+`)
+// jiraTagRe — опциональные JIRA/DevOps метки вида DEVOPS-110 (если есть).
+var jiraTagRe = regexp.MustCompile(`[A-Z][A-Z0-9_]*-\d+`)
 
-// FromPath читает ELF и возвращает первый commit tag из секции .comment.
+// gitTagRe — опциональные git-теги вида v1.2.3 или release-2026-04-17.
+var gitTagRe = regexp.MustCompile(`(?:^|[\s:(])(v?\d+\.\d+(?:\.\d+)?(?:[-+][\w.-]+)?|release[-_][\w.-]+)`)
+
+// FromPath читает ELF и возвращает метку сборки из .comment, если есть.
 func FromPath(path string) (string, error) {
 	f, err := elf.Open(path)
 	if err != nil {
@@ -25,7 +28,7 @@ func FromPath(path string) (string, error) {
 	return FromELF(f)
 }
 
-// FromELF извлекает commit tag из открытого ELF.
+// FromELF извлекает метку сборки из открытого ELF (опционально).
 func FromELF(f *elf.File) (string, error) {
 	sec := f.Section(".comment")
 	if sec == nil {
@@ -38,20 +41,22 @@ func FromELF(f *elf.File) (string, error) {
 	return ParseBytes(data)
 }
 
-// ParseBytes ищет commit tag в сырых данных .comment.
+// ParseBytes ищет метку сборки в .comment. Пустой результат — норма.
 func ParseBytes(data []byte) (string, error) {
 	text := string(data)
-	if tag := commitTagRe.FindString(text); tag != "" {
+	if tag := jiraTagRe.FindString(text); tag != "" {
 		return tag, nil
 	}
-	// Fallback: первая непустая строка после "tag:" или "commit:"
+	if m := gitTagRe.FindStringSubmatch(text); len(m) > 1 {
+		return strings.TrimSpace(m[1]), nil
+	}
 	for _, line := range strings.Split(text, "\x00") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
 		lower := strings.ToLower(line)
-		for _, prefix := range []string{"tag:", "commit:", "build:"} {
+		for _, prefix := range []string{"tag:", "commit:", "build:", "git:"} {
 			if strings.HasPrefix(lower, prefix) {
 				val := strings.TrimSpace(line[len(prefix):])
 				if val != "" {
