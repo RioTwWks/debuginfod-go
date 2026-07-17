@@ -44,11 +44,14 @@ DEBUGINFOD_SCAN_PATH/
 
 ## Группировка
 
-Ключ группы: `(project, file_stem, version, commit_tag_id)`.
+Ключ группы: `(project, file_stem, commit_tag_id)`.
+
+`version` из имени файла **не** входит в ключ: между `build_1` и `build_2` версия
+в имени меняется (`16.0.0` → `16.0.1`), но delta строится для одной и той же библиотеки.
 
 `commit_tag_id` извлекается из ELF-секции `.comment` (например `DEVOPS-110`).
 Если JIRA-тега нет (типично для Quik: только `GCC:` / `ARQA` / `QUIKDB Library`),
-группировка выполняется по `(project, file_stem, version)` с пустым тегом.
+группировка выполняется по `(project, file_stem)` с пустым тегом.
 
 Внутри группы **base** — файл с минимальным `build_num` в имени. Остальные кодируются как delta относительно base.
 

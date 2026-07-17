@@ -225,7 +225,7 @@ func (s *Storage) UpsertDedupFile(f DedupFile) (int64, error) {
 			commit_tag = excluded.commit_tag,
 			original_size = excluded.original_size,
 			status = CASE
-				WHEN dedup_files.storage_kind = 'full' AND dedup_files.delta_path = '' THEN 'pending'
+				WHEN dedup_files.storage_kind IN ('full', 'base') AND dedup_files.delta_path = '' THEN 'pending'
 				ELSE dedup_files.status
 			END
 	`, s.dialect)
@@ -239,7 +239,7 @@ func (s *Storage) UpsertDedupFile(f DedupFile) (int64, error) {
 				commit_tag = EXCLUDED.commit_tag,
 				original_size = EXCLUDED.original_size,
 				status = CASE
-					WHEN dedup_files.storage_kind = 'full' AND dedup_files.delta_path = '' THEN 'pending'
+					WHEN dedup_files.storage_kind IN ('full', 'base') AND dedup_files.delta_path = '' THEN 'pending'
 					ELSE dedup_files.status
 				END
 			RETURNING id
