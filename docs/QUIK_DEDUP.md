@@ -1,6 +1,6 @@
 # Quik debuginfo dedup (xdelta3)
 
-Сжатие дублирующихся `.debug` ELF-файлов Quik/Front через xdelta3 с группировкой по commit tag из секции `.comment`.
+Сжатие дублирующихся `.debug` ELF-файлов Quik/Front через xdelta3.
 
 ## Layout на диске
 
@@ -44,14 +44,11 @@ DEBUGINFOD_SCAN_PATH/
 
 ## Группировка
 
-Ключ группы: `(project, file_stem, commit_tag_id)`.
+Ключ группы для xdelta: **`(project, file_stem)`** — одна библиотека между каталогами `build_*`.
 
-`version` из имени файла **не** входит в ключ: между `build_1` и `build_2` версия
-в имени меняется (`16.0.0` → `16.0.1`), но delta строится для одной и той же библиотеки.
-
-`commit_tag_id` извлекается из ELF-секции `.comment` (например `DEVOPS-110`).
-Если JIRA-тега нет (типично для Quik: только `GCC:` / `ARQA` / `QUIKDB Library`),
-группировка выполняется по `(project, file_stem)` с пустым тегом.
+`version` в имени файла (`16.0.0` → `16.0.1`) и метка в `.comment` **не влияют** на группировку.
+Метка из `.comment` (git-тег, JIRA, `tag:` / `commit:` — если есть) сохраняется в БД
+для справки, но не обязательна.
 
 Внутри группы **base** — файл с минимальным `build_num` в имени. Остальные кодируются как delta относительно base.
 

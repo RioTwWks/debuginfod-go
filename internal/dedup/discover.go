@@ -165,19 +165,18 @@ func registerDebugFiles(store *storage.Storage, buildDirID int64, dirPath string
 	return count, nil
 }
 
-// GroupKey возвращает ключ группировки для файла.
-// Version намеренно не входит в ключ: между build_1 и build_2 версия в имени
-// файла меняется (16.0.0 → 16.0.1), но библиотека та же — её и сжимаем.
+// GroupKey возвращает ключ группировки для xdelta.
+// Тег из .comment (git, JIRA или любой другой) — опциональные метаданные в БД,
+// на группировку не влияют: сжимаем одну библиотеку между build_* каталогами.
 func GroupKey(f storage.DedupFile) storage.DedupGroupKey {
 	return storage.DedupGroupKey{
-		Project:   f.ProjectName,
-		FileStem:  f.FileStem,
-		CommitTag: f.CommitTag,
+		Project:  f.ProjectName,
+		FileStem: f.FileStem,
 	}
 }
 
 func groupKeyString(k storage.DedupGroupKey) string {
-	return fmt.Sprintf("%s|%s|%s", k.Project, k.FileStem, k.CommitTag)
+	return fmt.Sprintf("%s|%s", k.Project, k.FileStem)
 }
 
 // GroupFiles группирует pending-файлы по ключу.
