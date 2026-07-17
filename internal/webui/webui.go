@@ -57,11 +57,12 @@ type SearchResponse struct {
 
 // ScansResponse — история scan/dedup для вкладки «Сканирования».
 type ScansResponse struct {
-	IndexSummary storage.IndexSummary    `json:"index_summary"`
-	IndexScans   []storage.ScanRunRecord `json:"index_scans"`
-	DedupRuns    []storage.DedupRunRecord `json:"dedup_runs"`
-	DedupTotals  storage.DedupStorageTotals `json:"dedup_totals"`
-	DedupEnabled bool                    `json:"dedup_enabled"`
+	IndexSummary   storage.IndexSummary         `json:"index_summary"`
+	IndexScans     []storage.ScanRunRecord      `json:"index_scans"`
+	DedupRuns      []storage.DedupRunRecord     `json:"dedup_runs"`
+	DedupTotals    storage.DedupStorageTotals   `json:"dedup_totals"`
+	DedupByProject []storage.DedupProjectTotals `json:"dedup_by_project"`
+	DedupEnabled   bool                         `json:"dedup_enabled"`
 }
 
 // Register добавляет маршруты Web UI в mux.
@@ -256,6 +257,10 @@ func scansHandler(opts Opts) http.HandlerFunc {
 		if err != nil {
 			slog.Warn("webui dedup totals", "err", err)
 		}
+		byProject, err := opts.Store.DedupTotalsByProject()
+		if err != nil {
+			slog.Warn("webui dedup by project", "err", err)
+		}
 		summary, err := opts.Store.IndexSummary()
 		if err != nil {
 			slog.Error("webui index summary", "err", err)
@@ -263,11 +268,12 @@ func scansHandler(opts Opts) http.HandlerFunc {
 			return
 		}
 		resp := ScansResponse{
-			IndexSummary: summary,
-			IndexScans:   indexScans,
-			DedupRuns:    dedupRuns,
-			DedupTotals:  totals,
-			DedupEnabled: opts.DedupEnabled,
+			IndexSummary:   summary,
+			IndexScans:     indexScans,
+			DedupRuns:      dedupRuns,
+			DedupTotals:    totals,
+			DedupByProject: byProject,
+			DedupEnabled:   opts.DedupEnabled,
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)

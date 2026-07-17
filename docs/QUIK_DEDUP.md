@@ -4,13 +4,28 @@
 
 ## Layout на диске
 
+Dedup рекурсивно ищет каталоги `build_*` под `DEBUGINFOD_SCAN_PATH` на любой глубине.
+Имя «проекта» в UI — относительный путь от scan root до родителя `build_*`.
+
+Пример:
+
+```text
+DEBUGINFOD_SCAN_PATH/
+  Released/
+    QuikServer_16.0_Common_Linux/
+      build_482_2025-03-26_…/
+        lib.so.19.1.5.2899.debug
+```
+
+В Web UI такой проект отобразится как `Released/QuikServer_16.0_Common_Linux`.
+
+Классический layout тоже поддерживается:
+
 ```text
 DEBUGINFOD_SCAN_PATH/
   QuikServer/
     build_482_2025-03-26_…/
       lib.so.19.1.5.2899.debug
-  Front/
-    build_*/*.debug
 ```
 
 Файлы уже приходят как `*.debug` (без `.7zip.debug`).
@@ -39,18 +54,18 @@ DEBUGINFOD_SCAN_PATH/
 
 ### Ingest (после scan)
 
-1. Обнаружить новые каталоги `build_*` в проектах из `DEBUGINFOD_DEDUP_PROJECTS`.
+1. Рекурсивно обнаружить каталоги `build_*` под scan path.
 2. Зарегистрировать `.debug` в таблице `dedup_files`.
 3. Сгруппировать pending-файлы и выполнить xdelta.
 
 ### Backfill (обязателен для старых сборок)
 
 ```http
-POST /admin/dedup-backfill?project=QuikServer&batch=50&dry_run=false
+POST /admin/dedup-backfill?project=Released/QuikServer_16.0_Common_Linux&batch=50&dry_run=false
 X-Admin-Token: <DEBUGINFOD_ADMIN_KEY>
 ```
 
-Обрабатывает каталоги `build_*` со статусом `pending` порциями.
+Параметр `project` — полный путь проекта как в UI. Без `project` — все обнаруженные папки.
 
 ### xdelta3
 
@@ -81,7 +96,8 @@ xdelta3 -d -s base.debug target.debug.xdelta restored.debug
 
 ```env
 DEBUGINFOD_DEDUP_ENABLED=true
-DEBUGINFOD_DEDUP_PROJECTS=QuikServer,Front
+# Пусто = все найденные папки; иначе фильтр по полному пути проекта (через запятую):
+# DEBUGINFOD_DEDUP_PROJECTS=Released/QuikServer_16.0_Common_Linux
 DEBUGINFOD_DEDUP_WORKERS=4
 DEBUGINFOD_XDELTA_PATH=xdelta3
 ```

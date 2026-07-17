@@ -91,11 +91,55 @@ func RunIngestForProject(opts Options, project string) (BackfillResult, error) {
 	var result BackfillResult
 	result.DryRun = opts.DryRun
 
-	n, err := Discover(opts.Store, opts.ScanPaths, filterProjects(opts.Projects, project))
+	filter := filterProjects(opts.Projects, project)
+	n, err := Discover(opts.Store, opts.ScanPaths, filter)
 	if err != nil {
 		return result, err
 	}
 	result.FilesRegistered = n
+
+	return ingestProjectPending(opts, project, &result)
+}
+
+// RunIngestAll запускает ingest для всех обнаруженных проектов.
+func RunIngestAll(opts Options) (BackfillResult, error) {
+	var total BackfillResult
+	total.DryRun = opts.DryRun
+
+	n, err := Discover(opts.Store, opts.ScanPaths, opts.Projects)
+	if err != nil {
+		return total, err
+	}
+	total.FilesRegistered = n
+
+	projects, err := opts.Store.ListDedupProjectNames()
+	if err != nil {
+		return total, err
+	}
+	projects = filterKnownProjects(projects, opts.Projects)
+
+	for _, project := range projects {
+		r, err := ingestProjectPending(opts, project, nil)
+		if err != nil {
+			return total, err
+		}
+		total.GroupsProcessed += r.GroupsProcessed
+		total.FilesCompressed += r.FilesCompressed
+		total.FilesSkipped += r.FilesSkipped
+		total.Errors += r.Errors
+		total.BuildDirsProcessed += r.BuildDirsProcessed
+		total.BytesBefore += r.BytesBefore
+		total.BytesAfter += r.BytesAfter
+	}
+	return total, nil
+}
+
+func ingestProjectPending(opts Options, project string, base *BackfillResult) (BackfillResult, error) {
+	var result BackfillResult
+	if base != nil {
+		result = *base
+	}
+	result.DryRun = opts.DryRun
 
 	files, err := opts.Store.ListPendingDedupFilesByProject(project)
 	if err != nil {
@@ -123,25 +167,18 @@ func RunIngestForProject(opts Options, project string) (BackfillResult, error) {
 	return result, nil
 }
 
-// RunIngestAll запускает ingest для всех проектов из конфига.
-func RunIngestAll(opts Options) (BackfillResult, error) {
-	var total BackfillResult
-	total.DryRun = opts.DryRun
-	for _, project := range opts.Projects {
-		r, err := RunIngestForProject(opts, project)
-		if err != nil {
-			return total, err
-		}
-		total.FilesRegistered += r.FilesRegistered
-		total.GroupsProcessed += r.GroupsProcessed
-		total.FilesCompressed += r.FilesCompressed
-		total.FilesSkipped += r.FilesSkipped
-		total.Errors += r.Errors
-		total.BuildDirsProcessed += r.BuildDirsProcessed
-		total.BytesBefore += r.BytesBefore
-		total.BytesAfter += r.BytesAfter
+func filterKnownProjects(all []string, filter []string) []string {
+	if len(filter) == 0 {
+		return all
 	}
-	return total, nil
+	allowed := projectFilterSet(filter)
+	out := make([]string, 0, len(all))
+	for _, p := range all {
+		if matchesProjectFilter(p, allowed) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func filterProjects(all []string, single string) []string {
