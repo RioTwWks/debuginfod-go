@@ -223,7 +223,11 @@ func (s *Storage) UpsertDedupFile(f DedupFile) (int64, error) {
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
 		ON CONFLICT(file_path) DO UPDATE SET
 			commit_tag = excluded.commit_tag,
-			original_size = excluded.original_size
+			original_size = excluded.original_size,
+			status = CASE
+				WHEN dedup_files.storage_kind = 'full' AND dedup_files.delta_path = '' THEN 'pending'
+				ELSE dedup_files.status
+			END
 	`, s.dialect)
 	if s.dialect == DialectPostgres {
 		q = rebind(`
@@ -233,7 +237,11 @@ func (s *Storage) UpsertDedupFile(f DedupFile) (int64, error) {
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
 			ON CONFLICT (file_path) DO UPDATE SET
 				commit_tag = EXCLUDED.commit_tag,
-				original_size = EXCLUDED.original_size
+				original_size = EXCLUDED.original_size,
+				status = CASE
+					WHEN dedup_files.storage_kind = 'full' AND dedup_files.delta_path = '' THEN 'pending'
+					ELSE dedup_files.status
+				END
 			RETURNING id
 		`, s.dialect)
 		var id int64

@@ -22,6 +22,24 @@ func TestGroupFilesBaseSelection(t *testing.T) {
 	}
 }
 
+func TestGroupFilesEmptyCommitTag(t *testing.T) {
+	files := []storage.DedupFile{
+		{ID: 1, ProjectName: "Released/Quik", FileStem: "lib.so", Version: "16.0.1", FileBuildNum: 1, CommitTag: ""},
+		{ID: 2, ProjectName: "Released/Quik", FileStem: "lib.so", Version: "16.0.1", FileBuildNum: 2, CommitTag: ""},
+	}
+	groups := GroupFiles(files)
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(groups))
+	}
+	compressed, skipped, _, _, _ := processGroups(Options{DryRun: true, Xdelta: NewXdelta("xdelta3")}, groups)
+	if compressed != 1 {
+		t.Fatalf("compressed=%d want 1", compressed)
+	}
+	if skipped != 1 {
+		t.Fatalf("skipped=%d want 1 (base)", skipped)
+	}
+}
+
 func TestRunBackfillDryRun(t *testing.T) {
 	store, err := storage.New(t.TempDir() + "/test.sqlite")
 	if err != nil {
