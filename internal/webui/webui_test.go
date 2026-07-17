@@ -202,9 +202,12 @@ func TestUIScansAPI(t *testing.T) {
 	defer store.Close()
 
 	_ = store.InsertScanRun(storage.ScanRunRecord{
-		FinishedAt: time.Now(),
-		DurationMs: 100,
-		Indexed:    5,
+		FinishedAt:     time.Now(),
+		DurationMs:     100,
+		Indexed:        5,
+		ArtifactsTotal: 10,
+		ScannedFiles:   8,
+		BytesOnDisk:    4096,
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/ui/api/scans", nil)
@@ -220,6 +223,15 @@ func TestUIScansAPI(t *testing.T) {
 	}
 	if len(payload.IndexScans) != 1 {
 		t.Fatalf("index_scans=%d", len(payload.IndexScans))
+	}
+	if payload.IndexScans[0].ArtifactsTotal != 10 {
+		t.Fatalf("artifacts_total=%d", payload.IndexScans[0].ArtifactsTotal)
+	}
+	if payload.IndexScans[0].BytesOnDisk != 4096 {
+		t.Fatalf("bytes_on_disk=%d", payload.IndexScans[0].BytesOnDisk)
+	}
+	if payload.DedupEnabled {
+		t.Fatal("expected dedup_enabled=false by default")
 	}
 }
 

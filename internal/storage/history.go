@@ -8,12 +8,15 @@ import (
 
 // ScanRunRecord — история прохода индексатора.
 type ScanRunRecord struct {
-	ID          int64     `json:"id"`
-	FinishedAt  time.Time `json:"finished_at"`
-	DurationMs  int64     `json:"duration_ms"`
-	Indexed     int       `json:"indexed"`
-	Skipped     int       `json:"skipped"`
-	Errors      int       `json:"errors"`
+	ID             int64     `json:"id"`
+	FinishedAt     time.Time `json:"finished_at"`
+	DurationMs     int64     `json:"duration_ms"`
+	Indexed        int       `json:"indexed"`
+	Skipped        int       `json:"skipped"`
+	Errors         int       `json:"errors"`
+	ArtifactsTotal int64     `json:"artifacts_total"`
+	ScannedFiles   int64     `json:"scanned_files"`
+	BytesOnDisk    int64     `json:"bytes_on_disk"`
 }
 
 // DedupRunRecord — история dedup ingest/backfill.
@@ -102,16 +105,37 @@ func migrateHistory(db *sql.DB, dialect Dialect) error {
 	if _, err := db.Exec(schema); err != nil {
 		return fmt.Errorf("migrate history: %w", err)
 	}
+	for _, stmt := range scanRunsMigrations(dialect) {
+		_, _ = db.Exec(stmt)
+	}
 	return nil
+}
+
+func scanRunsMigrations(dialect Dialect) []string {
+	if dialect == DialectPostgres {
+		return []string{
+			"ALTER TABLE scan_runs ADD COLUMN IF NOT EXISTS artifacts_total BIGINT NOT NULL DEFAULT 0",
+			"ALTER TABLE scan_runs ADD COLUMN IF NOT EXISTS scanned_files BIGINT NOT NULL DEFAULT 0",
+			"ALTER TABLE scan_runs ADD COLUMN IF NOT EXISTS bytes_on_disk BIGINT NOT NULL DEFAULT 0",
+		}
+	}
+	return []string{
+		"ALTER TABLE scan_runs ADD COLUMN artifacts_total INTEGER NOT NULL DEFAULT 0",
+		"ALTER TABLE scan_runs ADD COLUMN scanned_files INTEGER NOT NULL DEFAULT 0",
+		"ALTER TABLE scan_runs ADD COLUMN bytes_on_disk INTEGER NOT NULL DEFAULT 0",
+	}
 }
 
 // InsertScanRun сохраняет результат индексации.
 func (s *Storage) InsertScanRun(rec ScanRunRecord) error {
 	_, err := s.db.Exec(rebind(`
-		INSERT INTO scan_runs (finished_at, duration_ms, indexed, skipped, errors)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO scan_runs (
+			finished_at, duration_ms, indexed, skipped, errors,
+			artifacts_total, scanned_files, bytes_on_disk
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`, s.dialect),
 		rec.FinishedAt.Unix(), rec.DurationMs, rec.Indexed, rec.Skipped, rec.Errors,
+		rec.ArtifactsTotal, rec.ScannedFiles, rec.BytesOnDisk,
 	)
 	return err
 }
@@ -142,7 +166,8 @@ func (s *Storage) ListScanRuns(limit int) ([]ScanRunRecord, error) {
 		limit = 50
 	}
 	rows, err := s.db.Query(rebind(`
-		SELECT id, finished_at, duration_ms, indexed, skipped, errors
+		SELECT id, finished_at, duration_ms, indexed, skipped, errors,
+			artifacts_total, scanned_files, bytes_on_disk
 		FROM scan_runs ORDER BY finished_at DESC LIMIT ?
 	`, s.dialect), limit)
 	if err != nil {
@@ -229,7 +254,10 @@ func scanScanRuns(rows *sql.Rows) ([]ScanRunRecord, error) {
 	for rows.Next() {
 		var r ScanRunRecord
 		var finished int64
-		if err := rows.Scan(&r.ID, &finished, &r.DurationMs, &r.Indexed, &r.Skipped, &r.Errors); err != nil {
+		if err := rows.Scan(
+			&r.ID, &finished, &r.DurationMs, &r.Indexed, &r.Skipped, &r.Errors,
+			&r.ArtifactsTotal, &r.ScannedFiles, &r.BytesOnDisk,
+		); err != nil {
 			return nil, err
 		}
 		r.FinishedAt = time.Unix(finished, 0)

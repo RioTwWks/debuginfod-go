@@ -75,8 +75,14 @@
 
     <div id="tab-scans" class="tab-panel" role="tabpanel" hidden>
       <section class="panel">
+        <h2>Сводка индекса</h2>
+        <div class="dedup-summary" id="index-summary">Загрузка…</div>
+      </section>
+
+      <section class="panel">
         <h2>Экономия dedup (всего)</h2>
         <div class="dedup-summary" id="dedup-summary">Загрузка…</div>
+        <p class="hint" id="dedup-status"></p>
       </section>
 
       <section class="panel">
@@ -90,10 +96,13 @@
                 <th>проиндексировано</th>
                 <th>пропущено</th>
                 <th>ошибок</th>
+                <th>артефактов</th>
+                <th>файлов</th>
+                <th>объём</th>
               </tr>
             </thead>
             <tbody id="scan-runs-body">
-              <tr><td colspan="5" class="muted">Загрузка…</td></tr>
+              <tr><td colspan="8" class="muted">Загрузка…</td></tr>
             </tbody>
           </table>
         </div>

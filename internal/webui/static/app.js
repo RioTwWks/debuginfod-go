@@ -13,7 +13,9 @@
   const mainTabs = document.querySelectorAll(".main-tab");
   const tabDashboard = document.getElementById("tab-dashboard");
   const tabScans = document.getElementById("tab-scans");
+  const indexSummary = document.getElementById("index-summary");
   const dedupSummary = document.getElementById("dedup-summary");
+  const dedupStatus = document.getElementById("dedup-status");
   const scanRunsBody = document.getElementById("scan-runs-body");
   const dedupRunsBody = document.getElementById("dedup-runs-body");
 
@@ -75,20 +77,14 @@
   }
 
   function artifactLinks(buildid, types) {
-    const allTypes = ["debuginfo", "executable"];
-    const available = types && types.length ? types : [];
-    return allTypes
+    const available = (types || []).filter(function (t) {
+      return t === "debuginfo" || t === "executable";
+    });
+    if (!available.length) {
+      return '<span class="muted">—</span>';
+    }
+    return available
       .map(function (t) {
-        const has = available.indexOf(t) >= 0;
-        if (!has) {
-          return (
-            '<span class="type-badge ' +
-            t +
-            ' disabled" title="тип отсутствует в индексе">' +
-            escapeHtml(t) +
-            "</span>"
-          );
-        }
         return (
           '<a class="type-badge ' +
           t +
@@ -208,29 +204,52 @@
       renderScans(data);
       scansLoaded = true;
     } catch (err) {
-      dedupSummary.textContent = "Ошибка: " + err.message;
+      indexSummary.textContent = "Ошибка: " + err.message;
+      dedupSummary.textContent = "Ошибка загрузки";
+      if (dedupStatus) dedupStatus.textContent = "";
       scanRunsBody.innerHTML =
-        '<tr><td colspan="5" class="muted">Ошибка загрузки</td></tr>';
+        '<tr><td colspan="8" class="muted">Ошибка загрузки</td></tr>';
       dedupRunsBody.innerHTML =
         '<tr><td colspan="9" class="muted">Ошибка загрузки</td></tr>';
     }
   }
 
   function renderScans(data) {
+    const idx = data.index_summary || {};
+    indexSummary.innerHTML = [
+      summaryItem(formatNumber(idx.artifacts_total), "артефактов"),
+      summaryItem(formatNumber(idx.artifacts_executable), "executable"),
+      summaryItem(formatNumber(idx.artifacts_debuginfo), "debuginfo"),
+      summaryItem(formatNumber(idx.scanned_files_total), "файлов"),
+      summaryItem(formatBytes(idx.bytes_on_disk), "на диске"),
+    ].join("");
+
+    const dedupEnabled = !!data.dedup_enabled;
     const t = data.dedup_totals || {};
     const savedPct =
       t.saved_percent > 0 ? t.saved_percent.toFixed(1) + "%" : "—";
-    dedupSummary.innerHTML = [
-      summaryItem(formatNumber(t.files_done), "файлов dedup"),
-      summaryItem(formatNumber(t.files_delta), "delta-файлов"),
-      summaryItem(formatBytes(t.bytes_original), "исходный объём"),
-      summaryItem(formatBytes(t.bytes_on_disk), "на диске сейчас"),
-      summaryItem(formatBytes(t.bytes_saved) + " (" + savedPct + ")", "сэкономлено"),
-    ].join("");
+
+    if (!dedupEnabled) {
+      dedupSummary.innerHTML =
+        '<div class="summary-item muted"><span>Dedup выключен (DEBUGINFOD_DEDUP_ENABLED=false)</span></div>';
+      if (dedupStatus) {
+        dedupStatus.textContent =
+          "Включите DEBUGINFOD_DEDUP_ENABLED=true для сжатия .debug через xdelta.";
+      }
+    } else {
+      dedupSummary.innerHTML = [
+        summaryItem(formatNumber(t.files_done), "файлов dedup"),
+        summaryItem(formatNumber(t.files_delta), "delta-файлов"),
+        summaryItem(formatBytes(t.bytes_original), "исходный объём"),
+        summaryItem(formatBytes(t.bytes_on_disk), "на диске сейчас"),
+        summaryItem(formatBytes(t.bytes_saved) + " (" + savedPct + ")", "сэкономлено"),
+      ].join("");
+      if (dedupStatus) dedupStatus.textContent = "";
+    }
 
     if (!data.index_scans || data.index_scans.length === 0) {
       scanRunsBody.innerHTML =
-        '<tr><td colspan="5" class="muted">Нет записей (ожидается после первого scan)</td></tr>';
+        '<tr><td colspan="8" class="muted">Нет записей (ожидается после первого scan)</td></tr>';
     } else {
       scanRunsBody.innerHTML = data.index_scans
         .map(function (r) {
@@ -241,15 +260,21 @@
             "<td>" + formatNumber(r.indexed) + "</td>" +
             "<td>" + formatNumber(r.skipped) + "</td>" +
             "<td>" + formatNumber(r.errors) + "</td>" +
+            "<td>" + formatNumber(r.artifacts_total) + "</td>" +
+            "<td>" + formatNumber(r.scanned_files) + "</td>" +
+            "<td>" + escapeHtml(formatBytes(r.bytes_on_disk)) + "</td>" +
             "</tr>"
           );
         })
         .join("");
     }
 
-    if (!data.dedup_runs || data.dedup_runs.length === 0) {
+    if (!dedupEnabled) {
       dedupRunsBody.innerHTML =
-        '<tr><td colspan="9" class="muted">Нет записей (включите DEBUGINFOD_DEDUP_ENABLED)</td></tr>';
+        '<tr><td colspan="9" class="muted">Dedup выключен</td></tr>';
+    } else if (!data.dedup_runs || data.dedup_runs.length === 0) {
+      dedupRunsBody.innerHTML =
+        '<tr><td colspan="9" class="muted">Нет записей (ожидается после первого dedup-прогона)</td></tr>';
     } else {
       dedupRunsBody.innerHTML = data.dedup_runs
         .map(function (r) {

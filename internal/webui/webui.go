@@ -20,9 +20,10 @@ var staticFiles embed.FS
 
 // Opts — зависимости Web UI.
 type Opts struct {
-	Store      *storage.Storage
-	Metrics    *metrics.Collector
-	CacheBytes func() int64
+	Store       *storage.Storage
+	Metrics     *metrics.Collector
+	CacheBytes  func() int64
+	DedupEnabled bool
 }
 
 // StatsResponse — JSON для панели статистики.
@@ -56,9 +57,11 @@ type SearchResponse struct {
 
 // ScansResponse — история scan/dedup для вкладки «Сканирования».
 type ScansResponse struct {
-	IndexScans   []storage.ScanRunRecord   `json:"index_scans"`
-	DedupRuns    []storage.DedupRunRecord  `json:"dedup_runs"`
+	IndexSummary storage.IndexSummary    `json:"index_summary"`
+	IndexScans   []storage.ScanRunRecord `json:"index_scans"`
+	DedupRuns    []storage.DedupRunRecord `json:"dedup_runs"`
 	DedupTotals  storage.DedupStorageTotals `json:"dedup_totals"`
+	DedupEnabled bool                    `json:"dedup_enabled"`
 }
 
 // Register добавляет маршруты Web UI в mux.
@@ -253,10 +256,18 @@ func scansHandler(opts Opts) http.HandlerFunc {
 		if err != nil {
 			slog.Warn("webui dedup totals", "err", err)
 		}
+		summary, err := opts.Store.IndexSummary()
+		if err != nil {
+			slog.Error("webui index summary", "err", err)
+			http.Error(w, "scans error", http.StatusInternalServerError)
+			return
+		}
 		resp := ScansResponse{
-			IndexScans:  indexScans,
-			DedupRuns:   dedupRuns,
-			DedupTotals: totals,
+			IndexSummary: summary,
+			IndexScans:   indexScans,
+			DedupRuns:    dedupRuns,
+			DedupTotals:  totals,
+			DedupEnabled: opts.DedupEnabled,
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)
