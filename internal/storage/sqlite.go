@@ -116,7 +116,10 @@ func migrateSQLite(db *sql.DB) error {
 	} {
 		_, _ = db.Exec(stmt)
 	}
-	return migrateDedup(db, DialectSQLite)
+	if err := migrateDedup(db, DialectSQLite); err != nil {
+		return err
+	}
+	return migrateHistory(db, DialectSQLite)
 }
 
 // Close закрывает соединение с базой данных.

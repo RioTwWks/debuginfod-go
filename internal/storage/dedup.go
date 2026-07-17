@@ -322,25 +322,7 @@ func (s *Storage) ListPendingDedupFilesByProject(projectName string) ([]DedupFil
 
 // GetDedupFileByPath возвращает метаданные dedup по пути файла.
 func (s *Storage) GetDedupFileByPath(filePath string) (DedupFile, error) {
-	rows, err := s.db.Query(rebind(`
-		SELECT f.id, f.build_dir_id, p.name, f.file_path, f.filename,
-			f.file_stem, f.version, f.file_build_num, f.commit_tag,
-			f.storage_kind, f.base_file_id, f.delta_path, f.sha256,
-			f.original_size, f.status, f.error_msg
-		FROM dedup_files f
-		JOIN dedup_build_dirs b ON b.id = f.build_dir_id
-		JOIN dedup_projects p ON p.id = b.project_id
-		WHERE f.file_path = ?
-	`, s.dialect), filePath)
-	if err != nil {
-		return DedupFile{}, err
-	}
-	defer rows.Close()
-	files, err := scanDedupFiles(rows)
-	if err != nil || len(files) == 0 {
-		return DedupFile{}, ErrNotFound
-	}
-	return files[0], nil
+	return lookupDedupByPath(s, filePath)
 }
 
 // GetDedupFileByID загружает запись по id.

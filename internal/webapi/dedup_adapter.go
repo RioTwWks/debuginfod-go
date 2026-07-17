@@ -10,9 +10,9 @@ type DedupAdapter struct {
 	svc *dedup.Service
 }
 
-// NewDedupAdapter создаёт адаптер или nil, если dedup выключен.
+// NewDedupAdapter создаёт адаптер или nil, если service не задан.
 func NewDedupAdapter(svc *dedup.Service) *DedupAdapter {
-	if svc == nil || !svc.Enabled() {
+	if svc == nil {
 		return nil
 	}
 	return &DedupAdapter{svc: svc}

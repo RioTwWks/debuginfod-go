@@ -10,14 +10,21 @@
   const resultsBody = document.getElementById("results-body");
   const loadMoreBtn = document.getElementById("load-more");
   const modeButtons = document.querySelectorAll(".mode-btn");
+  const mainTabs = document.querySelectorAll(".main-tab");
+  const tabDashboard = document.getElementById("tab-dashboard");
+  const tabScans = document.getElementById("tab-scans");
+  const dedupSummary = document.getElementById("dedup-summary");
+  const scanRunsBody = document.getElementById("scan-runs-body");
+  const dedupRunsBody = document.getElementById("dedup-runs-body");
 
   let searchKey = "buildid";
   let nextOffset = 0;
   let lastSearchValue = "";
+  let scansLoaded = false;
 
   const hints = {
     buildid:
-      "Пустой запрос — первые 50 артефактов. Поиск по префиксу build-id (hex).",
+      "Пустой запрос — первые 50 build-id. Ссылки скачивания только для типов, реально присутствующих в индексе.",
     glob: "Шаблон fnmatch, как в /metadata: /usr/bin/*, /usr/lib/debug/**",
     file: "Точный путь файла, как в /metadata?key=file&value=…",
   };
@@ -33,7 +40,7 @@
   }
 
   function formatBytes(bytes) {
-    if (bytes === 0) return "0 B";
+    if (!bytes || bytes === 0) return "0 B";
     const units = ["B", "KB", "MB", "GB", "TB"];
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return (bytes / Math.pow(1024, i)).toFixed(1) + " " + units[i];
@@ -47,10 +54,69 @@
     return h + " ч " + m + " мин";
   }
 
+  function formatMs(ms) {
+    if (ms < 1000) return ms + " ms";
+    return (ms / 1000).toFixed(1) + " с";
+  }
+
+  function formatDate(iso) {
+    if (!iso) return "—";
+    try {
+      return new Date(iso).toLocaleString("ru-RU");
+    } catch (_) {
+      return iso;
+    }
+  }
+
   function escapeHtml(s) {
     const div = document.createElement("div");
     div.textContent = s;
     return div.innerHTML;
+  }
+
+  function artifactLinks(buildid, types) {
+    const allTypes = ["debuginfo", "executable"];
+    const available = types && types.length ? types : [];
+    return allTypes
+      .map(function (t) {
+        const has = available.indexOf(t) >= 0;
+        if (!has) {
+          return (
+            '<span class="type-badge ' +
+            t +
+            ' disabled" title="тип отсутствует в индексе">' +
+            escapeHtml(t) +
+            "</span>"
+          );
+        }
+        return (
+          '<a class="type-badge ' +
+          t +
+          '" href="/buildid/' +
+          encodeURIComponent(buildid) +
+          "/" +
+          t +
+          '" download>' +
+          escapeHtml(t) +
+          "</a>"
+        );
+      })
+      .join("");
+  }
+
+  function setMainTab(tab) {
+    mainTabs.forEach(function (btn) {
+      const active = btn.dataset.tab === tab;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    tabDashboard.classList.toggle("active", tab === "dashboard");
+    tabDashboard.hidden = tab !== "dashboard";
+    tabScans.classList.toggle("active", tab === "scans");
+    tabScans.hidden = tab !== "scans";
+    if (tab === "scans" && !scansLoaded) {
+      loadScans();
+    }
   }
 
   function setSearchMode(key) {
@@ -134,6 +200,94 @@
     scanInfo.innerHTML = scanParts.join("");
   }
 
+  async function loadScans() {
+    try {
+      const res = await fetch("/ui/api/scans?limit=50");
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      renderScans(data);
+      scansLoaded = true;
+    } catch (err) {
+      dedupSummary.textContent = "Ошибка: " + err.message;
+      scanRunsBody.innerHTML =
+        '<tr><td colspan="5" class="muted">Ошибка загрузки</td></tr>';
+      dedupRunsBody.innerHTML =
+        '<tr><td colspan="9" class="muted">Ошибка загрузки</td></tr>';
+    }
+  }
+
+  function renderScans(data) {
+    const t = data.dedup_totals || {};
+    const savedPct =
+      t.saved_percent > 0 ? t.saved_percent.toFixed(1) + "%" : "—";
+    dedupSummary.innerHTML = [
+      summaryItem(formatNumber(t.files_done), "файлов dedup"),
+      summaryItem(formatNumber(t.files_delta), "delta-файлов"),
+      summaryItem(formatBytes(t.bytes_original), "исходный объём"),
+      summaryItem(formatBytes(t.bytes_on_disk), "на диске сейчас"),
+      summaryItem(formatBytes(t.bytes_saved) + " (" + savedPct + ")", "сэкономлено"),
+    ].join("");
+
+    if (!data.index_scans || data.index_scans.length === 0) {
+      scanRunsBody.innerHTML =
+        '<tr><td colspan="5" class="muted">Нет записей (ожидается после первого scan)</td></tr>';
+    } else {
+      scanRunsBody.innerHTML = data.index_scans
+        .map(function (r) {
+          return (
+            "<tr>" +
+            "<td>" + escapeHtml(formatDate(r.finished_at)) + "</td>" +
+            "<td>" + escapeHtml(formatMs(r.duration_ms)) + "</td>" +
+            "<td>" + formatNumber(r.indexed) + "</td>" +
+            "<td>" + formatNumber(r.skipped) + "</td>" +
+            "<td>" + formatNumber(r.errors) + "</td>" +
+            "</tr>"
+          );
+        })
+        .join("");
+    }
+
+    if (!data.dedup_runs || data.dedup_runs.length === 0) {
+      dedupRunsBody.innerHTML =
+        '<tr><td colspan="9" class="muted">Нет записей (включите DEBUGINFOD_DEDUP_ENABLED)</td></tr>';
+    } else {
+      dedupRunsBody.innerHTML = data.dedup_runs
+        .map(function (r) {
+          const saved =
+            r.bytes_saved > 0
+              ? formatBytes(r.bytes_saved) +
+                " (" +
+                (r.saved_percent || 0).toFixed(1) +
+                "%)"
+              : "—";
+          return (
+            "<tr>" +
+            "<td>" + escapeHtml(formatDate(r.finished_at)) + "</td>" +
+            "<td>" + escapeHtml(formatMs(r.duration_ms)) + "</td>" +
+            "<td>" + escapeHtml(r.project || "все") + "</td>" +
+            "<td>" + formatNumber(r.files_compressed) + "</td>" +
+            "<td>" + formatNumber(r.files_skipped) + "</td>" +
+            "<td>" + formatNumber(r.errors) + "</td>" +
+            "<td>" + formatBytes(r.bytes_before) + "</td>" +
+            "<td>" + formatBytes(r.bytes_after) + "</td>" +
+            "<td>" + saved + "</td>" +
+            "</tr>"
+          );
+        })
+        .join("");
+    }
+  }
+
+  function summaryItem(value, label) {
+    return (
+      '<div class="summary-item"><strong>' +
+      escapeHtml(String(value)) +
+      "</strong><span>" +
+      escapeHtml(label) +
+      "</span></div>"
+    );
+  }
+
   function buildSearchParams(value, append) {
     const params = new URLSearchParams();
     params.set("key", searchKey);
@@ -180,35 +334,31 @@
     }
   }
 
-  function renderRow(row) {
-    const typeCls = row.type === "executable" ? "executable" : "debuginfo";
-    const file = row.archive ? row.archive + " → " + row.file : row.file;
-    const links =
-      '<a href="/buildid/' +
-      encodeURIComponent(row.buildid) +
-      '/debuginfo">debuginfo</a>' +
-      '<a href="/buildid/' +
-      encodeURIComponent(row.buildid) +
-      '/executable">executable</a>';
+  function renderGroupedRow(row) {
+    const types = row.types || [];
+    const typesLabel = types.map(escapeHtml).join(", ");
+    const file = row.file || "—";
     return (
       "<tr>" +
-      '<td class="mono">' +
-      escapeHtml(row.buildid) +
-      "</td>" +
-      '<td><span class="type-badge ' +
-      typeCls +
-      '">' +
-      escapeHtml(row.type) +
-      "</span></td>" +
-      '<td class="mono">' +
-      escapeHtml(file) +
-      "</td>" +
-      "<td>" +
-      escapeHtml(row.buildid_kind || "—") +
-      "</td>" +
-      '<td class="links">' +
-      links +
-      "</td>" +
+      '<td class="mono">' + escapeHtml(row.buildid) + "</td>" +
+      "<td>" + typesLabel + "</td>" +
+      '<td class="mono">' + escapeHtml(file) + "</td>" +
+      "<td>" + escapeHtml(row.buildid_kind || "—") + "</td>" +
+      '<td class="links">' + artifactLinks(row.buildid, types) + "</td>" +
+      "</tr>"
+    );
+  }
+
+  function renderFlatRow(row) {
+    const types = [row.type];
+    const file = row.archive ? row.archive + " → " + row.file : row.file;
+    return (
+      "<tr>" +
+      '<td class="mono">' + escapeHtml(row.buildid) + "</td>" +
+      "<td>" + escapeHtml(row.type) + "</td>" +
+      '<td class="mono">' + escapeHtml(file) + "</td>" +
+      "<td>" + escapeHtml(row.buildid_kind || "—") + "</td>" +
+      '<td class="links">' + artifactLinks(row.buildid, types) + "</td>" +
       "</tr>"
     );
   }
@@ -218,29 +368,32 @@
     if (searchKey === "buildid") {
       label = data.query ? ' по «' + data.query + '»' : "";
     } else {
-      label = data.value ? ' (' + searchKey + ': «' + data.value + '»)' : "";
+      label = data.value ? " (" + searchKey + ": «" + data.value + "»)" : "";
     }
 
+    const rows = data.grouped && data.grouped.length ? data.grouped : data.results || [];
     const totalShown = append
-      ? resultsBody.querySelectorAll("tr").length + (data.results ? data.results.length : 0)
-      : data.count;
+      ? resultsBody.querySelectorAll("tr").length + rows.length
+      : rows.length;
 
-    let status =
-      "Найдено: " + formatNumber(append ? totalShown : data.count) + label;
+    let status = "Найдено: " + formatNumber(append ? totalShown : data.count) + label;
     if (!data.complete) {
       status += " (есть ещё — нажмите «Ещё результаты»)";
     }
     searchStatus.textContent = status;
 
-    if (!data.results || data.results.length === 0) {
-      if (!append) {
-        resultsTable.hidden = true;
-      }
+    if (!rows.length) {
+      if (!append) resultsTable.hidden = true;
       loadMoreBtn.hidden = true;
       return;
     }
 
-    const html = data.results.map(renderRow).join("");
+    const html = rows
+      .map(function (row) {
+        return data.grouped ? renderGroupedRow(row) : renderFlatRow(row);
+      })
+      .join("");
+
     if (append) {
       resultsBody.insertAdjacentHTML("beforeend", html);
     } else {
@@ -251,6 +404,12 @@
     nextOffset = data.next_offset || 0;
     loadMoreBtn.hidden = data.complete || !nextOffset;
   }
+
+  mainTabs.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      setMainTab(btn.dataset.tab);
+    });
+  });
 
   modeButtons.forEach(function (btn) {
     btn.addEventListener("click", function () {
@@ -277,5 +436,6 @@
 
   loadStats();
   setInterval(loadStats, 30000);
+  setMainTab("dashboard");
   doSearch("", false);
 })();

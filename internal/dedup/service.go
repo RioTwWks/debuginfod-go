@@ -1,6 +1,9 @@
 package dedup
 
 import (
+	"log/slog"
+	"time"
+
 	"github.com/your-username/debuginfod-go/internal/config"
 	"github.com/your-username/debuginfod-go/internal/storage"
 )
@@ -34,9 +37,32 @@ func (s *Service) Enabled() bool {
 
 // RunBackfill запускает backfill порциями.
 func (s *Service) RunBackfill(project string, batch int, dryRun bool) (BackfillResult, error) {
+	start := time.Now()
 	opts := s.opts
 	opts.DryRun = dryRun
-	return RunBackfill(opts, project, batch)
+	result, err := RunBackfill(opts, project, batch)
+	if err != nil {
+		return result, err
+	}
+	if s.store != nil && !dryRun {
+		rec := storage.DedupRunRecord{
+			FinishedAt:         time.Now(),
+			DurationMs:         time.Since(start).Milliseconds(),
+			Project:            project,
+			DryRun:             dryRun,
+			BuildDirsProcessed: result.BuildDirsProcessed,
+			FilesRegistered:    result.FilesRegistered,
+			FilesCompressed:    result.FilesCompressed,
+			FilesSkipped:       result.FilesSkipped,
+			Errors:             result.Errors,
+			BytesBefore:        result.BytesBefore,
+			BytesAfter:         result.BytesAfter,
+		}
+		if err := s.store.InsertDedupRun(rec); err != nil {
+			slog.Warn("dedup run history", "err", err)
+		}
+	}
+	return result, nil
 }
 
 // RunIngestAfterScan вызывается после успешного scan.

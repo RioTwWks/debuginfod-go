@@ -173,6 +173,15 @@ func (i *Indexer) Scan() error {
 	if i.metrics != nil {
 		i.metrics.RecordScan(stats)
 	}
+	if err := i.storage.InsertScanRun(storage.ScanRunRecord{
+		FinishedAt: stats.Finished,
+		DurationMs: stats.Duration.Milliseconds(),
+		Indexed:    stats.Indexed,
+		Skipped:    stats.Skipped,
+		Errors:     stats.Errors,
+	}); err != nil {
+		slog.Warn("scan run history", "err", err)
+	}
 	slog.Info("scan complete",
 		"indexed", stats.Indexed,
 		"skipped", stats.Skipped,

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/your-username/debuginfod-go/internal/metrics"
 	"github.com/your-username/debuginfod-go/internal/storage"
@@ -88,7 +89,7 @@ func TestUISearch(t *testing.T) {
 		t.Fatal(err)
 	}
 	if payload.Count != 2 {
-		t.Fatalf("count=%d, want 2", payload.Count)
+		t.Fatalf("count=%d, want 2 (grouped by build-id)", payload.Count)
 	}
 }
 
@@ -166,6 +167,59 @@ func TestUISearchUnsupportedKey(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d, want 400", rec.Code)
+	}
+}
+
+func TestUISearchGrouped(t *testing.T) {
+	mux, store := testMux(t)
+	defer store.Close()
+
+	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "deadbeef", Type: "executable", FilePath: "/a"}, 1)
+	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "deadbeef", Type: "debuginfo", FilePath: "/a.debug"}, 1)
+	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "cafebabe", Type: "debuginfo", FilePath: "/b.debug"}, 1)
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/api/search?q=dead", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d", rec.Code)
+	}
+
+	var payload SearchResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Count != 1 || len(payload.Grouped) != 1 {
+		t.Fatalf("count=%d grouped=%d", payload.Count, len(payload.Grouped))
+	}
+	if len(payload.Grouped[0].Types) != 2 {
+		t.Fatalf("types=%v", payload.Grouped[0].Types)
+	}
+}
+
+func TestUIScansAPI(t *testing.T) {
+	mux, store := testMux(t)
+	defer store.Close()
+
+	_ = store.InsertScanRun(storage.ScanRunRecord{
+		FinishedAt: time.Now(),
+		DurationMs: 100,
+		Indexed:    5,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/api/scans", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var payload ScansResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.IndexScans) != 1 {
+		t.Fatalf("index_scans=%d", len(payload.IndexScans))
 	}
 }
 
