@@ -66,5 +66,5 @@ func migratePostgres(db *sql.DB) error {
 	} {
 		_, _ = db.Exec(stmt)
 	}
-	return nil
+	return migrateDedup(db, DialectPostgres)
 }

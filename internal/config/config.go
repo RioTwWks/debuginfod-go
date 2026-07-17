@@ -38,6 +38,15 @@ type Config struct {
 	ScanEnabled      bool
 	AdminKey         string
 	ScanWebhookURL   string
+	Dedup            DedupConfig
+}
+
+// DedupConfig — параметры xdelta dedup для Quik .debug.
+type DedupConfig struct {
+	Enabled    bool
+	Projects   []string
+	Workers    int
+	XdeltaPath string
 }
 
 // Load читает .env, переменные окружения и флаги командной строки.
@@ -71,6 +80,12 @@ func Load() Config {
 		ScanEnabled:      envBool("DEBUGINFOD_SCAN_ENABLED", true),
 		AdminKey:         envOr("DEBUGINFOD_ADMIN_KEY", ""),
 		ScanWebhookURL:   envOr("DEBUGINFOD_SCAN_WEBHOOK_URL", ""),
+		Dedup: DedupConfig{
+			Enabled:    envBool("DEBUGINFOD_DEDUP_ENABLED", false),
+			Projects:   splitPaths(envOr("DEBUGINFOD_DEDUP_PROJECTS", "QuikServer,Front")),
+			Workers:    envInt("DEBUGINFOD_DEDUP_WORKERS", 4),
+			XdeltaPath: envOr("DEBUGINFOD_XDELTA_PATH", "xdelta3"),
+		},
 	}
 
 	if cfg.EnvFile != "" && cfg.EnvFile != ".env" {

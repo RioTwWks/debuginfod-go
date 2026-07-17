@@ -11,6 +11,7 @@ import (
 
 	"github.com/your-username/debuginfod-go/internal/cache"
 	"github.com/your-username/debuginfod-go/internal/config"
+	"github.com/your-username/debuginfod-go/internal/dedup"
 	"github.com/your-username/debuginfod-go/internal/federation"
 	"github.com/your-username/debuginfod-go/internal/indexer"
 	"github.com/your-username/debuginfod-go/internal/logging"
@@ -49,12 +50,16 @@ func main() {
 		LazyExtract:   cfg.LazyExtract,
 	})
 
+	dedupSvc := dedup.NewService(store, cfg.Dedup, cfg.ScanPaths)
+	dedupAdapter := webapi.NewDedupAdapter(dedupSvc)
+
 	runner := scanrunner.New(scanrunner.Options{
 		Indexer:    idx,
 		Metrics:    collector,
 		Interval:   cfg.RescanInterval,
 		Enabled:    cfg.ScanEnabled,
 		WebhookURL: cfg.ScanWebhookURL,
+		Dedup:      dedup.NewScanHook(dedupSvc),
 	})
 
 	scanCtx, cancelScan := context.WithCancel(context.Background())
@@ -99,6 +104,8 @@ func main() {
 		ZabbixKey:        cfg.ZabbixKey,
 		AdminKey:         cfg.AdminKey,
 		ScanTrigger:      scanTrigger,
+		DedupRunner:      dedupAdapter,
+		DedupRestorer:    dedupAdapter,
 		CacheBytes:       cacheBytes,
 		CacheDir:         cfg.CacheDir,
 		ScanPaths:        cfg.ScanPaths,
@@ -129,6 +136,7 @@ func main() {
 			"rate_limit", cfg.RateLimitRPS,
 			"scan_paths", cfg.ScanPaths,
 			"scan_enabled", cfg.ScanEnabled,
+			"dedup_enabled", cfg.Dedup.Enabled,
 			"workers", cfg.ScanWorkers,
 			"federation", len(cfg.UpstreamURLs) > 0,
 			"scan_webhook", cfg.ScanWebhookURL != "",
