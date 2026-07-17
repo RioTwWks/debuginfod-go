@@ -35,6 +35,7 @@ type ServerOpts struct {
 	CacheDir         string
 	ScanPaths        []string
 	UIEnabled        bool
+	DedupEnabled     bool
 	Security         SecurityOpts
 }
 
@@ -344,9 +345,10 @@ func NewMux(opts ServerOpts) http.Handler {
 
 	if opts.UIEnabled {
 		webui.Register(mux, webui.Opts{
-			Store:      opts.Store,
-			Metrics:    opts.Metrics,
-			CacheBytes: opts.CacheBytes,
+			Store:        opts.Store,
+			Metrics:      opts.Metrics,
+			CacheBytes:   opts.CacheBytes,
+			DedupEnabled: opts.DedupEnabled,
 		})
 	}
 

@@ -110,6 +110,7 @@ func main() {
 		CacheDir:         cfg.CacheDir,
 		ScanPaths:        cfg.ScanPaths,
 		UIEnabled:        cfg.UIEnabled,
+		DedupEnabled:     cfg.Dedup.Enabled,
 		Security:         security,
 	}
 

@@ -173,13 +173,19 @@ func (i *Indexer) Scan() error {
 	if i.metrics != nil {
 		i.metrics.RecordScan(stats)
 	}
-	if err := i.storage.InsertScanRun(storage.ScanRunRecord{
+	runRec := storage.ScanRunRecord{
 		FinishedAt: stats.Finished,
 		DurationMs: stats.Duration.Milliseconds(),
 		Indexed:    stats.Indexed,
 		Skipped:    stats.Skipped,
 		Errors:     stats.Errors,
-	}); err != nil {
+	}
+	if summary, err := i.storage.IndexSummary(); err == nil {
+		runRec.ArtifactsTotal = summary.ArtifactsTotal
+		runRec.ScannedFiles = summary.ScannedFilesTotal
+		runRec.BytesOnDisk = summary.BytesOnDisk
+	}
+	if err := i.storage.InsertScanRun(runRec); err != nil {
 		slog.Warn("scan run history", "err", err)
 	}
 	slog.Info("scan complete",
