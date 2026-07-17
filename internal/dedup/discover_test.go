@@ -80,6 +80,32 @@ func TestDiscoverProjectFilter(t *testing.T) {
 	}
 }
 
+func TestDiscoverArbitraryDebugName(t *testing.T) {
+	root := t.TempDir()
+	buildDir := filepath.Join(root, "proj", "build_1_2026-01-01")
+	if err := os.MkdirAll(buildDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	debugPath := filepath.Join(buildDir, "totally-custom-name.debug")
+	if err := os.WriteFile(debugPath, []byte("fake-debug"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := storage.New(filepath.Join(t.TempDir(), "arbitrary.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	n, err := Discover(store, []string{root}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("registered=%d want 1", n)
+	}
+}
+
 func TestDiscoverQuikHyphenFilename(t *testing.T) {
 	root := t.TempDir()
 	buildDir := filepath.Join(root, "Released", "Quik", "build_1_2026-01-01")

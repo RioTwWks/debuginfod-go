@@ -23,7 +23,29 @@ type Info struct {
 	BuildNum int
 }
 
-// Parse разбирает имя Quik .debug:
+// MetadataFromName возвращает метаданные для любого *.debug.
+// Распознанные Quik-шаблоны дают stem/version/build; иначе — только имя файла.
+func MetadataFromName(name string) (Info, error) {
+	base := filepath.Base(name)
+	if !strings.HasSuffix(strings.ToLower(base), ".debug") {
+		return Info{}, fmt.Errorf("%w: missing .debug suffix", ErrInvalidFormat)
+	}
+	if info, err := parseDotStem(base); err == nil {
+		return info, nil
+	}
+	if info, err := parseHyphenStem(base); err == nil {
+		return info, nil
+	}
+	stem := strings.TrimSuffix(base, filepath.Ext(base))
+	return Info{
+		Filename: base,
+		Stem:     stem,
+		Version:  "",
+		BuildNum: 0,
+	}, nil
+}
+
+// Parse разбирает имя Quik .debug (опционально, для метаданных):
 //   - lib.so.19.1.5.2899.debug  (stem.M.m.p.BUILD)
 //   - quik-16.0.0.10.debug      (name-M.m.p.BUILD)
 func Parse(name string) (Info, error) {

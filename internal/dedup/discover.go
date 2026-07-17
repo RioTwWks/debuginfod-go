@@ -140,7 +140,7 @@ func registerDebugFiles(store *storage.Storage, buildDirID int64, dirPath string
 		if err != nil {
 			continue
 		}
-		parsed, err := debugfilename.Parse(name)
+		meta, err := debugfilename.MetadataFromName(name)
 		if err != nil {
 			slog.Debug("dedup skip file", "path", fullPath, "err", err)
 			continue
@@ -153,10 +153,10 @@ func registerDebugFiles(store *storage.Storage, buildDirID int64, dirPath string
 		_, err = store.UpsertDedupFile(storage.DedupFile{
 			BuildDirID:   buildDirID,
 			FilePath:     fullPath,
-			Filename:     parsed.Filename,
-			FileStem:     parsed.Stem,
-			Version:      parsed.Version,
-			FileBuildNum: parsed.BuildNum,
+			Filename:     meta.Filename,
+			FileStem:     meta.Stem,
+			Version:      meta.Version,
+			FileBuildNum: meta.BuildNum,
 			CommitTag:    tag,
 			OriginalSize: info.Size(),
 		})
