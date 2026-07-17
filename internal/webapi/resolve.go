@@ -12,11 +12,6 @@ import (
 	"github.com/your-username/debuginfod-go/pkg/elfsection"
 )
 
-// resolveFilePath возвращает путь на диске, при необходимости извлекая из архива.
-func resolveFilePath(cacheDir string, loc storage.ArtifactLocation) (string, error) {
-	return resolveFilePathWithDedup(cacheDir, loc, nil)
-}
-
 // DedupRestorer восстанавливает delta-файлы в кэш.
 type DedupRestorer interface {
 	RestoreToCache(cacheDir, filePath string) (string, error)
