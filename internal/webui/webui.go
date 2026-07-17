@@ -18,12 +18,19 @@ import (
 //go:embed static/*
 var staticFiles embed.FS
 
+// ScanTrigger запрашивает внеочередной scan индексатора.
+type ScanTrigger interface {
+	Trigger()
+}
+
 // Opts — зависимости Web UI.
 type Opts struct {
-	Store       *storage.Storage
-	Metrics     *metrics.Collector
-	CacheBytes  func() int64
+	Store        *storage.Storage
+	Metrics      *metrics.Collector
+	CacheBytes   func() int64
 	DedupEnabled bool
+	ScanEnabled  bool
+	ScanTrigger  ScanTrigger
 }
 
 // StatsResponse — JSON для панели статистики.
@@ -41,6 +48,7 @@ type StatsResponse struct {
 	LastScanFinishedAt  string `json:"last_scan_finished_at,omitempty"`
 	HTTPRequestsTotal   uint64 `json:"http_requests_total"`
 	CacheBytes          int64  `json:"cache_bytes"`
+	ScanEnabled         bool   `json:"scan_enabled"`
 }
 
 // SearchResponse — JSON результатов поиска.
@@ -88,6 +96,7 @@ func Register(mux *http.ServeMux, opts Opts) {
 	mux.HandleFunc("/ui/api/stats", statsHandler(opts))
 	mux.HandleFunc("/ui/api/search", searchHandler(opts))
 	mux.HandleFunc("/ui/api/scans", scansHandler(opts))
+	mux.HandleFunc("/ui/api/rescan", rescanHandler(opts))
 }
 
 func redirectUI(w http.ResponseWriter, r *http.Request) {
@@ -131,6 +140,7 @@ func statsHandler(opts Opts) http.HandlerFunc {
 			LastScanSkipped:     scan.Skipped,
 			LastScanErrors:      scan.Errors,
 			HTTPRequestsTotal:   opts.Metrics.HTTPRequests(),
+			ScanEnabled:         opts.ScanEnabled,
 		}
 		if !scan.Finished.IsZero() {
 			resp.LastScanFinishedAt = scan.Finished.UTC().Format(time.RFC3339)
@@ -277,5 +287,30 @@ func scansHandler(opts Opts) http.HandlerFunc {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)
+	}
+}
+
+// RescanResponse — ответ на запуск scan из UI.
+type RescanResponse struct {
+	Status string `json:"status"`
+}
+
+func rescanHandler(opts Opts) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !opts.ScanEnabled {
+			http.Error(w, "scan disabled", http.StatusConflict)
+			return
+		}
+		if opts.ScanTrigger == nil {
+			http.Error(w, "scan trigger unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		opts.ScanTrigger.Trigger()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(RescanResponse{Status: "accepted"})
 	}
 }

@@ -349,6 +349,8 @@ func NewMux(opts ServerOpts) http.Handler {
 			Metrics:      opts.Metrics,
 			CacheBytes:   opts.CacheBytes,
 			DedupEnabled: opts.DedupEnabled,
+			ScanEnabled:  opts.ScanTrigger != nil,
+			ScanTrigger:  opts.ScanTrigger,
 		})
 	}
 
