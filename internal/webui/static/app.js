@@ -290,7 +290,7 @@
       scanRunsBody.innerHTML =
         '<tr><td colspan="8" class="muted">Ошибка загрузки</td></tr>';
       dedupRunsBody.innerHTML =
-        '<tr><td colspan="9" class="muted">Ошибка загрузки</td></tr>';
+        '<tr><td colspan="10" class="muted">Ошибка загрузки</td></tr>';
       if (dedupProjectsBody) {
         dedupProjectsBody.innerHTML =
           '<tr><td colspan="8" class="muted">Ошибка загрузки</td></tr>';
@@ -315,19 +315,19 @@
 
     if (!dedupEnabled) {
       dedupSummary.innerHTML =
-        '<div class="summary-item muted"><span>Dedup выключен (DEBUGINFOD_DEDUP_ENABLED=false)</span></div>';
+        '<div class="summary-item muted"><span>Хранение .debug выключено (DEBUGINFOD_DEDUP_ENABLED=false)</span></div>';
       if (dedupStatus) {
         dedupStatus.textContent =
-          "Включите DEBUGINFOD_DEDUP_ENABLED=true для zstd-сжатия и CAS-dedup .debug.";
+          "Включите DEBUGINFOD_DEDUP_ENABLED=true — zstd-сжатие каждого .debug и CAS-dedup по SHA256.";
       }
     } else {
       dedupSummary.innerHTML = [
-        summaryItem(formatNumber(t.files_done), "файлов dedup"),
+        summaryItem(formatNumber(t.files_done), "файлов обработано"),
         summaryItem(formatNumber(t.files_compressed), "zstd-сжато"),
         summaryItem(formatNumber(t.files_cas_ref), "CAS-ссылок"),
         summaryItem(formatBytes(t.bytes_original), "исходный объём"),
-        summaryItem(formatBytes(t.bytes_on_disk), "на диске сейчас"),
-        summaryItem(formatBytes(t.bytes_saved) + " (" + savedPct + ")", "сэкономлено"),
+        summaryItem(formatBytes(t.bytes_on_disk), "blob на диске"),
+        summaryItem(formatBytes(t.bytes_saved) + " (" + savedPct + ")", "экономия"),
       ].join("");
       if (dedupStatus) dedupStatus.textContent = "";
     }
@@ -358,10 +358,10 @@
 
     if (!dedupEnabled) {
       dedupRunsBody.innerHTML =
-        '<tr><td colspan="9" class="muted">Dedup выключен</td></tr>';
+        '<tr><td colspan="10" class="muted">Хранение .debug выключено</td></tr>';
     } else if (!data.dedup_runs || data.dedup_runs.length === 0) {
       dedupRunsBody.innerHTML =
-        '<tr><td colspan="9" class="muted">Нет записей (ожидается после первого dedup-прогона)</td></tr>';
+        '<tr><td colspan="10" class="muted">Нет записей (ожидается после scan с build_* и DEBUGINFOD_DEDUP_ENABLED=true)</td></tr>';
     } else {
       dedupRunsBody.innerHTML = data.dedup_runs
         .map(function (r) {
@@ -372,12 +372,15 @@
                 (r.saved_percent || 0).toFixed(1) +
                 "%)"
               : "—";
+          const zstdCount = r.files_compressed || 0;
+          const casCount = r.files_dedup_ref || 0;
           return (
             "<tr>" +
             "<td>" + escapeHtml(formatDate(r.finished_at)) + "</td>" +
             "<td>" + escapeHtml(formatMs(r.duration_ms)) + "</td>" +
             "<td>" + escapeHtml(r.project || "все") + "</td>" +
-            "<td>" + formatNumber(r.files_compressed) + "</td>" +
+            "<td>" + formatNumber(zstdCount) + "</td>" +
+            "<td>" + formatNumber(casCount) + "</td>" +
             "<td>" + formatNumber(r.files_skipped) + "</td>" +
             "<td>" + formatNumber(r.errors) + "</td>" +
             "<td>" + formatBytes(r.bytes_before) + "</td>" +
@@ -394,7 +397,7 @@
     if (!dedupProjectsBody) return;
     if (!dedupEnabled) {
       dedupProjectsBody.innerHTML =
-        '<tr><td colspan="8" class="muted">Dedup выключен</td></tr>';
+        '<tr><td colspan="8" class="muted">Хранение .debug выключено</td></tr>';
       return;
     }
     const rows = (data.dedup_by_project || []).slice().sort(function (a, b) {

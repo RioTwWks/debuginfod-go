@@ -29,6 +29,7 @@ type DedupRunRecord struct {
 	BuildDirsProcessed int       `json:"build_dirs_processed"`
 	FilesRegistered    int       `json:"files_registered"`
 	FilesCompressed    int       `json:"files_compressed"`
+	FilesDedupRef      int       `json:"files_dedup_ref"`
 	FilesSkipped       int       `json:"files_skipped"`
 	Errors             int       `json:"errors"`
 	BytesBefore        int64     `json:"bytes_before"`
@@ -108,7 +109,21 @@ func migrateHistory(db *sql.DB, dialect Dialect) error {
 	for _, stmt := range scanRunsMigrations(dialect) {
 		_, _ = db.Exec(stmt)
 	}
+	for _, stmt := range dedupRunsMigrations(dialect) {
+		_, _ = db.Exec(stmt)
+	}
 	return nil
+}
+
+func dedupRunsMigrations(dialect Dialect) []string {
+	if dialect == DialectPostgres {
+		return []string{
+			"ALTER TABLE dedup_runs ADD COLUMN IF NOT EXISTS files_dedup_ref BIGINT NOT NULL DEFAULT 0",
+		}
+	}
+	return []string{
+		"ALTER TABLE dedup_runs ADD COLUMN files_dedup_ref INTEGER NOT NULL DEFAULT 0",
+	}
 }
 
 func scanRunsMigrations(dialect Dialect) []string {
@@ -150,12 +165,12 @@ func (s *Storage) InsertDedupRun(rec DedupRunRecord) error {
 		INSERT INTO dedup_runs (
 			finished_at, duration_ms, project, dry_run,
 			build_dirs_processed, files_registered, files_compressed,
-			files_skipped, errors, bytes_before, bytes_after
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			files_dedup_ref, files_skipped, errors, bytes_before, bytes_after
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, s.dialect),
 		rec.FinishedAt.Unix(), rec.DurationMs, rec.Project, dry,
 		rec.BuildDirsProcessed, rec.FilesRegistered, rec.FilesCompressed,
-		rec.FilesSkipped, rec.Errors, rec.BytesBefore, rec.BytesAfter,
+		rec.FilesDedupRef, rec.FilesSkipped, rec.Errors, rec.BytesBefore, rec.BytesAfter,
 	)
 	return err
 }
@@ -185,7 +200,7 @@ func (s *Storage) ListDedupRuns(limit int) ([]DedupRunRecord, error) {
 	rows, err := s.db.Query(rebind(`
 		SELECT id, finished_at, duration_ms, project, dry_run,
 			build_dirs_processed, files_registered, files_compressed,
-			files_skipped, errors, bytes_before, bytes_after
+			files_dedup_ref, files_skipped, errors, bytes_before, bytes_after
 		FROM dedup_runs ORDER BY finished_at DESC LIMIT ?
 	`, s.dialect), limit)
 	if err != nil {
@@ -268,7 +283,7 @@ func scanDedupRuns(rows *sql.Rows) ([]DedupRunRecord, error) {
 		if err := rows.Scan(
 			&r.ID, &finished, &r.DurationMs, &r.Project, &dry,
 			&r.BuildDirsProcessed, &r.FilesRegistered, &r.FilesCompressed,
-			&r.FilesSkipped, &r.Errors, &r.BytesBefore, &r.BytesAfter,
+			&r.FilesDedupRef, &r.FilesSkipped, &r.Errors, &r.BytesBefore, &r.BytesAfter,
 		); err != nil {
 			return nil, err
 		}

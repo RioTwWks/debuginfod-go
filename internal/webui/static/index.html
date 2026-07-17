@@ -14,7 +14,7 @@
     </div>
     <div class="header-meta">
       <span id="uptime" class="badge">uptime —</span>
-      <button type="button" id="rescan-btn" class="badge rescan-btn" title="Переиндексировать SCAN_PATH и запустить dedup">
+      <button type="button" id="rescan-btn" class="badge rescan-btn" title="Переиндексировать SCAN_PATH; при включённом dedup — zstd-сжатие и CAS">
         Сканировать
       </button>
       <span id="rescan-status" class="badge rescan-status" hidden></span>
@@ -84,13 +84,13 @@
       </section>
 
       <section class="panel">
-        <h2>Экономия dedup (всего)</h2>
+        <h2>Хранение .debug (zstd + CAS)</h2>
         <div class="dedup-summary" id="dedup-summary">Загрузка…</div>
         <p class="hint" id="dedup-status"></p>
       </section>
 
       <section class="panel">
-        <h2>Dedup по папкам</h2>
+        <h2>По папкам (build_*)</h2>
         <div class="table-wrap">
           <table class="results-table" id="dedup-projects-table">
             <thead>
@@ -101,7 +101,7 @@
                 <th>zstd</th>
                 <th>CAS</th>
                 <th>было</th>
-                <th>стало</th>
+                <th>на диске</th>
                 <th>экономия</th>
               </tr>
             </thead>
@@ -144,16 +144,17 @@
                 <th>завершено</th>
                 <th>длительность</th>
                 <th>проект</th>
-                <th>сжато</th>
+                <th>zstd</th>
+                <th>CAS</th>
                 <th>пропущено</th>
                 <th>ошибок</th>
                 <th>было</th>
-                <th>стало</th>
+                <th>на диске</th>
                 <th>экономия</th>
               </tr>
             </thead>
             <tbody id="dedup-runs-body">
-              <tr><td colspan="9" class="muted">Загрузка…</td></tr>
+              <tr><td colspan="10" class="muted">Загрузка…</td></tr>
             </tbody>
           </table>
         </div>
