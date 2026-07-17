@@ -21,13 +21,15 @@ type Options struct {
 
 // BackfillResult — итог backfill/ingest.
 type BackfillResult struct {
-	BuildDirsProcessed int `json:"build_dirs_processed"`
-	FilesRegistered    int `json:"files_registered"`
-	GroupsProcessed    int `json:"groups_processed"`
-	FilesCompressed    int `json:"files_compressed"`
-	FilesSkipped       int `json:"files_skipped"`
-	Errors             int `json:"errors"`
-	DryRun             bool `json:"dry_run"`
+	BuildDirsProcessed int   `json:"build_dirs_processed"`
+	FilesRegistered    int   `json:"files_registered"`
+	GroupsProcessed    int   `json:"groups_processed"`
+	FilesCompressed    int   `json:"files_compressed"`
+	FilesSkipped       int   `json:"files_skipped"`
+	Errors             int   `json:"errors"`
+	BytesBefore        int64 `json:"bytes_before"`
+	BytesAfter         int64 `json:"bytes_after"`
+	DryRun             bool  `json:"dry_run"`
 }
 
 // RunBackfill обрабатывает pending build dirs порциями.
@@ -65,11 +67,13 @@ func RunBackfill(opts Options, project string, batch int) (BackfillResult, error
 		return result, err
 	}
 
-	compressed, skipped, errs := processGroups(opts, GroupFiles(files))
+	compressed, skipped, errs, bytesBefore, bytesAfter := processGroups(opts, GroupFiles(files))
 	result.GroupsProcessed = len(GroupFiles(files))
 	result.FilesCompressed = compressed
 	result.FilesSkipped = skipped
 	result.Errors = errs
+	result.BytesBefore = bytesBefore
+	result.BytesAfter = bytesAfter
 	result.BuildDirsProcessed = len(dirs)
 
 	if !opts.DryRun {
@@ -99,10 +103,12 @@ func RunIngestForProject(opts Options, project string) (BackfillResult, error) {
 	}
 	groups := GroupFiles(files)
 	result.GroupsProcessed = len(groups)
-	compressed, skipped, errs := processGroups(opts, groups)
+	compressed, skipped, errs, bytesBefore, bytesAfter := processGroups(opts, groups)
 	result.FilesCompressed = compressed
 	result.FilesSkipped = skipped
 	result.Errors = errs
+	result.BytesBefore = bytesBefore
+	result.BytesAfter = bytesAfter
 
 	if !opts.DryRun {
 		seen := make(map[int64]struct{})
@@ -132,6 +138,8 @@ func RunIngestAll(opts Options) (BackfillResult, error) {
 		total.FilesSkipped += r.FilesSkipped
 		total.Errors += r.Errors
 		total.BuildDirsProcessed += r.BuildDirsProcessed
+		total.BytesBefore += r.BytesBefore
+		total.BytesAfter += r.BytesAfter
 	}
 	return total, nil
 }
@@ -143,13 +151,13 @@ func filterProjects(all []string, single string) []string {
 	return all
 }
 
-func processGroups(opts Options, groups map[string][]storage.DedupFile) (compressed, skipped, errors int) {
+func processGroups(opts Options, groups map[string][]storage.DedupFile) (compressed, skipped, errors int, bytesBefore, bytesAfter int64) {
 	if opts.Xdelta == nil {
 		opts.Xdelta = NewXdelta("xdelta3")
 	}
 	if !opts.DryRun && !opts.Xdelta.Available() {
 		slog.Error("xdelta3 not found", "bin", opts.Xdelta.Bin)
-		return 0, 0, len(groups)
+		return 0, 0, len(groups), 0, 0
 	}
 
 	for _, group := range groups {
@@ -200,9 +208,21 @@ func processGroups(opts Options, groups map[string][]storage.DedupFile) (compres
 				continue
 			}
 			compressed++
+			bytesBefore += target.OriginalSize
+			if st, err := fileSizeOnDisk(DeltaPathFor(target.FilePath)); err == nil {
+				bytesAfter += st
+			}
 		}
 	}
-	return compressed, skipped, errors
+	return compressed, skipped, errors, bytesBefore, bytesAfter
+}
+
+func fileSizeOnDisk(path string) (int64, error) {
+	st, err := os.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+	return st.Size(), nil
 }
 
 func compressOne(opts Options, base, target storage.DedupFile) error {

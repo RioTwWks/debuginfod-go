@@ -47,10 +47,18 @@ type SearchResponse struct {
 	Key        string                   `json:"key,omitempty"`
 	Query      string                   `json:"query,omitempty"`
 	Value      string                   `json:"value,omitempty"`
-	Results    []storage.ArtifactRecord `json:"results"`
+	Results    []storage.ArtifactRecord `json:"results,omitempty"`
+	Grouped    []storage.UIGroupedArtifact `json:"grouped,omitempty"`
 	Count      int                      `json:"count"`
 	Complete   bool                     `json:"complete"`
 	NextOffset int                      `json:"next_offset,omitempty"`
+}
+
+// ScansResponse — история scan/dedup для вкладки «Сканирования».
+type ScansResponse struct {
+	IndexScans   []storage.ScanRunRecord   `json:"index_scans"`
+	DedupRuns    []storage.DedupRunRecord  `json:"dedup_runs"`
+	DedupTotals  storage.DedupStorageTotals `json:"dedup_totals"`
 }
 
 // Register добавляет маршруты Web UI в mux.
@@ -75,6 +83,7 @@ func Register(mux *http.ServeMux, opts Opts) {
 	})
 	mux.HandleFunc("/ui/api/stats", statsHandler(opts))
 	mux.HandleFunc("/ui/api/search", searchHandler(opts))
+	mux.HandleFunc("/ui/api/scans", scansHandler(opts))
 }
 
 func redirectUI(w http.ResponseWriter, r *http.Request) {
@@ -165,7 +174,7 @@ func searchHandler(opts Opts) http.HandlerFunc {
 		switch key {
 		case "buildid":
 			query := r.URL.Query().Get("q")
-			results, err := opts.Store.SearchBuildIDForUI(ctx, query, limit)
+			grouped, err := opts.Store.SearchBuildIDGroupedForUI(ctx, query, limit)
 			if err != nil {
 				slog.Error("webui search buildid", "query", query, "err", err)
 				http.Error(w, "search error", http.StatusInternalServerError)
@@ -174,8 +183,8 @@ func searchHandler(opts Opts) http.HandlerFunc {
 			resp = SearchResponse{
 				Key:      key,
 				Query:    query,
-				Results:  results,
-				Count:    len(results),
+				Grouped:  grouped,
+				Count:    len(grouped),
 				Complete: true,
 			}
 		case "glob", "file":
@@ -211,6 +220,44 @@ func searchHandler(opts Opts) http.HandlerFunc {
 			return
 		}
 
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}
+}
+
+func scansHandler(opts Opts) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		limit := 50
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+				limit = n
+			}
+		}
+		indexScans, err := opts.Store.ListScanRuns(limit)
+		if err != nil {
+			slog.Error("webui list scan runs", "err", err)
+			http.Error(w, "scans error", http.StatusInternalServerError)
+			return
+		}
+		dedupRuns, err := opts.Store.ListDedupRuns(limit)
+		if err != nil {
+			slog.Error("webui list dedup runs", "err", err)
+			http.Error(w, "scans error", http.StatusInternalServerError)
+			return
+		}
+		totals, err := opts.Store.DedupStorageTotals()
+		if err != nil {
+			slog.Warn("webui dedup totals", "err", err)
+		}
+		resp := ScansResponse{
+			IndexScans:  indexScans,
+			DedupRuns:   dedupRuns,
+			DedupTotals: totals,
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)
 	}

@@ -12,7 +12,10 @@ import (
 func RestoreToCache(store *storage.Storage, xdelta *Xdelta, cacheDir, filePath string) (string, error) {
 	df, err := store.GetDedupFileByPath(filePath)
 	if err != nil {
-		return filePath, nil // not dedup-managed
+		if _, statErr := os.Stat(filePath); statErr != nil {
+			return "", fmt.Errorf("artifact file missing: %w", statErr)
+		}
+		return filePath, nil
 	}
 	if df.StorageKind != storage.DedupKindDelta {
 		if _, statErr := os.Stat(filePath); statErr == nil {
