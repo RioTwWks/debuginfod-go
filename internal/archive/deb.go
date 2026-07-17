@@ -31,7 +31,7 @@ func listDebELFMembers(archivePath string) ([]Member, error) {
 		if _, err := fmt.Sscanf(sizeStr, "%d", &size); err != nil {
 			return nil, fmt.Errorf("parse ar size for %s: %w", name, err)
 		}
-		if offset+size > len(data) {
+		if size < 0 || offset+size > len(data) {
 			break
 		}
 		payload := data[offset : offset+size]
@@ -73,7 +73,7 @@ func openDebMember(archivePath, memberPath string) (io.ReadCloser, error) {
 		if _, err := fmt.Sscanf(sizeStr, "%d", &size); err != nil {
 			return nil, err
 		}
-		if offset+size > len(data) {
+		if size < 0 || offset+size > len(data) {
 			break
 		}
 		payload := data[offset : offset+size]
