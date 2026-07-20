@@ -27,41 +27,74 @@ func WriteReport(w io.Writer, report *RunReport, format string) error {
 
 func writeText(w io.Writer, report *RunReport) error {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(tw, "Strategy A benchmark\t%s\n\n", report.GeneratedAt.Format(time.RFC3339))
+	write := func(format string, args ...any) error {
+		_, err := fmt.Fprintf(tw, format, args...)
+		return err
+	}
+	writeln := func(args ...any) error {
+		_, err := fmt.Fprintln(tw, args...)
+		return err
+	}
+
+	if err := write("Strategy A benchmark\t%s\n\n", report.GeneratedAt.Format(time.RFC3339)); err != nil {
+		return err
+	}
 
 	if len(report.Tools) > 0 {
-		fmt.Fprintln(tw, "Tools:")
+		if err := writeln("Tools:"); err != nil {
+			return err
+		}
 		for name, ok := range report.Tools {
 			status := "missing"
 			if ok {
 				status = "ok"
 			}
-			fmt.Fprintf(tw, "  %s\t%s\n", name, status)
+			if err := write("  %s\t%s\n", name, status); err != nil {
+				return err
+			}
 		}
-		fmt.Fprintln(tw)
+		if err := writeln(); err != nil {
+			return err
+		}
 	}
 
 	for _, sc := range report.Scenarios {
 		if sc.Skipped != "" {
-			fmt.Fprintf(tw, "== %s + %s ==\tSKIPPED (%s)\n\n", sc.Algo, sc.Preprocess, sc.Skipped)
+			if err := write("== %s + %s ==\tSKIPPED (%s)\n\n", sc.Algo, sc.Preprocess, sc.Skipped); err != nil {
+				return err
+			}
 			continue
 		}
 		post := ""
 		if sc.PostCompress {
 			post = " + objcopy-zstd(base)"
 		}
-		fmt.Fprintf(tw, "== %s + %s%s ==\n", sc.Algo, sc.Preprocess, post)
+		if err := write("== %s + %s%s ==\n", sc.Algo, sc.Preprocess, post); err != nil {
+			return err
+		}
 		s := sc.Summary
-		fmt.Fprintf(tw, "groups\t%d\n", s.GroupCount)
-		fmt.Fprintf(tw, "files\t%d\n", s.FileCount)
-		fmt.Fprintf(tw, "original\t%s (%d)\n", FormatBytes(s.OriginalTotal), s.OriginalTotal)
-		fmt.Fprintf(tw, "stored\t%s (%d)\n", FormatBytes(s.StoredTotal), s.StoredTotal)
-		fmt.Fprintf(tw, "savings\t%.2f%%\n", s.SavingsPct)
-		fmt.Fprintf(tw, "encode\t%d ms\n", s.EncodeTotalMs)
-		fmt.Fprintf(tw, "decode\t%d ms\n", s.DecodeTotalMs)
-		fmt.Fprintf(tw, "verify_failures\t%d\n", s.VerifyFailures)
-		fmt.Fprintf(tw, "errors\t%d\n", s.ErrorCount)
-		fmt.Fprintln(tw)
+		rows := []struct {
+			format string
+			args   []any
+		}{
+			{"groups\t%d\n", []any{s.GroupCount}},
+			{"files\t%d\n", []any{s.FileCount}},
+			{"original\t%s (%d)\n", []any{FormatBytes(s.OriginalTotal), s.OriginalTotal}},
+			{"stored\t%s (%d)\n", []any{FormatBytes(s.StoredTotal), s.StoredTotal}},
+			{"savings\t%.2f%%\n", []any{s.SavingsPct}},
+			{"encode\t%d ms\n", []any{s.EncodeTotalMs}},
+			{"decode\t%d ms\n", []any{s.DecodeTotalMs}},
+			{"verify_failures\t%d\n", []any{s.VerifyFailures}},
+			{"errors\t%d\n", []any{s.ErrorCount}},
+		}
+		for _, row := range rows {
+			if err := write(row.format, row.args...); err != nil {
+				return err
+			}
+		}
+		if err := writeln(); err != nil {
+			return err
+		}
 	}
 	return tw.Flush()
 }

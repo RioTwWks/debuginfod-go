@@ -23,10 +23,16 @@ func main() {
 	runBenchmark(os.Args[1:])
 }
 
+func parseFlags(fs *flag.FlagSet, args []string) {
+	if err := fs.Parse(args); err != nil {
+		fatal(err.Error())
+	}
+}
+
 func runCheckTools(args []string) {
 	fs := flag.NewFlagSet("check-tools", flag.ExitOnError)
 	paths := bindToolPaths(fs)
-	fs.Parse(args)
+	parseFlags(fs, args)
 
 	tools := benchdedup.CheckTools(paths)
 	for name, ok := range tools {
@@ -44,7 +50,7 @@ func runListGroups(args []string) {
 	project := fs.String("project", "", "фильтр проекта (можно несколько через запятую)")
 	minFiles := fs.Int("min-files", 2, "минимум файлов в группе")
 	maxGroups := fs.Int("max-groups", 0, "лимит групп (0 = все)")
-	fs.Parse(args)
+	parseFlags(fs, args)
 
 	if *scanPath == "" {
 		fatal("укажите --scan-path")
@@ -90,7 +96,7 @@ func runBenchmark(args []string) {
 	format := fs.String("format", "text", "формат отчёта: text|json|csv")
 	output := fs.String("output", "", "файл отчёта (по умолчанию stdout)")
 	paths := bindToolPaths(fs)
-	fs.Parse(args)
+	parseFlags(fs, args)
 
 	if *scanPath == "" {
 		fatal("укажите --scan-path")
