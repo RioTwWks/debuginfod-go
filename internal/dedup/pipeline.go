@@ -4,18 +4,23 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"sort"
 
 	"github.com/your-username/debuginfod-go/internal/storage"
 )
 
-// Options — параметры dedup pipeline (zstd + CAS).
+// Options — параметры dedup pipeline (xdelta3 + preprocess).
 type Options struct {
-	Store     *storage.Storage
-	ScanPaths []string
-	BlobStore *BlobStore
-	Projects  []string
-	Workers   int
-	DryRun    bool
+	Store        *storage.Storage
+	ScanPaths    []string
+	Xdelta       *Xdelta
+	Preprocessor Preprocessor
+	ObjcopyZstd  *ObjcopyZstd
+	CompressBase bool
+	Projects     []string
+	Workers      int
+	DryRun       bool
 }
 
 // BackfillResult — итог backfill/ingest.
@@ -24,7 +29,7 @@ type BackfillResult struct {
 	FilesRegistered    int   `json:"files_registered"`
 	GroupsProcessed    int   `json:"groups_processed"`
 	FilesCompressed    int   `json:"files_compressed"`
-	FilesDedupRef        int   `json:"files_dedup_ref"`
+	FilesDedupRef      int   `json:"files_dedup_ref"`
 	FilesSkipped       int   `json:"files_skipped"`
 	Errors             int   `json:"errors"`
 	BytesBefore        int64 `json:"bytes_before"`
@@ -67,10 +72,10 @@ func RunBackfill(opts Options, project string, batch int) (BackfillResult, error
 		return result, err
 	}
 
-	compressed, dedupRef, skipped, errs, bytesBefore, bytesAfter := processFiles(opts, files)
-	result.GroupsProcessed = len(files)
+	groups := GroupFiles(files)
+	result.GroupsProcessed = len(groups)
+	compressed, skipped, errs, bytesBefore, bytesAfter := processGroups(opts, groups)
 	result.FilesCompressed = compressed
-	result.FilesDedupRef = dedupRef
 	result.FilesSkipped = skipped
 	result.Errors = errs
 	result.BytesBefore = bytesBefore
@@ -122,10 +127,10 @@ func RunIngestAll(opts Options) (BackfillResult, error) {
 		return total, nil
 	}
 
-	compressed, dedupRef, skipped, errs, bytesBefore, bytesAfter := processFiles(opts, files)
-	total.GroupsProcessed = len(files)
+	groups := GroupFiles(files)
+	total.GroupsProcessed = len(groups)
+	compressed, skipped, errs, bytesBefore, bytesAfter := processGroups(opts, groups)
 	total.FilesCompressed = compressed
-	total.FilesDedupRef = dedupRef
 	total.FilesSkipped = skipped
 	total.Errors = errs
 	total.BytesBefore = bytesBefore
@@ -155,10 +160,10 @@ func ingestProjectPending(opts Options, project string, base *BackfillResult) (B
 	if err != nil {
 		return result, err
 	}
-	compressed, dedupRef, skipped, errs, bytesBefore, bytesAfter := processFiles(opts, files)
-	result.GroupsProcessed = len(files)
+	groups := GroupFiles(files)
+	result.GroupsProcessed = len(groups)
+	compressed, skipped, errs, bytesBefore, bytesAfter := processGroups(opts, groups)
 	result.FilesCompressed = compressed
-	result.FilesDedupRef = dedupRef
 	result.FilesSkipped = skipped
 	result.Errors = errs
 	result.BytesBefore = bytesBefore
@@ -217,111 +222,208 @@ func filterProjects(all []string, single string) []string {
 	return all
 }
 
-func processFiles(opts Options, files []storage.DedupFile) (compressed, dedupRef, skipped, errors int, bytesBefore, bytesAfter int64) {
-	if opts.BlobStore == nil {
-		slog.Error("dedup blob store not configured")
-		return 0, 0, 0, len(files), 0, 0
+func processGroups(opts Options, groups map[string][]storage.DedupFile) (compressed, skipped, errors int, bytesBefore, bytesAfter int64) {
+	opts = normalizeOptions(opts)
+
+	if !opts.DryRun {
+		if !opts.Xdelta.Available() {
+			slog.Error("xdelta3 not found", "bin", opts.Xdelta.Bin)
+			return 0, 0, len(groups), 0, 0
+		}
+		if opts.Preprocessor != nil && opts.Preprocessor.Name() != "none" && !opts.Preprocessor.Available() {
+			slog.Error("dedup preprocessor not available", "name", opts.Preprocessor.Name())
+			return 0, 0, len(groups), 0, 0
+		}
+		if opts.CompressBase && opts.ObjcopyZstd != nil && !opts.ObjcopyZstd.Available() {
+			slog.Error("objcopy not found for compress base")
+			return 0, 0, len(groups), 0, 0
+		}
 	}
 
-	// In-memory map для CAS в рамках одного прогона.
-	batchBlobs := make(map[string]string)
+	for _, group := range groups {
+		if len(group) == 0 {
+			continue
+		}
+		sort.Slice(group, func(i, j int) bool {
+			if group[i].FileBuildNum != group[j].FileBuildNum {
+				return group[i].FileBuildNum < group[j].FileBuildNum
+			}
+			return group[i].FilePath < group[j].FilePath
+		})
 
-	for _, f := range files {
+		base := group[0]
+		if len(group) == 1 {
+			if !opts.DryRun {
+				if err := markSingletonFull(opts, base); err != nil {
+					_ = opts.Store.MarkDedupFileError(base.ID, err.Error())
+					errors++
+					continue
+				}
+			}
+			skipped++
+			continue
+		}
+
 		if opts.DryRun {
-			compressed++
-			bytesBefore += f.OriginalSize
-			continue
-		}
-
-		if _, err := os.Stat(f.FilePath); err != nil {
-			_ = opts.Store.MarkDedupFileError(f.ID, fmt.Sprintf("file missing: %v", err))
-			errors++
-			continue
-		}
-
-		sha, err := FileSHA256(f.FilePath)
-		if err != nil {
-			_ = opts.Store.MarkDedupFileError(f.ID, err.Error())
-			errors++
-			continue
-		}
-
-		blobPath, isRef, err := resolveBlob(opts, sha, batchBlobs)
-		if err != nil {
-			_ = opts.Store.MarkDedupFileError(f.ID, err.Error())
-			errors++
-			continue
-		}
-
-		if isRef {
-			if err := os.Remove(f.FilePath); err != nil {
-				_ = opts.Store.MarkDedupFileError(f.ID, fmt.Sprintf("remove original: %v", err))
-				errors++
-				continue
+			compressed += len(group) - 1
+			skipped++
+			for _, f := range group {
+				bytesBefore += f.OriginalSize
 			}
-			compSize, _ := fileSizeOnDisk(blobPath)
-			if err := opts.Store.MarkDedupFileDone(f.ID, storage.DedupKindRef, 0, blobPath, sha, compSize); err != nil {
-				_ = opts.Store.MarkDedupFileError(f.ID, err.Error())
-				errors++
-				continue
-			}
-			dedupRef++
-			bytesBefore += f.OriginalSize
 			continue
 		}
 
-		compSize, err := CompressFileTo(f.FilePath, blobPath)
+		c, bBefore, bAfter, err := processGroup(opts, group)
+		compressed += c
+		bytesBefore += bBefore
+		bytesAfter += bAfter
 		if err != nil {
-			os.Remove(blobPath)
-			_ = opts.Store.MarkDedupFileError(f.ID, err.Error())
 			errors++
-			continue
 		}
-
-		if err := VerifyDecompress(blobPath, sha); err != nil {
-			os.Remove(blobPath)
-			_ = opts.Store.MarkDedupFileError(f.ID, err.Error())
-			errors++
-			continue
-		}
-
-		if err := os.Remove(f.FilePath); err != nil {
-			os.Remove(blobPath)
-			_ = opts.Store.MarkDedupFileError(f.ID, fmt.Sprintf("remove original: %v", err))
-			errors++
-			continue
-		}
-
-		if err := opts.Store.MarkDedupFileDone(f.ID, storage.DedupKindCompressed, 0, blobPath, sha, compSize); err != nil {
-			_ = opts.Store.MarkDedupFileError(f.ID, err.Error())
-			errors++
-			continue
-		}
-
-		batchBlobs[sha] = blobPath
-		compressed++
-		bytesBefore += f.OriginalSize
-		bytesAfter += compSize
+		skipped++
 	}
-
-	return compressed, dedupRef, skipped, errors, bytesBefore, bytesAfter
+	return compressed, skipped, errors, bytesBefore, bytesAfter
 }
 
-// resolveBlob ищет существующий blob по SHA256 (БД → текущий прогон → новый путь).
-func resolveBlob(opts Options, sha string, batchBlobs map[string]string) (blobPath string, isRef bool, err error) {
-	if p, ok := batchBlobs[sha]; ok {
-		return p, true, nil
+func normalizeOptions(opts Options) Options {
+	if opts.Xdelta == nil {
+		opts.Xdelta = NewXdelta("")
 	}
-	existing, err := opts.Store.FindBlobPathBySHA(sha)
+	if opts.Preprocessor == nil {
+		opts.Preprocessor = NewDecompressDwzPreprocessor(ToolPaths{})
+	}
+	if opts.ObjcopyZstd == nil {
+		opts.ObjcopyZstd = NewObjcopyZstd("")
+	}
+	return opts
+}
+
+func markSingletonFull(opts Options, f storage.DedupFile) error {
+	if _, err := os.Stat(f.FilePath); err != nil {
+		return fmt.Errorf("file missing: %w", err)
+	}
+	sha, err := FileSHA256(f.FilePath)
 	if err != nil {
-		return "", false, err
+		return err
 	}
-	if existing != "" {
-		if _, statErr := os.Stat(existing); statErr == nil {
-			return existing, true, nil
+	return opts.Store.MarkDedupFileDone(f.ID, storage.DedupKindFull, 0, "", sha, 0)
+}
+
+func processGroup(opts Options, group []storage.DedupFile) (compressed int, bytesBefore, bytesAfter int64, groupErr error) {
+	for _, f := range group {
+		bytesBefore += f.OriginalSize
+	}
+
+	base := group[0]
+	if _, err := os.Stat(base.FilePath); err != nil {
+		_ = opts.Store.MarkDedupFileError(base.ID, fmt.Sprintf("base missing: %v", err))
+		return 0, 0, 0, err
+	}
+
+	if err := opts.Preprocessor.ApplyInPlace(base.FilePath); err != nil {
+		_ = opts.Store.MarkDedupFileError(base.ID, err.Error())
+		return 0, 0, 0, err
+	}
+
+	baseSHA, err := FileSHA256(base.FilePath)
+	if err != nil {
+		_ = opts.Store.MarkDedupFileError(base.ID, err.Error())
+		return 0, 0, 0, err
+	}
+
+	baseSize, _ := fileSizeOnDisk(base.FilePath)
+	if err := opts.Store.MarkDedupFileDone(base.ID, storage.DedupKindBase, 0, "", baseSHA, baseSize); err != nil {
+		_ = opts.Store.MarkDedupFileError(base.ID, err.Error())
+		return 0, 0, 0, err
+	}
+	bytesAfter += baseSize
+
+	for _, target := range group[1:] {
+		after, err := compressOne(opts, base, target)
+		if err != nil {
+			slog.Warn("dedup compress", "target", target.FilePath, "err", err)
+			_ = opts.Store.MarkDedupFileError(target.ID, err.Error())
+			groupErr = err
+			continue
+		}
+		compressed++
+		bytesAfter += after
+	}
+
+	if opts.CompressBase && opts.ObjcopyZstd != nil && opts.ObjcopyZstd.Available() {
+		compSize, err := opts.ObjcopyZstd.CompressInPlace(base.FilePath)
+		if err != nil {
+			slog.Warn("dedup compress base", "base", base.FilePath, "err", err)
+			_ = opts.Store.MarkDedupFileError(base.ID, "compress base: "+err.Error())
+			groupErr = err
+		} else {
+			_ = opts.Store.UpdateDedupFileCompressedSize(base.ID, compSize)
+			bytesAfter = bytesAfter - baseSize + compSize
 		}
 	}
-	return opts.BlobStore.PathForSHA(sha), false, nil
+
+	return compressed, bytesBefore, bytesAfter, groupErr
+}
+
+func compressOne(opts Options, base, target storage.DedupFile) (deltaSize int64, err error) {
+	if _, err := os.Stat(target.FilePath); err != nil {
+		return 0, fmt.Errorf("target missing: %w", err)
+	}
+
+	workDir, err := os.MkdirTemp(filepath.Dir(target.FilePath), "dedup-prep-")
+	if err != nil {
+		return 0, err
+	}
+	defer os.RemoveAll(workDir)
+
+	prepTarget := filepath.Join(workDir, filepath.Base(target.FilePath))
+	if err := copyFileAtomic(target.FilePath, prepTarget); err != nil {
+		return 0, err
+	}
+	if err := opts.Preprocessor.ApplyInPlace(prepTarget); err != nil {
+		return 0, err
+	}
+
+	origSHA, err := FileSHA256(prepTarget)
+	if err != nil {
+		return 0, err
+	}
+
+	deltaPath := DeltaPathFor(target.FilePath)
+	if err := opts.Xdelta.Encode(base.FilePath, prepTarget, deltaPath); err != nil {
+		return 0, err
+	}
+
+	tmpPath := filepath.Join(workDir, "restore-verify.debug")
+	if err := opts.Xdelta.Decode(base.FilePath, deltaPath, tmpPath); err != nil {
+		os.Remove(deltaPath)
+		return 0, fmt.Errorf("verify decode: %w", err)
+	}
+	restoredSHA, err := FileSHA256(tmpPath)
+	if err != nil {
+		os.Remove(deltaPath)
+		return 0, err
+	}
+	if restoredSHA != origSHA {
+		os.Remove(deltaPath)
+		return 0, fmt.Errorf("sha256 mismatch after restore")
+	}
+
+	if err := os.Remove(target.FilePath); err != nil {
+		return 0, fmt.Errorf("remove original: %w", err)
+	}
+
+	deltaSize, err = fileSizeOnDisk(deltaPath)
+	if err != nil {
+		return 0, err
+	}
+
+	if err := opts.Store.MarkDedupFileDone(
+		target.ID, storage.DedupKindDelta, base.ID, deltaPath, origSHA, deltaSize,
+	); err != nil {
+		return 0, err
+	}
+	return deltaSize, nil
 }
 
 func fileSizeOnDisk(path string) (int64, error) {

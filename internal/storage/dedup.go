@@ -23,6 +23,8 @@ type DedupStorageKind string
 
 const (
 	DedupKindFull       DedupStorageKind = "full"
+	DedupKindBase       DedupStorageKind = "base"
+	DedupKindDelta      DedupStorageKind = "delta"
 	DedupKindCompressed DedupStorageKind = "compressed"
 	DedupKindRef        DedupStorageKind = "ref"
 )
@@ -170,7 +172,77 @@ func migrateDedup(db *sql.DB, dialect Dialect) error {
 	if err := migrateDedupColumns(db, dialect); err != nil {
 		return err
 	}
-	return migrateDedupFromXdelta(db, dialect)
+	if err := migrateDedupMetaTable(db, dialect); err != nil {
+		return err
+	}
+	return migrateDedupStrategyOnce(db, dialect)
+}
+
+func migrateDedupMetaTable(db *sql.DB, dialect Dialect) error {
+	q := `
+		CREATE TABLE IF NOT EXISTS dedup_meta (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		)
+	`
+	if dialect == DialectPostgres {
+		q = `
+			CREATE TABLE IF NOT EXISTS dedup_meta (
+				key TEXT PRIMARY KEY,
+				value TEXT NOT NULL
+			)
+		`
+	}
+	_, err := db.Exec(q)
+	return err
+}
+
+func dedupMetaGet(db *sql.DB, dialect Dialect, key string) (string, bool) {
+	var value string
+	err := db.QueryRow(rebind(`SELECT value FROM dedup_meta WHERE key = ?`, dialect), key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", false
+	}
+	if err != nil {
+		return "", false
+	}
+	return value, true
+}
+
+func dedupMetaSet(db *sql.DB, dialect Dialect, key, value string) error {
+	if dialect == DialectPostgres {
+		_, err := db.Exec(rebind(`
+			INSERT INTO dedup_meta (key, value) VALUES (?, ?)
+			ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+		`, dialect), key, value)
+		return err
+	}
+	_, err := db.Exec(rebind(`
+		INSERT OR REPLACE INTO dedup_meta (key, value) VALUES (?, ?)
+	`, dialect), key, value)
+	return err
+}
+
+// migrateDedupStrategyOnce однократно сбрасывает записи при смене стратегии хранения.
+func migrateDedupStrategyOnce(db *sql.DB, dialect Dialect) error {
+	const migrationKey = "strategy_xdelta_decompress_dwz_v1"
+	if v, ok := dedupMetaGet(db, dialect, migrationKey); ok && v == "done" {
+		return nil
+	}
+	q := rebind(`
+		UPDATE dedup_files SET
+			status = 'pending',
+			storage_kind = 'full',
+			base_file_id = NULL,
+			delta_path = '',
+			compressed_size = 0,
+			error_msg = ''
+		WHERE storage_kind IN ('base', 'delta', 'compressed', 'ref')
+	`, dialect)
+	if _, err := db.Exec(q); err != nil {
+		return err
+	}
+	return dedupMetaSet(db, dialect, migrationKey, "done")
 }
 
 func migrateDedupColumns(db *sql.DB, dialect Dialect) error {
@@ -192,22 +264,6 @@ func migrateDedupColumns(db *sql.DB, dialect Dialect) error {
 		}
 	}
 	return nil
-}
-
-// migrateDedupFromXdelta сбрасывает legacy xdelta-записи для повторной обработки.
-func migrateDedupFromXdelta(db *sql.DB, dialect Dialect) error {
-	q := rebind(`
-		UPDATE dedup_files SET
-			status = 'pending',
-			storage_kind = 'full',
-			base_file_id = NULL,
-			delta_path = '',
-			compressed_size = 0,
-			error_msg = ''
-		WHERE storage_kind IN ('base', 'delta')
-	`, dialect)
-	_, err := db.Exec(q)
-	return err
 }
 
 // EnsureDedupProject создаёт проект, если его ещё нет.
@@ -444,6 +500,14 @@ func (s *Storage) MarkDedupFileDone(id int64, kind DedupStorageKind, baseID int6
 	return err
 }
 
+// UpdateDedupFileCompressedSize обновляет compressed_size (например после objcopy zstd на base).
+func (s *Storage) UpdateDedupFileCompressedSize(id int64, compressedSize int64) error {
+	_, err := s.db.Exec(rebind(`
+		UPDATE dedup_files SET compressed_size = ? WHERE id = ?
+	`, s.dialect), compressedSize, id)
+	return err
+}
+
 // FindBlobPathBySHA возвращает путь существующего blob по SHA256 содержимого.
 func (s *Storage) FindBlobPathBySHA(sha string) (string, error) {
 	if sha == "" {
@@ -607,7 +671,13 @@ func (s *Storage) dedupTotalsForProject(projectName string) (DedupProjectTotals,
 			} else if st, err := fileSize(blobPath); err == nil {
 				t.BytesOnDisk += st
 			}
-		default:
+		case DedupKindDelta:
+			if compSize > 0 {
+				t.BytesOnDisk += compSize
+			} else if st, err := fileSize(blobPath); err == nil {
+				t.BytesOnDisk += st
+			}
+		case DedupKindBase, DedupKindFull:
 			if st, err := fileSize(filePath); err == nil {
 				t.BytesOnDisk += st
 			} else {

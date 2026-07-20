@@ -1,5 +1,7 @@
 # Strategy A — сводка сравнения подходов (Quik .debug)
 
+> Полный документ: [docs/DEDUP_STRATEGY_COMPARISON.md](../../docs/DEDUP_STRATEGY_COMPARISON.md)
+
 Данные: `Released/QuikServer_16.0_Common_Linux`, 72 файла, 9 библиотек × 8 сборок.
 
 ## Структура `.comment` (типичный файл)

@@ -10,22 +10,33 @@ import (
 
 // Service — фасад dedup для admin API и scanrunner.
 type Service struct {
-	store  *storage.Storage
-	opts   Options
-	cfg    config.DedupConfig
+	store        *storage.Storage
+	opts         Options
+	cfg          config.DedupConfig
+	restoreOpts  RestoreOptions
 }
 
 // NewService создаёт dedup service.
 func NewService(store *storage.Storage, cfg config.DedupConfig, scanPaths []string, blobDir string) *Service {
+	_ = blobDir // legacy zstd CAS; сохраняем сигнатуру для main.go
+	tools := ToolPaths{Dwz: cfg.DwzPath, Objcopy: cfg.ObjcopyPath}
 	return &Service{
 		store: store,
 		cfg:   cfg,
 		opts: Options{
-			Store:     store,
-			ScanPaths: scanPaths,
-			BlobStore: NewBlobStore(blobDir),
-			Projects:  cfg.Projects,
-			Workers:   cfg.Workers,
+			Store:        store,
+			ScanPaths:    scanPaths,
+			Xdelta:       NewXdelta(cfg.XdeltaPath),
+			Preprocessor: ResolvePreprocessor(cfg.Strategy, tools),
+			ObjcopyZstd:  NewObjcopyZstd(cfg.ObjcopyPath),
+			CompressBase: cfg.CompressBase,
+			Projects:     cfg.Projects,
+			Workers:      cfg.Workers,
+		},
+		restoreOpts: RestoreOptions{
+			Xdelta:       NewXdelta(cfg.XdeltaPath),
+			Objcopy:      cfg.ObjcopyPath,
+			CompressBase: cfg.CompressBase,
 		},
 	}
 }
@@ -33,6 +44,11 @@ func NewService(store *storage.Storage, cfg config.DedupConfig, scanPaths []stri
 // Enabled возвращает true, если dedup включён.
 func (s *Service) Enabled() bool {
 	return s != nil && s.cfg.Enabled
+}
+
+// RestoreToCache восстанавливает dedup-файл для HTTP/GDB.
+func (s *Service) RestoreToCache(cacheDir, filePath string) (string, error) {
+	return RestoreToCacheWithOpts(s.store, s.restoreOpts, cacheDir, filePath)
 }
 
 // RunBackfill запускает backfill порциями.
