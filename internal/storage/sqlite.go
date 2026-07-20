@@ -24,11 +24,20 @@ type ArtifactRecord struct {
 	BuildID      string `json:"buildid"`
 	Type         string `json:"type"`
 	File         string `json:"file"`
+	FilePath     string `json:"file_path,omitempty"`
 	Archive      string `json:"archive,omitempty"`
+	ArchivePath  string `json:"archive_path,omitempty"`
+	ArchiveRel   string `json:"archive_rel,omitempty"`
+	MemberPath   string `json:"member_path,omitempty"`
 	BuildIDKind  string `json:"buildid_kind,omitempty"`
 	RawBuildID   string `json:"raw_buildid,omitempty"`
 	RelativePath string `json:"relative_path,omitempty"`
 	Filename     string `json:"filename,omitempty"`
+	Directory    string `json:"directory,omitempty"`
+	MtimeNs      int64  `json:"mtime_ns,omitempty"`
+	Mtime        string `json:"mtime,omitempty"`
+	Sources      []UISourceRecord `json:"sources,omitempty"`
+	SourcesCount int              `json:"sources_count,omitempty"`
 }
 
 // MetadataResponse — JSON-ответ эндпоинта /metadata.
@@ -163,7 +172,10 @@ type artifactRow struct {
 	MemberPath  string
 	BuildIDKind string
 	RawBuildID  string
+	MtimeNs     int64
 }
+
+const artifactSelectColumns = `build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id, mtime_ns`
 
 // AddArtifact сохраняет или обновляет артефакт.
 func (s *Storage) AddArtifact(in ArtifactInput, mtimeNS int64) error {
@@ -366,7 +378,7 @@ func (s *Storage) SearchBuildIDForUI(ctx context.Context, query string, limit in
 	var err error
 	if query == "" {
 		rows, err = s.db.QueryContext(ctx, rebind(`
-			SELECT build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id
+			SELECT `+artifactSelectColumns+`
 			FROM artifacts
 			ORDER BY build_id
 			LIMIT ?
@@ -374,7 +386,7 @@ func (s *Storage) SearchBuildIDForUI(ctx context.Context, query string, limit in
 	} else {
 		pattern := query + "%"
 		rows, err = s.db.QueryContext(ctx, rebind(`
-			SELECT build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id
+			SELECT `+artifactSelectColumns+`
 			FROM artifacts
 			WHERE build_id LIKE ? OR lower(raw_build_id) LIKE ?
 			ORDER BY build_id
@@ -424,7 +436,7 @@ func (s *Storage) SearchMetadataQuery(ctx context.Context, q MetadataQuery) (Met
 
 func (s *Storage) searchGlob(ctx context.Context, q MetadataQuery) (MetadataResponse, error) {
 	rows, err := s.db.QueryContext(ctx, rebind(`
-		SELECT build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id
+		SELECT `+artifactSelectColumns+`
 		FROM artifacts
 		ORDER BY build_id, type
 	`, s.dialect))
@@ -439,7 +451,7 @@ func (s *Storage) searchGlob(ctx context.Context, q MetadataQuery) (MetadataResp
 
 func (s *Storage) searchFile(ctx context.Context, q MetadataQuery) (MetadataResponse, error) {
 	rows, err := s.db.QueryContext(ctx, rebind(`
-		SELECT build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id
+		SELECT `+artifactSelectColumns+`
 		FROM artifacts
 		ORDER BY build_id, type
 	`, s.dialect))
@@ -455,7 +467,7 @@ func (s *Storage) searchFile(ctx context.Context, q MetadataQuery) (MetadataResp
 
 func (s *Storage) searchBuildID(ctx context.Context, q MetadataQuery) (MetadataResponse, error) {
 	rows, err := s.db.QueryContext(ctx, rebind(`
-		SELECT build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id
+		SELECT `+artifactSelectColumns+`
 		FROM artifacts
 		ORDER BY build_id, type
 	`, s.dialect))
@@ -533,7 +545,7 @@ func scanArtifactRow(rows *sql.Rows) (ArtifactRecord, error) {
 	var row artifactRow
 	err := rows.Scan(
 		&row.BuildID, &row.FilePath, &row.Type, &row.ArchivePath, &row.MemberPath,
-		&row.BuildIDKind, &row.RawBuildID,
+		&row.BuildIDKind, &row.RawBuildID, &row.MtimeNs,
 	)
 	if err != nil {
 		return ArtifactRecord{}, err
@@ -547,12 +559,17 @@ func (r artifactRow) toRecord() ArtifactRecord {
 		Type:        r.Type,
 		BuildIDKind: r.BuildIDKind,
 		RawBuildID:  r.RawBuildID,
+		MtimeNs:     r.MtimeNs,
 	}
 	if r.ArchivePath != "" {
 		rec.Archive = filepath.ToSlash(r.ArchivePath)
-		rec.File = filepath.ToSlash(r.MemberPath)
+		rec.ArchivePath = rec.Archive
+		rec.MemberPath = filepath.ToSlash(r.MemberPath)
+		rec.File = rec.MemberPath
+		rec.FilePath = rec.ArchivePath
 	} else {
-		rec.File = filepath.ToSlash(r.FilePath)
+		rec.FilePath = filepath.ToSlash(r.FilePath)
+		rec.File = rec.FilePath
 	}
 	return rec
 }

@@ -3,6 +3,7 @@ package storage
 import (
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // RelativeToScanRoots возвращает путь относительно ближайшего scan root.
@@ -72,4 +73,11 @@ func EnrichArtifactRecord(rec *ArtifactRecord, scanRoots []string) {
 	}
 	rec.RelativePath = ArtifactDisplayPath(*rec, scanRoots)
 	rec.Filename = ArtifactFilename(*rec)
+	rec.Directory = ArtifactDirectory(*rec, scanRoots)
+	if rec.ArchivePath != "" {
+		rec.ArchiveRel = RelativeToScanRoots(rec.ArchivePath, scanRoots)
+	}
+	if rec.MtimeNs > 0 {
+		rec.Mtime = time.Unix(0, rec.MtimeNs).UTC().Format(time.RFC3339)
+	}
 }

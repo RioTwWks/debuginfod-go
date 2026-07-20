@@ -241,6 +241,7 @@ func searchHandler(opts Opts) http.HandlerFunc {
 				http.Error(w, "search error", http.StatusInternalServerError)
 				return
 			}
+			enrichFlatSearchResults(ctx, opts, meta.Results)
 			resp = SearchResponse{
 				Key:        key,
 				Value:      value,
@@ -272,6 +273,7 @@ func searchHandler(opts Opts) http.HandlerFunc {
 			for i := range meta.Results {
 				storage.EnrichArtifactRecord(&meta.Results[i], opts.ScanPaths)
 			}
+			enrichFlatSearchResults(ctx, opts, meta.Results)
 			resp = SearchResponse{
 				Key:        key,
 				Value:      value,
@@ -338,6 +340,18 @@ func scansHandler(opts Opts) http.HandlerFunc {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)
+	}
+}
+
+func enrichFlatSearchResults(ctx context.Context, opts Opts, results []storage.ArtifactRecord) {
+	for i := range results {
+		storage.EnrichArtifactRecord(&results[i], opts.ScanPaths)
+		sources, count, err := opts.Store.ListSourcesForBuildIDUI(ctx, results[i].BuildID, opts.ScanPaths, 20)
+		if err != nil {
+			continue
+		}
+		results[i].Sources = sources
+		results[i].SourcesCount = count
 	}
 }
 

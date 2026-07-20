@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/your-username/debuginfod-go/internal/fnmatch"
 )
@@ -23,6 +24,21 @@ type UIGroupedArtifact struct {
 	RawBuildID   string            `json:"raw_buildid,omitempty"`
 	ByType       map[string]string `json:"by_type,omitempty"`
 	ByTypeRel    map[string]string `json:"by_type_rel,omitempty"`
+	Entries      []ArtifactRecord  `json:"entries,omitempty"`
+	Sources      []UISourceRecord  `json:"sources,omitempty"`
+	SourcesCount int               `json:"sources_count,omitempty"`
+}
+
+// UISourceRecord — исходник для Web UI.
+type UISourceRecord struct {
+	SourcePath   string `json:"source_path"`
+	FilePath     string `json:"file_path"`
+	RelativePath string `json:"relative_path,omitempty"`
+	ArchivePath  string `json:"archive_path,omitempty"`
+	ArchiveRel   string `json:"archive_rel,omitempty"`
+	MemberPath   string `json:"member_path,omitempty"`
+	MtimeNs      int64  `json:"mtime_ns,omitempty"`
+	Mtime        string `json:"mtime,omitempty"`
 }
 
 // SearchBuildIDGroupedForUI ищет артефакты и группирует по build-id.
@@ -59,12 +75,7 @@ func (s *Storage) SearchBuildIDGroupedForUI(ctx context.Context, query string, l
 		if !containsStr(g.Types, rec.Type) {
 			g.Types = append(g.Types, rec.Type)
 		}
-		fileLabel := rec.File
-		if rec.Archive != "" {
-			fileLabel = rec.Archive + " → " + rec.File
-		}
-		g.ByType[rec.Type] = fileLabel
-		g.ByTypeRel[rec.Type] = rec.RelativePath
+		g.Entries = append(g.Entries, rec)
 		if rec.BuildIDKind != "" {
 			g.BuildIDKind = rec.BuildIDKind
 		}
@@ -77,6 +88,16 @@ func (s *Storage) SearchBuildIDGroupedForUI(ctx context.Context, query string, l
 	for _, id := range order {
 		g := groups[id]
 		sort.Strings(g.Types)
+		for _, e := range g.Entries {
+			fileLabel := e.File
+			if e.ArchivePath != "" {
+				fileLabel = e.ArchivePath + " → " + e.File
+			} else if e.Archive != "" {
+				fileLabel = e.Archive + " → " + e.File
+			}
+			g.ByType[e.Type] = fileLabel
+			g.ByTypeRel[e.Type] = e.RelativePath
+		}
 		g.Type = primaryType(g.Types)
 		g.File = g.ByType[g.Type]
 		g.RelativePath = g.ByTypeRel[g.Type]
@@ -92,6 +113,11 @@ func (s *Storage) SearchBuildIDGroupedForUI(ctx context.Context, query string, l
 			g.Filename = g.RelativePath[i+1:]
 			g.Directory = g.RelativePath[:i]
 		}
+		sources, srcCount, err := s.ListSourcesForBuildIDUI(ctx, g.BuildID, scanRoots, 20)
+		if err == nil {
+			g.Sources = sources
+			g.SourcesCount = srcCount
+		}
 		out = append(out, *g)
 		if len(out) >= limit {
 			break
@@ -106,7 +132,7 @@ func (s *Storage) SearchBuildIDGroupedForUI(ctx context.Context, query string, l
 // SearchPathForUI ищет по относительному пути (подстрока или fnmatch) от scan root.
 func (s *Storage) SearchPathForUI(ctx context.Context, scanRoots []string, query string, offset, limit int) (MetadataResponse, error) {
 	rows, err := s.db.QueryContext(ctx, rebind(`
-		SELECT build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id
+		SELECT `+artifactSelectColumns+`
 		FROM artifacts
 		ORDER BY file_path, type
 	`, s.dialect))
@@ -125,7 +151,7 @@ func (s *Storage) SearchPathForUI(ctx context.Context, scanRoots []string, query
 // SearchNameForUI ищет по имени файла (подстрока или fnmatch).
 func (s *Storage) SearchNameForUI(ctx context.Context, scanRoots []string, query string, offset, limit int) (MetadataResponse, error) {
 	rows, err := s.db.QueryContext(ctx, rebind(`
-		SELECT build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id
+		SELECT `+artifactSelectColumns+`
 		FROM artifacts
 		ORDER BY file_path, type
 	`, s.dialect))
@@ -167,6 +193,70 @@ func matchNameQuery(query, filename string) bool {
 	lowerQ := strings.ToLower(q)
 	lowerName := strings.ToLower(filename)
 	return strings.Contains(lowerName, lowerQ) || lowerName == lowerQ
+}
+
+// ListSourcesForBuildIDUI возвращает исходники build-id для Web UI.
+func (s *Storage) ListSourcesForBuildIDUI(ctx context.Context, buildID string, scanRoots []string, limit int) ([]UISourceRecord, int, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	var total int
+	if err := s.db.QueryRowContext(ctx,
+		rebind(`SELECT COUNT(1) FROM sources WHERE build_id = ?`, s.dialect),
+		buildID,
+	).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := s.db.QueryContext(ctx, rebind(`
+		SELECT source_path, file_path, archive_path, member_path, mtime_ns
+		FROM sources
+		WHERE build_id = ?
+		ORDER BY source_path
+		LIMIT ?
+	`, s.dialect), buildID, limit)
+	if err != nil {
+		return nil, total, err
+	}
+	defer rows.Close()
+
+	var out []UISourceRecord
+	for rows.Next() {
+		if err := ctx.Err(); err != nil {
+			return out, total, err
+		}
+		var src UISourceRecord
+		var mtimeNs int64
+		if err := rows.Scan(&src.SourcePath, &src.FilePath, &src.ArchivePath, &src.MemberPath, &mtimeNs); err != nil {
+			return nil, total, err
+		}
+		src.FilePath = filepath.ToSlash(src.FilePath)
+		src.SourcePath = filepath.ToSlash(src.SourcePath)
+		if src.ArchivePath != "" {
+			src.ArchivePath = filepath.ToSlash(src.ArchivePath)
+			src.MemberPath = filepath.ToSlash(src.MemberPath)
+			src.RelativePath = RelativeToScanRoots(src.ArchivePath, scanRoots) + " → " + src.MemberPath
+			src.ArchiveRel = RelativeToScanRoots(src.ArchivePath, scanRoots)
+		} else {
+			src.RelativePath = RelativeToScanRoots(src.FilePath, scanRoots)
+		}
+		if mtimeNs > 0 {
+			src.MtimeNs = mtimeNs
+			src.Mtime = time.Unix(0, mtimeNs).UTC().Format(time.RFC3339)
+		}
+		out = append(out, src)
+	}
+	if out == nil {
+		out = []UISourceRecord{}
+	}
+	return out, total, rows.Err()
+}
+
+// EnrichArtifactSources добавляет исходники к плоской записи артефакта.
+func (s *Storage) EnrichArtifactSources(ctx context.Context, rec *ArtifactRecord, scanRoots []string, limit int) ([]UISourceRecord, int, error) {
+	if rec == nil {
+		return nil, 0, nil
+	}
+	return s.ListSourcesForBuildIDUI(ctx, rec.BuildID, scanRoots, limit)
 }
 
 func primaryType(types []string) string {
