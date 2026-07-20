@@ -28,6 +28,9 @@ func main() {
 		case "inspect-file":
 			runInspectFile(os.Args[2:])
 			return
+		case "run-matrix":
+			runMatrix(os.Args[2:])
+			return
 		}
 	}
 	runBenchmark(os.Args[1:])
@@ -132,6 +135,68 @@ func runInspectFile(args []string) {
 	fmt.Println(".comment:")
 	for _, line := range info.CommentLines {
 		fmt.Printf("  %s\n", line)
+	}
+}
+
+func runMatrix(args []string) {
+	fs := flag.NewFlagSet("run-matrix", flag.ExitOnError)
+	scanPath, project, _ := bindCollectFlags(fs)
+	workdir := fs.String("workdir", "", "каталог для всех сценариев (обязателен)")
+	extended := fs.Bool("extended", false, "добавить xdelta3 по group-by stem-version и strategy-a")
+	keepWorkdir := fs.Bool("keep-workdir", false, "не удалять workdir сценариев")
+	output := fs.String("output", "", "базовый путь отчёта (пишет .json .csv .txt)")
+	format := fs.String("format", "text", "если --output без расширения: text|json|csv")
+	paths := bindToolPaths(fs)
+	parseFlags(fs, args)
+
+	if *scanPath == "" {
+		fatal("укажите --scan-path")
+	}
+	if *workdir == "" {
+		fatal("укажите --workdir")
+	}
+
+	files, err := collectFiles(*scanPath, *project)
+	if err != nil {
+		fatal(err.Error())
+	}
+
+	scenarios := benchdedup.DefaultMatrix()
+	if *extended {
+		scenarios = benchdedup.ExtendedMatrix()
+	}
+
+	report, err := benchdedup.RunMatrix(benchdedup.MatrixOptions{
+		WorkDir:     filepath.Clean(*workdir),
+		ScanPath:    *scanPath,
+		Project:     *project,
+		Files:       files,
+		ToolPaths:   paths,
+		Scenarios:   scenarios,
+		KeepWorkdir: *keepWorkdir,
+	})
+	if err != nil {
+		fatal(err.Error())
+	}
+
+	if *output != "" {
+		if strings.HasSuffix(*output, ".json") || strings.HasSuffix(*output, ".csv") || strings.HasSuffix(*output, ".txt") {
+			ext := filepath.Ext(*output)
+			fm := strings.TrimPrefix(ext, ".")
+			if err := benchdedup.WriteMatrixReportFile(*output, report, fm); err != nil {
+				fatal(err.Error())
+			}
+			fmt.Fprintf(os.Stderr, "report written to %s\n", *output)
+		} else {
+			if err := benchdedup.WriteMatrixReportFileWithFormats(*output, report); err != nil {
+				fatal(err.Error())
+			}
+			fmt.Fprintf(os.Stderr, "reports written to %s.{json,csv,txt}\n", *output)
+		}
+		return
+	}
+	if err := benchdedup.WriteMatrixReport(os.Stdout, report, *format); err != nil {
+		fatal(err.Error())
 	}
 }
 
