@@ -21,25 +21,31 @@
   const dedupRunsBody = document.getElementById("dedup-runs-body");
   const rescanBtn = document.getElementById("rescan-btn");
   const rescanStatus = document.getElementById("rescan-status");
+  const artifactDetail = document.getElementById("artifact-detail");
+  const artifactDetailBody = document.getElementById("artifact-detail-body");
+  const detailCloseBtn = document.getElementById("detail-close");
 
-  let searchKey = "buildid";
+  let searchKey = "path";
   let nextOffset = 0;
   let lastSearchValue = "";
   let scansLoaded = false;
   let lastScanFinishedAt = "";
   let rescanPollTimer = null;
+  let lastResultRows = [];
 
   const hints = {
+    path:
+      "Путь относительно SCAN_PATH. Пустой запрос — обзор первых 50 файлов. Подстрока или fnmatch: Released/Quik*, *lib.so*.debug",
+    name:
+      "Имя файла (basename): quik-16.0.0.10.debug, *.debug, libQt5*. Введите запрос и нажмите «Найти».",
     buildid:
-      "Пустой запрос — первые 50 build-id. Ссылки скачивания только для типов, реально присутствующих в индексе.",
-    glob: "Шаблон fnmatch, как в /metadata: /usr/bin/*, /usr/lib/debug/**",
-    file: "Точный путь файла, как в /metadata?key=file&value=…",
+      "Префикс hex build-id (необязательно). Пустой запрос — первые 50. Длинные SHA показываются сокращённо — кликните строку для деталей.",
   };
 
   const placeholders = {
-    buildid: "Префикс build-id (hex), например deadbeef",
-    glob: "Шаблон пути, например /usr/bin/*",
-    file: "Абсолютный путь, например /usr/bin/ls",
+    path: "Released/Quik* или build_*/*.debug",
+    name: "Имя файла, например quik-16.0.0.10.debug",
+    buildid: "Префикс build-id, например 006f5ce9",
   };
 
   function formatNumber(n) {
@@ -81,6 +87,30 @@
     return div.innerHTML;
   }
 
+  function shortBuildID(id) {
+    if (!id || id.length <= 16) return id;
+    return id.slice(0, 8) + "…" + id.slice(-6);
+  }
+
+  function splitRelativePath(rel) {
+    if (!rel) return { dir: "—", file: "—" };
+    const i = rel.lastIndexOf("/");
+    if (i < 0) return { dir: "—", file: rel };
+    return { dir: rel.slice(0, i), file: rel.slice(i + 1) };
+  }
+
+  function typeBadges(types) {
+    const list = types || [];
+    if (!list.length) return '<span class="muted">—</span>';
+    return list
+      .map(function (t) {
+        return (
+          '<span class="type-badge ' + escapeHtml(t) + '">' + escapeHtml(t) + "</span>"
+        );
+      })
+      .join(" ");
+  }
+
   function artifactLinks(buildid, types) {
     const available = (types || []).filter(function (t) {
       return t === "debuginfo" || t === "executable";
@@ -120,9 +150,73 @@
     }
   }
 
+  function hideArtifactDetail() {
+    if (artifactDetail) artifactDetail.hidden = true;
+    if (artifactDetailBody) artifactDetailBody.innerHTML = "";
+  }
+
+  function showArtifactDetail(row) {
+    if (!artifactDetail || !artifactDetailBody) return;
+    const buildid = row.buildid || "";
+    const types = row.types || (row.type ? [row.type] : []);
+    const byType = row.by_type_rel || row.by_type || {};
+    const byTypeAbs = row.by_type || {};
+
+    let pathsHtml = "";
+    types.forEach(function (t) {
+      const rel = byType[t] || row.relative_path || "—";
+      const abs = byTypeAbs[t] || row.file || "—";
+      pathsHtml +=
+        "<tr><th>" +
+        escapeHtml(t) +
+        '</th><td class="mono">' +
+        escapeHtml(rel) +
+        '</td><td class="mono muted">' +
+        escapeHtml(abs) +
+        "</td></tr>";
+    });
+
+    artifactDetailBody.innerHTML =
+      '<dl class="detail-dl">' +
+      "<dt>Build-ID</dt><dd class='mono'>" +
+      escapeHtml(buildid) +
+      " <button type='button' class='copy-btn' data-copy='" +
+      escapeHtml(buildid) +
+      "'>копировать</button></dd>" +
+      (row.raw_buildid && row.raw_buildid !== buildid
+        ? "<dt>Raw build-id</dt><dd class='mono'>" + escapeHtml(row.raw_buildid) + "</dd>"
+        : "") +
+      (row.buildid_kind
+        ? "<dt>Kind</dt><dd>" + escapeHtml(row.buildid_kind) + "</dd>"
+        : "") +
+      "<dt>Типы</dt><dd>" +
+      typeBadges(types) +
+      "</dd>" +
+      "</dl>" +
+      '<table class="detail-table"><thead><tr><th>тип</th><th>отн. путь</th><th>абс. путь</th></tr></thead><tbody>' +
+      pathsHtml +
+      "</tbody></table>" +
+      '<div class="detail-links">' +
+      artifactLinks(buildid, types) +
+      "</div>";
+
+    artifactDetail.hidden = false;
+    artifactDetailBody.querySelectorAll(".copy-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const text = btn.getAttribute("data-copy") || "";
+        navigator.clipboard.writeText(text).catch(function () {});
+        btn.textContent = "скопировано";
+        setTimeout(function () {
+          btn.textContent = "копировать";
+        }, 1500);
+      });
+    });
+  }
+
   function clearSearchResults(message) {
     nextOffset = 0;
     lastSearchValue = "";
+    hideArtifactDetail();
     searchStatus.textContent = message || "";
     searchStatus.classList.remove("error");
     resultsTable.hidden = true;
@@ -141,14 +235,10 @@
     searchInput.placeholder = placeholders[key] || "";
     searchHint.textContent = hints[key] || "";
     searchInput.value = "";
-    if (key === "buildid") {
+    if (key === "path" || key === "buildid") {
       doSearch("", false);
     } else {
-      clearSearchResults(
-        key === "glob"
-          ? "Введите шаблон пути (fnmatch) и нажмите «Найти»"
-          : "Введите абсолютный путь к файлу и нажмите «Найти»"
-      );
+      clearSearchResults("Введите имя файла и нажмите «Найти»");
     }
   }
 
@@ -486,7 +576,7 @@
     if (searchKey === "buildid") {
       if (value) params.set("q", value);
     } else {
-      params.set("value", value);
+      if (value) params.set("value", value);
       if (append && nextOffset > 0) {
         params.set("offset", String(nextOffset));
       }
@@ -495,12 +585,8 @@
   }
 
   async function doSearch(query, append) {
-    if (!append && searchKey !== "buildid" && !query) {
-      clearSearchResults(
-        searchKey === "glob"
-          ? "Введите шаблон пути (fnmatch) и нажмите «Найти»"
-          : "Введите абсолютный путь к файлу и нажмите «Найти»"
-      );
+    if (!append && searchKey === "name" && !query) {
+      clearSearchResults("Введите имя файла и нажмите «Найти»");
       return;
     }
 
@@ -535,49 +621,108 @@
     }
   }
 
-  function renderGroupedRow(row) {
+  function renderGroupedRow(row, idx) {
     const types = row.types || [];
-    const typesLabel = types.map(escapeHtml).join(", ");
-    const file = row.file || "—";
+    const rel = row.relative_path || row.file || "—";
+    const parts = splitRelativePath(rel);
     return (
-      "<tr>" +
-      '<td class="mono">' + escapeHtml(row.buildid) + "</td>" +
-      "<td>" + typesLabel + "</td>" +
-      '<td class="mono">' + escapeHtml(file) + "</td>" +
-      "<td>" + escapeHtml(row.buildid_kind || "—") + "</td>" +
-      '<td class="links">' + artifactLinks(row.buildid, types) + "</td>" +
+      '<tr class="artifact-row" tabindex="0" data-idx="' +
+      idx +
+      '">' +
+      '<td class="col-toggle" title="Подробнее">›</td>' +
+      '<td class="mono path-cell" title="' +
+      escapeHtml(rel) +
+      '">' +
+      escapeHtml(parts.dir) +
+      "</td>" +
+      '<td class="mono" title="' +
+      escapeHtml(parts.file) +
+      '">' +
+      escapeHtml(parts.file) +
+      "</td>" +
+      "<td>" +
+      typeBadges(types) +
+      "</td>" +
+      '<td class="mono" title="' +
+      escapeHtml(row.buildid) +
+      '">' +
+      escapeHtml(shortBuildID(row.buildid)) +
+      "</td>" +
+      '<td class="links">' +
+      artifactLinks(row.buildid, types) +
+      "</td>" +
       "</tr>"
     );
   }
 
-  function renderFlatRow(row) {
+  function renderFlatRow(row, idx) {
     const types = [row.type];
-    const file = row.archive ? row.archive + " → " + row.file : row.file;
+    const rel = row.relative_path || row.file || "—";
+    const parts = splitRelativePath(rel);
     return (
-      "<tr>" +
-      '<td class="mono">' + escapeHtml(row.buildid) + "</td>" +
-      "<td>" + escapeHtml(row.type) + "</td>" +
-      '<td class="mono">' + escapeHtml(file) + "</td>" +
-      "<td>" + escapeHtml(row.buildid_kind || "—") + "</td>" +
-      '<td class="links">' + artifactLinks(row.buildid, types) + "</td>" +
+      '<tr class="artifact-row" tabindex="0" data-idx="' +
+      idx +
+      '">' +
+      '<td class="col-toggle" title="Подробнее">›</td>' +
+      '<td class="mono path-cell" title="' +
+      escapeHtml(rel) +
+      '">' +
+      escapeHtml(parts.dir) +
+      "</td>" +
+      '<td class="mono">' +
+      escapeHtml(parts.file || row.filename || "—") +
+      "</td>" +
+      "<td>" +
+      typeBadges(types) +
+      "</td>" +
+      '<td class="mono" title="' +
+      escapeHtml(row.buildid) +
+      '">' +
+      escapeHtml(shortBuildID(row.buildid)) +
+      "</td>" +
+      '<td class="links">' +
+      artifactLinks(row.buildid, types) +
+      "</td>" +
       "</tr>"
     );
+  }
+
+  function bindResultRows() {
+    resultsBody.querySelectorAll(".artifact-row").forEach(function (tr) {
+      tr.addEventListener("click", function (e) {
+        if (e.target.closest("a")) return;
+        const idx = parseInt(tr.getAttribute("data-idx") || "-1", 10);
+        if (idx >= 0 && lastResultRows[idx]) {
+          showArtifactDetail(lastResultRows[idx]);
+        }
+      });
+    });
   }
 
   function renderResults(data, append) {
     let label = "";
     if (searchKey === "buildid") {
-      label = data.query ? ' по «' + data.query + '»' : "";
+      label = data.query ? ' по «' + data.query + '»' : " (обзор)";
+    } else if (searchKey === "path") {
+      label = data.value ? ' по пути «' + data.value + '»' : " (обзор)";
     } else {
-      label = data.value ? " (" + searchKey + ": «" + data.value + "»)" : "";
+      label = data.value ? ' по имени «' + data.value + '»' : "";
     }
 
     const rows = data.grouped && data.grouped.length ? data.grouped : data.results || [];
-    const totalShown = append
-      ? resultsBody.querySelectorAll("tr").length + rows.length
-      : rows.length;
+    const baseIdx = append ? lastResultRows.length : 0;
+    if (!append) {
+      lastResultRows = rows.slice();
+    } else {
+      lastResultRows = lastResultRows.concat(rows);
+    }
 
-    let status = "Найдено: " + formatNumber(append ? totalShown : data.count) + label;
+    const totalShown = lastResultRows.length;
+
+    let status = "Найдено: " + formatNumber(rows.length) + label;
+    if (append) {
+      status = "Показано: " + formatNumber(totalShown) + label;
+    }
     if (!data.complete) {
       status += " (есть ещё — нажмите «Ещё результаты»)";
     }
@@ -590,8 +735,9 @@
     }
 
     const html = rows
-      .map(function (row) {
-        return data.grouped ? renderGroupedRow(row) : renderFlatRow(row);
+      .map(function (row, i) {
+        const idx = baseIdx + i;
+        return data.grouped ? renderGroupedRow(row, idx) : renderFlatRow(row, idx);
       })
       .join("");
 
@@ -599,7 +745,9 @@
       resultsBody.insertAdjacentHTML("beforeend", html);
     } else {
       resultsBody.innerHTML = html;
+      hideArtifactDetail();
     }
+    bindResultRows();
 
     resultsTable.hidden = false;
     nextOffset = data.next_offset || 0;
@@ -631,9 +779,13 @@
     rescanBtn.addEventListener("click", triggerRescan);
   }
 
+  if (detailCloseBtn) {
+    detailCloseBtn.addEventListener("click", hideArtifactDetail);
+  }
+
   let debounce;
   searchInput.addEventListener("input", function () {
-    if (searchKey !== "buildid") {
+    if (searchKey !== "buildid" && searchKey !== "path") {
       return;
     }
     clearTimeout(debounce);

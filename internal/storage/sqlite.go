@@ -21,12 +21,14 @@ var ErrMetadataTimeout = errors.New("metadata query timeout")
 
 // ArtifactRecord описывает проиндексированный артефакт для metadata API.
 type ArtifactRecord struct {
-	BuildID     string `json:"buildid"`
-	Type        string `json:"type"`
-	File        string `json:"file"`
-	Archive     string `json:"archive,omitempty"`
-	BuildIDKind string `json:"buildid_kind,omitempty"`
-	RawBuildID  string `json:"raw_buildid,omitempty"`
+	BuildID      string `json:"buildid"`
+	Type         string `json:"type"`
+	File         string `json:"file"`
+	Archive      string `json:"archive,omitempty"`
+	BuildIDKind  string `json:"buildid_kind,omitempty"`
+	RawBuildID   string `json:"raw_buildid,omitempty"`
+	RelativePath string `json:"relative_path,omitempty"`
+	Filename     string `json:"filename,omitempty"`
 }
 
 // MetadataResponse — JSON-ответ эндпоинта /metadata.
@@ -467,11 +469,15 @@ func (s *Storage) searchBuildID(ctx context.Context, q MetadataQuery) (MetadataR
 	}, q.Offset, q.Limit)
 }
 
-func collectMetadata(ctx context.Context, rows *sql.Rows, keep func(ArtifactRecord) bool, offset, limit int) (MetadataResponse, error) {
+func collectMetadata(ctx context.Context, rows *sql.Rows, keep func(ArtifactRecord) bool, offset, limit int, enrich ...func(*ArtifactRecord)) (MetadataResponse, error) {
 	var results []ArtifactRecord
 	complete := true
 	skipped := 0
 	hasLimit := limit > 0
+	var enrichFn func(*ArtifactRecord)
+	if len(enrich) > 0 {
+		enrichFn = enrich[0]
+	}
 
 	for rows.Next() {
 		if err := ctx.Err(); err != nil {
@@ -492,6 +498,9 @@ func collectMetadata(ctx context.Context, rows *sql.Rows, keep func(ArtifactReco
 		if hasLimit && len(results) >= limit {
 			complete = false
 			break
+		}
+		if enrichFn != nil {
+			enrichFn(&rec)
 		}
 		results = append(results, rec)
 	}

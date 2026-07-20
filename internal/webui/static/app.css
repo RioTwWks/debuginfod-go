@@ -99,7 +99,7 @@ body {
 }
 
 .container {
-  max-width: 1100px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 1.5rem 2rem 3rem;
 }
@@ -428,6 +428,111 @@ body {
 .links a.type-badge {
   text-decoration: none;
   margin-right: 0.35rem;
+}
+
+.col-toggle {
+  width: 1.5rem;
+  color: var(--muted);
+  text-align: center;
+  cursor: pointer;
+}
+
+.path-cell {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifact-row {
+  cursor: pointer;
+}
+
+.artifact-row:hover {
+  background: var(--surface2);
+}
+
+.artifact-detail {
+  margin-top: 1rem;
+  border: 1px solid var(--accent);
+}
+
+.artifact-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.artifact-detail-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.detail-close {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.2rem 0.5rem;
+}
+
+.detail-close:hover {
+  color: var(--text);
+}
+
+.detail-dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem 1rem;
+  margin: 0 0 1rem;
+}
+
+.detail-dl dt {
+  color: var(--muted);
+  margin: 0;
+}
+
+.detail-dl dd {
+  margin: 0;
+}
+
+.detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.detail-table th,
+.detail-table td {
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+
+.detail-links {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.copy-btn {
+  margin-left: 0.5rem;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface2);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.copy-btn:hover {
+  border-color: var(--accent);
 }
 
 @media (max-width: 600px) {

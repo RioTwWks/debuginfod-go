@@ -28,6 +28,7 @@ type Opts struct {
 	Store        *storage.Storage
 	Metrics      *metrics.Collector
 	CacheBytes   func() int64
+	ScanPaths    []string
 	DedupEnabled bool
 	ScanEnabled  bool
 	ScanTrigger  ScanTrigger
@@ -206,7 +207,7 @@ func searchHandler(opts Opts) http.HandlerFunc {
 		switch key {
 		case "buildid":
 			query := r.URL.Query().Get("q")
-			grouped, err := opts.Store.SearchBuildIDGroupedForUI(ctx, query, limit)
+			grouped, err := opts.Store.SearchBuildIDGroupedForUI(ctx, query, limit, opts.ScanPaths)
 			if err != nil {
 				slog.Error("webui search buildid", "query", query, "err", err)
 				http.Error(w, "search error", http.StatusInternalServerError)
@@ -218,6 +219,35 @@ func searchHandler(opts Opts) http.HandlerFunc {
 				Grouped:  grouped,
 				Count:    len(grouped),
 				Complete: true,
+			}
+		case "path", "name":
+			value := strings.TrimSpace(r.URL.Query().Get("value"))
+			if value == "" {
+				value = strings.TrimSpace(r.URL.Query().Get("q"))
+			}
+			var meta storage.MetadataResponse
+			var err error
+			if key == "path" {
+				meta, err = opts.Store.SearchPathForUI(ctx, opts.ScanPaths, value, offset, limit)
+			} else {
+				if value == "" {
+					http.Error(w, "value required for name search", http.StatusBadRequest)
+					return
+				}
+				meta, err = opts.Store.SearchNameForUI(ctx, opts.ScanPaths, value, offset, limit)
+			}
+			if err != nil {
+				slog.Error("webui search", "key", key, "value", value, "err", err)
+				http.Error(w, "search error", http.StatusInternalServerError)
+				return
+			}
+			resp = SearchResponse{
+				Key:        key,
+				Value:      value,
+				Results:    meta.Results,
+				Count:      len(meta.Results),
+				Complete:   meta.Complete,
+				NextOffset: meta.NextOffset,
 			}
 		case "glob", "file":
 			value := strings.TrimSpace(r.URL.Query().Get("value"))
@@ -238,6 +268,9 @@ func searchHandler(opts Opts) http.HandlerFunc {
 				slog.Error("webui search metadata", "key", key, "value", value, "err", err)
 				http.Error(w, "search error", http.StatusInternalServerError)
 				return
+			}
+			for i := range meta.Results {
+				storage.EnrichArtifactRecord(&meta.Results[i], opts.ScanPaths)
 			}
 			resp = SearchResponse{
 				Key:        key,

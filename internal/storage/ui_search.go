@@ -4,22 +4,29 @@ import (
 	"context"
 	"path/filepath"
 	"sort"
+	"strings"
+
+	"github.com/your-username/debuginfod-go/internal/fnmatch"
 )
 
 // UIGroupedArtifact — артефакты одного build-id для Web UI.
 type UIGroupedArtifact struct {
-	BuildID     string            `json:"buildid"`
-	Types       []string          `json:"types"`
-	Type        string            `json:"type"`
-	File        string            `json:"file"`
-	Archive     string            `json:"archive,omitempty"`
-	BuildIDKind string            `json:"buildid_kind,omitempty"`
-	RawBuildID  string            `json:"raw_buildid,omitempty"`
-	ByType      map[string]string `json:"by_type,omitempty"`
+	BuildID      string            `json:"buildid"`
+	Types        []string          `json:"types"`
+	Type         string            `json:"type"`
+	File         string            `json:"file"`
+	RelativePath string            `json:"relative_path,omitempty"`
+	Filename     string            `json:"filename,omitempty"`
+	Directory    string            `json:"directory,omitempty"`
+	Archive      string            `json:"archive,omitempty"`
+	BuildIDKind  string            `json:"buildid_kind,omitempty"`
+	RawBuildID   string            `json:"raw_buildid,omitempty"`
+	ByType       map[string]string `json:"by_type,omitempty"`
+	ByTypeRel    map[string]string `json:"by_type_rel,omitempty"`
 }
 
 // SearchBuildIDGroupedForUI ищет артефакты и группирует по build-id.
-func (s *Storage) SearchBuildIDGroupedForUI(ctx context.Context, query string, limit int) ([]UIGroupedArtifact, error) {
+func (s *Storage) SearchBuildIDGroupedForUI(ctx context.Context, query string, limit int, scanRoots []string) ([]UIGroupedArtifact, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
@@ -38,11 +45,13 @@ func (s *Storage) SearchBuildIDGroupedForUI(ctx context.Context, query string, l
 	order := make([]string, 0, len(records))
 
 	for _, rec := range records {
+		EnrichArtifactRecord(&rec, scanRoots)
 		g, ok := groups[rec.BuildID]
 		if !ok {
 			g = &UIGroupedArtifact{
-				BuildID: rec.BuildID,
-				ByType:  make(map[string]string),
+				BuildID:   rec.BuildID,
+				ByType:    make(map[string]string),
+				ByTypeRel: make(map[string]string),
 			}
 			groups[rec.BuildID] = g
 			order = append(order, rec.BuildID)
@@ -55,6 +64,7 @@ func (s *Storage) SearchBuildIDGroupedForUI(ctx context.Context, query string, l
 			fileLabel = rec.Archive + " → " + rec.File
 		}
 		g.ByType[rec.Type] = fileLabel
+		g.ByTypeRel[rec.Type] = rec.RelativePath
 		if rec.BuildIDKind != "" {
 			g.BuildIDKind = rec.BuildIDKind
 		}
@@ -69,11 +79,18 @@ func (s *Storage) SearchBuildIDGroupedForUI(ctx context.Context, query string, l
 		sort.Strings(g.Types)
 		g.Type = primaryType(g.Types)
 		g.File = g.ByType[g.Type]
-		if g.File == "" {
+		g.RelativePath = g.ByTypeRel[g.Type]
+		if g.RelativePath == "" {
 			for _, t := range g.Types {
+				g.RelativePath = g.ByTypeRel[t]
 				g.File = g.ByType[t]
 				break
 			}
+		}
+		g.Filename = filepath.Base(g.RelativePath)
+		if i := strings.LastIndex(g.RelativePath, "/"); i >= 0 {
+			g.Filename = g.RelativePath[i+1:]
+			g.Directory = g.RelativePath[:i]
 		}
 		out = append(out, *g)
 		if len(out) >= limit {
@@ -84,6 +101,72 @@ func (s *Storage) SearchBuildIDGroupedForUI(ctx context.Context, query string, l
 		out = []UIGroupedArtifact{}
 	}
 	return out, nil
+}
+
+// SearchPathForUI ищет по относительному пути (подстрока или fnmatch) от scan root.
+func (s *Storage) SearchPathForUI(ctx context.Context, scanRoots []string, query string, offset, limit int) (MetadataResponse, error) {
+	rows, err := s.db.QueryContext(ctx, rebind(`
+		SELECT build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id
+		FROM artifacts
+		ORDER BY file_path, type
+	`, s.dialect))
+	if err != nil {
+		return MetadataResponse{}, err
+	}
+	defer rows.Close()
+	return collectMetadata(ctx, rows, func(rec ArtifactRecord) bool {
+		rel := ArtifactDisplayPath(rec, scanRoots)
+		return matchPathQuery(query, rel)
+	}, offset, limit, func(rec *ArtifactRecord) {
+		EnrichArtifactRecord(rec, scanRoots)
+	})
+}
+
+// SearchNameForUI ищет по имени файла (подстрока или fnmatch).
+func (s *Storage) SearchNameForUI(ctx context.Context, scanRoots []string, query string, offset, limit int) (MetadataResponse, error) {
+	rows, err := s.db.QueryContext(ctx, rebind(`
+		SELECT build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id
+		FROM artifacts
+		ORDER BY file_path, type
+	`, s.dialect))
+	if err != nil {
+		return MetadataResponse{}, err
+	}
+	defer rows.Close()
+	return collectMetadata(ctx, rows, func(rec ArtifactRecord) bool {
+		return matchNameQuery(query, ArtifactFilename(rec))
+	}, offset, limit, func(rec *ArtifactRecord) {
+		EnrichArtifactRecord(rec, scanRoots)
+	})
+}
+
+func matchPathQuery(query, relativePath string) bool {
+	query = strings.TrimSpace(query)
+	rel := filepath.ToSlash(relativePath)
+	if query == "" {
+		return true
+	}
+	q := filepath.ToSlash(query)
+	if strings.ContainsAny(q, "*?[") {
+		return fnmatch.Match(q, rel, fnmatch.Pathname) || fnmatch.Match(q, rel, 0)
+	}
+	lowerQ := strings.ToLower(q)
+	lowerRel := strings.ToLower(rel)
+	return strings.Contains(lowerRel, lowerQ) || strings.HasSuffix(lowerRel, lowerQ)
+}
+
+func matchNameQuery(query, filename string) bool {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return false
+	}
+	q := filepath.ToSlash(query)
+	if strings.ContainsAny(q, "*?[") {
+		return fnmatch.Match(q, filename, 0)
+	}
+	lowerQ := strings.ToLower(q)
+	lowerName := strings.ToLower(filename)
+	return strings.Contains(lowerName, lowerQ) || lowerName == lowerQ
 }
 
 func primaryType(types []string) string {
