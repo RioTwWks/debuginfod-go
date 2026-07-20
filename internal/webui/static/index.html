@@ -14,7 +14,7 @@
     </div>
     <div class="header-meta">
       <span id="uptime" class="badge">uptime —</span>
-      <button type="button" id="rescan-btn" class="badge rescan-btn" title="Переиндексировать SCAN_PATH; при включённом dedup — zstd-сжатие и CAS">
+      <button type="button" id="rescan-btn" class="badge rescan-btn" title="Переиндексировать SCAN_PATH; при включённом dedup — ingest xdelta (decompress-dwz)">
         Сканировать
       </button>
       <span id="rescan-status" class="badge rescan-status" hidden></span>
@@ -84,7 +84,7 @@
       </section>
 
       <section class="panel">
-        <h2>Хранение .debug (zstd + CAS)</h2>
+        <h2>Хранение .debug (xdelta + decompress-dwz)</h2>
         <div class="dedup-summary" id="dedup-summary">Загрузка…</div>
         <p class="hint" id="dedup-status"></p>
       </section>
@@ -98,15 +98,16 @@
                 <th>папка</th>
                 <th>build dirs</th>
                 <th>файлов</th>
-                <th>zstd</th>
-                <th>CAS</th>
+                <th>base</th>
+                <th>delta</th>
+                <th>full</th>
                 <th>было</th>
                 <th>на диске</th>
                 <th>экономия</th>
               </tr>
             </thead>
             <tbody id="dedup-projects-body">
-              <tr><td colspan="8" class="muted">Загрузка…</td></tr>
+              <tr><td colspan="9" class="muted">Загрузка…</td></tr>
             </tbody>
           </table>
         </div>
@@ -136,7 +137,7 @@
       </section>
 
       <section class="panel">
-        <h2>История dedup (zstd + CAS)</h2>
+        <h2>История dedup (xdelta)</h2>
         <div class="table-wrap">
           <table class="results-table" id="dedup-runs-table">
             <thead>
@@ -144,9 +145,8 @@
                 <th>завершено</th>
                 <th>длительность</th>
                 <th>проект</th>
-                <th>zstd</th>
-                <th>CAS</th>
-                <th>пропущено</th>
+                <th>дельт</th>
+                <th>групп</th>
                 <th>ошибок</th>
                 <th>было</th>
                 <th>на диске</th>
@@ -154,7 +154,7 @@
               </tr>
             </thead>
             <tbody id="dedup-runs-body">
-              <tr><td colspan="10" class="muted">Загрузка…</td></tr>
+              <tr><td colspan="9" class="muted">Загрузка…</td></tr>
             </tbody>
           </table>
         </div>

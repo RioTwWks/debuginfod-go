@@ -586,8 +586,11 @@ type DedupProjectTotals struct {
 	Project         string  `json:"project"`
 	BuildDirs       int64   `json:"build_dirs"`
 	FilesDone       int64   `json:"files_done"`
-	FilesCompressed int64   `json:"files_compressed"`
-	FilesCASRef       int64   `json:"files_cas_ref"`
+	FilesBase       int64   `json:"files_base"`
+	FilesDelta      int64   `json:"files_delta"`
+	FilesFull       int64   `json:"files_full"`
+	FilesCompressed int64   `json:"files_compressed"` // legacy zstd CAS
+	FilesCASRef     int64   `json:"files_cas_ref"`    // legacy zstd CAS ref
 	BytesOriginal   int64   `json:"bytes_original"`
 	BytesOnDisk     int64   `json:"bytes_on_disk"`
 	BytesSaved      int64   `json:"bytes_saved"`
@@ -630,6 +633,24 @@ func (s *Storage) dedupTotalsForProject(projectName string) (DedupProjectTotals,
 		SELECT COUNT(1) FROM dedup_files f
 		JOIN dedup_build_dirs b ON b.id = f.build_dir_id
 		JOIN dedup_projects p ON p.id = b.project_id
+		WHERE p.name = ? AND f.storage_kind = 'base'
+	`, s.dialect), projectName).Scan(&t.FilesBase)
+	_ = s.db.QueryRow(rebind(`
+		SELECT COUNT(1) FROM dedup_files f
+		JOIN dedup_build_dirs b ON b.id = f.build_dir_id
+		JOIN dedup_projects p ON p.id = b.project_id
+		WHERE p.name = ? AND f.storage_kind = 'delta'
+	`, s.dialect), projectName).Scan(&t.FilesDelta)
+	_ = s.db.QueryRow(rebind(`
+		SELECT COUNT(1) FROM dedup_files f
+		JOIN dedup_build_dirs b ON b.id = f.build_dir_id
+		JOIN dedup_projects p ON p.id = b.project_id
+		WHERE p.name = ? AND f.storage_kind = 'full'
+	`, s.dialect), projectName).Scan(&t.FilesFull)
+	_ = s.db.QueryRow(rebind(`
+		SELECT COUNT(1) FROM dedup_files f
+		JOIN dedup_build_dirs b ON b.id = f.build_dir_id
+		JOIN dedup_projects p ON p.id = b.project_id
 		WHERE p.name = ? AND f.storage_kind = 'compressed'
 	`, s.dialect), projectName).Scan(&t.FilesCompressed)
 	_ = s.db.QueryRow(rebind(`
@@ -665,24 +686,8 @@ func (s *Storage) dedupTotalsForProject(projectName string) (DedupProjectTotals,
 		switch DedupStorageKind(kind) {
 		case DedupKindRef:
 			// blob уже учтён у canonical compressed-записи
-		case DedupKindCompressed:
-			if compSize > 0 {
-				t.BytesOnDisk += compSize
-			} else if st, err := fileSize(blobPath); err == nil {
-				t.BytesOnDisk += st
-			}
-		case DedupKindDelta:
-			if compSize > 0 {
-				t.BytesOnDisk += compSize
-			} else if st, err := fileSize(blobPath); err == nil {
-				t.BytesOnDisk += st
-			}
-		case DedupKindBase, DedupKindFull:
-			if st, err := fileSize(filePath); err == nil {
-				t.BytesOnDisk += st
-			} else {
-				t.BytesOnDisk += origSize
-			}
+		default:
+			t.BytesOnDisk += dedupFileBytesOnDisk(DedupStorageKind(kind), filePath, blobPath, origSize, compSize)
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -700,8 +705,11 @@ type DedupStats struct {
 	FilesTotal      int64
 	FilesPending    int64
 	FilesDone       int64
+	FilesBase       int64
+	FilesDelta      int64
+	FilesFull       int64
 	FilesCompressed int64
-	FilesCASRef       int64
+	FilesCASRef     int64
 	BytesOriginal   int64
 	BytesCompressed int64
 }
@@ -712,14 +720,35 @@ func (s *Storage) DedupStats() (DedupStats, error) {
 	_ = s.db.QueryRow(rebind(`SELECT COUNT(1) FROM dedup_files`, s.dialect)).Scan(&st.FilesTotal)
 	_ = s.db.QueryRow(rebind(`SELECT COUNT(1) FROM dedup_files WHERE status = 'pending'`, s.dialect)).Scan(&st.FilesPending)
 	_ = s.db.QueryRow(rebind(`SELECT COUNT(1) FROM dedup_files WHERE status = 'done'`, s.dialect)).Scan(&st.FilesDone)
+	_ = s.db.QueryRow(rebind(`SELECT COUNT(1) FROM dedup_files WHERE storage_kind = 'base'`, s.dialect)).Scan(&st.FilesBase)
+	_ = s.db.QueryRow(rebind(`SELECT COUNT(1) FROM dedup_files WHERE storage_kind = 'delta'`, s.dialect)).Scan(&st.FilesDelta)
+	_ = s.db.QueryRow(rebind(`SELECT COUNT(1) FROM dedup_files WHERE storage_kind = 'full'`, s.dialect)).Scan(&st.FilesFull)
 	_ = s.db.QueryRow(rebind(`SELECT COUNT(1) FROM dedup_files WHERE storage_kind = 'compressed'`, s.dialect)).Scan(&st.FilesCompressed)
 	_ = s.db.QueryRow(rebind(`SELECT COUNT(1) FROM dedup_files WHERE storage_kind = 'ref'`, s.dialect)).Scan(&st.FilesCASRef)
 	_ = s.db.QueryRow(rebind(`SELECT COALESCE(SUM(original_size), 0) FROM dedup_files`, s.dialect)).Scan(&st.BytesOriginal)
 	_ = s.db.QueryRow(rebind(`
 		SELECT COALESCE(SUM(compressed_size), 0) FROM dedup_files
-		WHERE storage_kind IN ('compressed', 'ref') AND status = 'done'
+		WHERE storage_kind IN ('compressed', 'ref', 'delta') AND status = 'done'
 	`, s.dialect)).Scan(&st.BytesCompressed)
 	return st, nil
+}
+
+func dedupFileBytesOnDisk(kind DedupStorageKind, filePath, blobPath string, origSize, compSize int64) int64 {
+	switch kind {
+	case DedupKindCompressed, DedupKindDelta:
+		if compSize > 0 {
+			return compSize
+		}
+		if st, err := fileSize(blobPath); err == nil {
+			return st
+		}
+	case DedupKindBase, DedupKindFull:
+		if st, err := fileSize(filePath); err == nil {
+			return st
+		}
+		return origSize
+	}
+	return 0
 }
 
 func scanBuildDirs(rows *sql.Rows) ([]DedupBuildDir, error) {

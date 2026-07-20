@@ -43,8 +43,8 @@ func TestUIIndex(t *testing.T) {
 	if !contains(rec.Body.String(), "debuginfod-go") {
 		t.Fatal("expected HTML body")
 	}
-	if !contains(rec.Body.String(), "zstd + CAS") {
-		t.Fatal("expected zstd+CAS labels in UI")
+	if !contains(rec.Body.String(), "xdelta") {
+		t.Fatal("expected xdelta dedup labels in UI")
 	}
 }
 

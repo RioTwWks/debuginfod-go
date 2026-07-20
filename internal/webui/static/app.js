@@ -290,10 +290,10 @@
       scanRunsBody.innerHTML =
         '<tr><td colspan="8" class="muted">Ошибка загрузки</td></tr>';
       dedupRunsBody.innerHTML =
-        '<tr><td colspan="10" class="muted">Ошибка загрузки</td></tr>';
+        '<tr><td colspan="9" class="muted">Ошибка загрузки</td></tr>';
       if (dedupProjectsBody) {
         dedupProjectsBody.innerHTML =
-          '<tr><td colspan="8" class="muted">Ошибка загрузки</td></tr>';
+          '<tr><td colspan="9" class="muted">Ошибка загрузки</td></tr>';
       }
     }
   }
@@ -318,15 +318,16 @@
         '<div class="summary-item muted"><span>Хранение .debug выключено (DEBUGINFOD_DEDUP_ENABLED=false)</span></div>';
       if (dedupStatus) {
         dedupStatus.textContent =
-          "Включите DEBUGINFOD_DEDUP_ENABLED=true — zstd-сжатие каждого .debug и CAS-dedup по SHA256.";
+          "Включите DEBUGINFOD_DEDUP_ENABLED=true — ingest decompress-dwz + xdelta3 между build_* (см. docs/QUIK_DEDUP.md).";
       }
     } else {
       dedupSummary.innerHTML = [
         summaryItem(formatNumber(t.files_done), "файлов обработано"),
-        summaryItem(formatNumber(t.files_compressed), "zstd-сжато"),
-        summaryItem(formatNumber(t.files_cas_ref), "CAS-ссылок"),
+        summaryItem(formatNumber(t.files_base), "base"),
+        summaryItem(formatNumber(t.files_delta), "delta"),
+        summaryItem(formatNumber(t.files_full), "singleton"),
         summaryItem(formatBytes(t.bytes_original), "исходный объём"),
-        summaryItem(formatBytes(t.bytes_on_disk), "blob на диске"),
+        summaryItem(formatBytes(t.bytes_on_disk), "на диске"),
         summaryItem(formatBytes(t.bytes_saved) + " (" + savedPct + ")", "экономия"),
       ].join("");
       if (dedupStatus) dedupStatus.textContent = "";
@@ -358,10 +359,10 @@
 
     if (!dedupEnabled) {
       dedupRunsBody.innerHTML =
-        '<tr><td colspan="10" class="muted">Хранение .debug выключено</td></tr>';
+        '<tr><td colspan="9" class="muted">Хранение .debug выключено</td></tr>';
     } else if (!data.dedup_runs || data.dedup_runs.length === 0) {
       dedupRunsBody.innerHTML =
-        '<tr><td colspan="10" class="muted">Нет записей (ожидается после scan с build_* и DEBUGINFOD_DEDUP_ENABLED=true)</td></tr>';
+        '<tr><td colspan="9" class="muted">Нет записей (ожидается после scan с build_* и DEBUGINFOD_DEDUP_ENABLED=true)</td></tr>';
     } else {
       dedupRunsBody.innerHTML = data.dedup_runs
         .map(function (r) {
@@ -372,16 +373,15 @@
                 (r.saved_percent || 0).toFixed(1) +
                 "%)"
               : "—";
-          const zstdCount = r.files_compressed || 0;
-          const casCount = r.files_dedup_ref || 0;
+          const deltaCount = r.files_compressed || 0;
+          const groupCount = r.files_skipped || 0;
           return (
             "<tr>" +
             "<td>" + escapeHtml(formatDate(r.finished_at)) + "</td>" +
             "<td>" + escapeHtml(formatMs(r.duration_ms)) + "</td>" +
             "<td>" + escapeHtml(r.project || "все") + "</td>" +
-            "<td>" + formatNumber(zstdCount) + "</td>" +
-            "<td>" + formatNumber(casCount) + "</td>" +
-            "<td>" + formatNumber(r.files_skipped) + "</td>" +
+            "<td>" + formatNumber(deltaCount) + "</td>" +
+            "<td>" + formatNumber(groupCount) + "</td>" +
             "<td>" + formatNumber(r.errors) + "</td>" +
             "<td>" + formatBytes(r.bytes_before) + "</td>" +
             "<td>" + formatBytes(r.bytes_after) + "</td>" +
@@ -397,7 +397,7 @@
     if (!dedupProjectsBody) return;
     if (!dedupEnabled) {
       dedupProjectsBody.innerHTML =
-        '<tr><td colspan="8" class="muted">Хранение .debug выключено</td></tr>';
+        '<tr><td colspan="9" class="muted">Хранение .debug выключено</td></tr>';
       return;
     }
     const rows = (data.dedup_by_project || []).slice().sort(function (a, b) {
@@ -405,7 +405,7 @@
     });
     if (!rows.length) {
       dedupProjectsBody.innerHTML =
-        '<tr><td colspan="8" class="muted">Нет данных (ожидается после scan с каталогами build_*)</td></tr>';
+        '<tr><td colspan="9" class="muted">Нет данных (ожидается после scan с каталогами build_*)</td></tr>';
       return;
     }
     dedupProjectsBody.innerHTML = rows
@@ -422,8 +422,9 @@
           '<td class="mono">' + escapeHtml(r.project) + "</td>" +
           "<td>" + formatNumber(r.build_dirs) + "</td>" +
           "<td>" + formatNumber(r.files_done) + "</td>" +
-          "<td>" + formatNumber(r.files_compressed) + "</td>" +
-          "<td>" + formatNumber(r.files_cas_ref) + "</td>" +
+          "<td>" + formatNumber(r.files_base) + "</td>" +
+          "<td>" + formatNumber(r.files_delta) + "</td>" +
+          "<td>" + formatNumber(r.files_full) + "</td>" +
           "<td>" + formatBytes(r.bytes_original) + "</td>" +
           "<td>" + formatBytes(r.bytes_on_disk) + "</td>" +
           "<td>" + saved + "</td>" +
