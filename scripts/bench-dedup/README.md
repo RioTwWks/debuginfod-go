@@ -12,7 +12,8 @@
 | Предобработка | `none`, `dwz` (до создания дельт) |
 | Пост-сжатие base | `--post-compress-base` → `objcopy --compress-debug-sections=zstd` **после** дельт |
 
-**Группировка (Strategy A):** `(project, file_stem, version, commit_tag)` — base = файл с минимальным build number.
+**Группировка (Strategy A):** по умолчанию `(project, file_stem)` — как production dedup.  
+Опционально `--group-by stem-version` или `strategy-a` (включает `commit_tag`; часто даёт 0 групп, если в `.comment` уникальные JIRA-теги).
 
 **Метрики:** суммарный размер до/после, % экономии, время encode/decode, SHA256 после восстановления.
 
@@ -73,14 +74,21 @@ $SCAN_PATH/Released/QuikServer_16.0_Common_Linux/build_2_.../*.debug
 ...
 ```
 
-### 2.2 Просмотр групп (без бенчмарка)
+### 2.2 Просмотр файлов и групп
 
 ```bash
+# все .debug с метаданными (stem, version, commit_tag)
+./bench-dedup list-files --scan-path "$SCAN_PATH" --project "$PROJECT" | head
+
+# группы для диффа (по умолчанию --group-by stem)
 ./bench-dedup list-groups \
   --scan-path "$SCAN_PATH" \
   --project "Released/QuikServer_16.0_Common_Linux" \
   --min-files 2
 ```
+
+Если `groups=0` при `files>0`, в stderr будет диагностика:
+`singletons=72` → слишком строгая группировка. Используйте `--group-by stem` (default с этой версии).
 
 Проверьте:
 
@@ -275,12 +283,15 @@ readelf -S file.debug | head -20
 ```bash
 ./bench-dedup check-tools [--xdelta3 PATH] [--bsdiff PATH] ...
 
-./bench-dedup list-groups --scan-path PATH [--project P] [--min-files N]
+./bench-dedup list-groups --scan-path PATH [--project P] [--group-by stem|stem-version|strategy-a] [--min-files N]
+
+./bench-dedup list-files --scan-path PATH [--project P] [--max-files N]
 
 ./bench-dedup \
   --scan-path PATH \
   --workdir DIR \
   [--project P] \
+  [--group-by stem] \
   [--algos xdelta3,bsdiff,hdiffpatch] \
   [--preprocess none,dwz] \
   [--post-compress-base] \
