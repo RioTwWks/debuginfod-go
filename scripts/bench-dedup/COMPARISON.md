@@ -131,9 +131,24 @@ mkdir -p "$WORKDIR"
   --format json --output "$WORKDIR/03-xdelta-objcopy-base.json"
 ```
 
-## Итоговая рекомендация (предварительно)
+## Итоговая матрица (2026-07-20, 72 файла, group-by stem)
 
-1. **Production:** `xdelta3` + группировка `stem` (~20% на ваших данных)
-2. **dwz:** только `decompress-dwz` в бенчмарке; для prod — build-time
-3. **bsdiff:** не использовать (verify failures)
-4. **git commit** в метаданных: полный SHA из `.comment`, не `16.0.0.1`
+| ID | savings | stored | encode | decode | verify | Вердикт |
+|----|---------|--------|--------|--------|--------|---------|
+| **xdelta3_decompress-dwz_objcopy** | **76.0%** | 139.6 MiB | 32 с | 4.8 с | 0 | **Максимум** |
+| bsdiff_decompress-dwz | 68.7% | 182.6 MiB | 417 с | — | **63** | Отпадает |
+| **xdelta3_decompress-dwz** | **55.1%** | 261.7 MiB | 33 с | 4.9 с | 0 | **Рекомендуется** |
+| xdelta3_none_objcopy | 18.4% | 475.9 MiB | 72 с | 1.5 с | 0 | Маргинально |
+| xdelta3_none | 17.2% | 482.4 MiB | 70 с | 1.5 с | 0 | Простой вариант |
+| bsdiff_none | 17.0% | 483.8 MiB | 732 с | — | **63** | Отпадает |
+| xdelta3_dwz / bsdiff_dwz | 0% | — | — | — | 9 err | Сжатый DWARF |
+| hdiffpatch_* | — | — | — | — | — | Не установлен |
+
+Базовый объём без dedup: **583.1 MiB**.
+
+## Итоговая рекомендация
+
+1. **Максимум (76%):** `decompress → dwz → xdelta3` + `objcopy zstd` на base
+2. **Баланс (55%):** `decompress → dwz → xdelta3` — проще restore для GDB
+3. **Минимум (17%):** `xdelta3` без preprocess
+4. **Не использовать:** bsdiff, dwz на сжатых файлах
