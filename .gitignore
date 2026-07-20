@@ -4,6 +4,7 @@
 # Binaries for programs and plugins
 debuginfod
 debuginfod-find
+bench-dedup
 *.exe
 *.exe~
 *.dll

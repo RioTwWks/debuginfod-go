@@ -67,12 +67,15 @@ X-Admin-Token: <DEBUGINFOD_ADMIN_KEY>
 
 ```bash
 DEBUGINFOD_DEDUP_ENABLED=true
+DEBUGINFOD_DEDUP_WORKERS=4
 DEBUGINFOD_DEDUP_STRATEGY=xdelta-decompress-dwz   # или xdelta (без dwz)
 DEBUGINFOD_DEDUP_COMPRESS_BASE=true               # objcopy zstd на base
 DEBUGINFOD_XDELTA_PATH=xdelta3
 DEBUGINFOD_DWZ_PATH=dwz
 DEBUGINFOD_OBJCOPY_PATH=objcopy
 ```
+
+Группы `(project, file_stem)` обрабатываются параллельно (`DEBUGINFOD_DEDUP_WORKERS`).
 
 Зависимости: `xdelta3`, `dwz`, `binutils` (`objcopy`).
 

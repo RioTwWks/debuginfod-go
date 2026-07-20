@@ -212,6 +212,7 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 - [x] **Порядок шагов** — `decompress-dwz` до xdelta; objcopy zstd после дельт
 - [x] **Ожидаемая экономия** — 55% без zstd base, 76% с zstd base (bench 2026-07)
 - [x] **objcopy zstd после дельт** — `DEBUGINFOD_DEDUP_COMPRESS_BASE=true`
+- [x] **Параллельный dedup ingest** — `DEBUGINFOD_DEDUP_WORKERS` (группы file_stem в worker pool)
 
 #### Стратегия C — «гибрид diff + секционный CAS» (рекомендация ассистента)
 
@@ -223,7 +224,8 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
   - diff по отдельным секциям (`.debug_str`, `.debug_abbrev`, `.debug_info`, …) с выбором base по min build number
 - [ ] **Секционный zstd/CAS** — CAS только для байт-идентичных секций между сборками; zstd на уникальные куски
 - [ ] **dwz -m (multifile)** — оптимизация на уровне каталога продукта перед секционным разбором
-- [ ] **Интеграция в Go** — [x] xdelta-decompress-dwz в `internal/dedup`; секционный CAS (Strategy C) отложен
+- [x] **Интеграция в Go** — xdelta-decompress-dwz в `internal/dedup`, параллельные воркеры `DEBUGINFOD_DEDUP_WORKERS`
+- [ ] **Секционный CAS (Strategy C)** — отложен
 
 #### Build-time (отложено, решение за эксплуатацией Quik)
 

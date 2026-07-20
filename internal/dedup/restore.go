@@ -101,7 +101,7 @@ func restoreZstdBlob(store *storage.Storage, cacheDir, filePath string, df stora
 			return "", err
 		}
 		if got != df.SHA256 {
-			os.Remove(outPath)
+			_ = os.Remove(outPath)
 			return "", fmt.Errorf("restored sha256 mismatch")
 		}
 	}
@@ -166,7 +166,7 @@ func restoreDelta(store *storage.Storage, opts RestoreOptions, cacheDir, filePat
 			return "", err
 		}
 		if got != df.SHA256 {
-			os.Remove(outPath)
+			_ = os.Remove(outPath)
 			return "", fmt.Errorf("restored sha256 mismatch")
 		}
 	}

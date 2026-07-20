@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/your-username/debuginfod-go/internal/dedup"
 )
 
 // DiffAlgo — интерфейс дифференциального сжатия (внешний CLI).
@@ -15,47 +17,20 @@ type DiffAlgo interface {
 	Decode(basePath, patchPath, outPath string) error
 }
 
-// Xdelta3 — обёртка xdelta3.
-type Xdelta3 struct {
-	Bin string
+type xdeltaAlgo struct {
+	x *dedup.Xdelta
 }
 
-func NewXdelta3(bin string) *Xdelta3 {
-	if bin == "" {
-		bin = "xdelta3"
-	}
-	return &Xdelta3{Bin: bin}
+func (x *xdeltaAlgo) Name() string { return "xdelta3" }
+
+func (x *xdeltaAlgo) Available() bool { return x.x.Available() }
+
+func (x *xdeltaAlgo) Encode(basePath, targetPath, patchPath string) error {
+	return x.x.Encode(basePath, targetPath, patchPath)
 }
 
-func (x *Xdelta3) Name() string { return "xdelta3" }
-
-func (x *Xdelta3) Available() bool {
-	_, err := exec.LookPath(x.Bin)
-	return err == nil
-}
-
-func (x *Xdelta3) Encode(basePath, targetPath, patchPath string) error {
-	if err := ensureDir(filepath.Dir(patchPath)); err != nil {
-		return err
-	}
-	cmd := exec.Command(x.Bin, "-e", "-s", basePath, targetPath, patchPath)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("xdelta3 encode: %w: %s", err, trimOutput(out))
-	}
-	return nil
-}
-
-func (x *Xdelta3) Decode(basePath, patchPath, outPath string) error {
-	if err := ensureDir(filepath.Dir(outPath)); err != nil {
-		return err
-	}
-	cmd := exec.Command(x.Bin, "-d", "-s", basePath, patchPath, outPath)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("xdelta3 decode: %w: %s", err, trimOutput(out))
-	}
-	return nil
+func (x *xdeltaAlgo) Decode(basePath, patchPath, outPath string) error {
+	return x.x.Decode(basePath, patchPath, outPath)
 }
 
 // Bsdiff — обёртка bsdiff/bspatch.
@@ -161,7 +136,7 @@ func ResolveAlgos(names []string, paths ToolPaths) []DiffAlgo {
 	for _, name := range names {
 		switch name {
 		case "xdelta3", "xdelta":
-			out = append(out, NewXdelta3(paths.Xdelta3))
+			out = append(out, &xdeltaAlgo{x: dedup.NewXdelta(paths.Xdelta3)})
 		case "bsdiff":
 			out = append(out, NewBsdiff(paths.Bsdiff, paths.Bspatch))
 		case "hdiff", "hdiffpatch":
@@ -185,7 +160,7 @@ type ToolPaths struct {
 // CheckTools возвращает отчёт о доступности утилит.
 func CheckTools(paths ToolPaths) map[string]bool {
 	algos := []DiffAlgo{
-		NewXdelta3(paths.Xdelta3),
+		&xdeltaAlgo{x: dedup.NewXdelta(paths.Xdelta3)},
 		NewBsdiff(paths.Bsdiff, paths.Bspatch),
 		NewHDiffPatch(paths.Hdiffz, paths.Hpatchz),
 	}

@@ -118,13 +118,44 @@ func DecompressDebugSections(objcopy, srcPath, dstPath string) error {
 	return nil
 }
 
+// DwzPreprocessor — dwz in-place (без предварительной распаковки секций).
+type DwzPreprocessor struct {
+	Bin string
+}
+
+// NewDwzPreprocessor создаёт dwz-препроцессор (для bench/fallback).
+func NewDwzPreprocessor(dwz string) *DwzPreprocessor {
+	if dwz == "" {
+		dwz = "dwz"
+	}
+	return &DwzPreprocessor{Bin: dwz}
+}
+
+func (d *DwzPreprocessor) Name() string { return "dwz" }
+
+func (d *DwzPreprocessor) Available() bool {
+	_, err := exec.LookPath(d.Bin)
+	return err == nil
+}
+
+func (d *DwzPreprocessor) ApplyInPlace(path string) error {
+	cmd := exec.Command(d.Bin, path)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("dwz %s: %w: %s", path, err, trimOutput(out))
+	}
+	return nil
+}
+
 // ResolvePreprocessor по имени стратегии.
 func ResolvePreprocessor(strategy string, paths ToolPaths) Preprocessor {
 	switch strategy {
-	case "", "xdelta-decompress-dwz", "decompress-dwz":
-		return NewDecompressDwzPreprocessor(paths)
 	case "xdelta", "none":
 		return NoPreprocessor{}
+	case "dwz":
+		return NewDwzPreprocessor(paths.Dwz)
+	case "", "xdelta-decompress-dwz", "decompress-dwz":
+		return NewDecompressDwzPreprocessor(paths)
 	default:
 		return NewDecompressDwzPreprocessor(paths)
 	}

@@ -28,6 +28,8 @@
     "vet": "go vet ./...",
     "build": "make build",
     "build-find": "make build-find",
+    "build-bench-dedup": "make build-bench-dedup",
+    "lint": "make lint",
     "run": "make run-env",
     "health": "curl -sf http://localhost:8002/healthz",
     "ui": "curl -sf http://localhost:8002/ui/ | head -20",
@@ -50,6 +52,8 @@
     "Документация: README.md, DEVELOPMENT.md, TODO.md, deploy/zabbix/README.md",
     "Конфиг: .env.example + internal/config/config.go",
     "Roadmap: TODO.md — отмечать [x] при завершении задач",
+    "Quik dedup: internal/dedup (xdelta-decompress-dwz), bench: cmd/bench-dedup",
+    "Dedup docs: docs/QUIK_DEDUP.md, docs/DEDUP_STRATEGY_COMPARISON.md",
     "Examples: examples/ — docker-compose + GDB demo (make demo)",
     "Deploy: deploy/OPERATIONS.md, deploy/ansible, deploy/nginx",
   ]
