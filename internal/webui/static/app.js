@@ -120,6 +120,16 @@
     }
   }
 
+  function clearSearchResults(message) {
+    nextOffset = 0;
+    lastSearchValue = "";
+    searchStatus.textContent = message || "";
+    searchStatus.classList.remove("error");
+    resultsTable.hidden = true;
+    resultsBody.innerHTML = "";
+    loadMoreBtn.hidden = true;
+  }
+
   function setSearchMode(key) {
     searchKey = key;
     nextOffset = 0;
@@ -131,8 +141,15 @@
     searchInput.placeholder = placeholders[key] || "";
     searchHint.textContent = hints[key] || "";
     searchInput.value = "";
-    loadMoreBtn.hidden = true;
-    doSearch("", false);
+    if (key === "buildid") {
+      doSearch("", false);
+    } else {
+      clearSearchResults(
+        key === "glob"
+          ? "Введите шаблон пути (fnmatch) и нажмите «Найти»"
+          : "Введите абсолютный путь к файлу и нажмите «Найти»"
+      );
+    }
   }
 
   async function loadStats() {
@@ -459,6 +476,15 @@
   }
 
   async function doSearch(query, append) {
+    if (!append && searchKey !== "buildid" && !query) {
+      clearSearchResults(
+        searchKey === "glob"
+          ? "Введите шаблон пути (fnmatch) и нажмите «Найти»"
+          : "Введите абсолютный путь к файлу и нажмите «Найти»"
+      );
+      return;
+    }
+
     if (!append) {
       nextOffset = 0;
       lastSearchValue = query;
@@ -588,6 +614,9 @@
 
   let debounce;
   searchInput.addEventListener("input", function () {
+    if (searchKey !== "buildid") {
+      return;
+    }
     clearTimeout(debounce);
     debounce = setTimeout(function () {
       doSearch(searchInput.value.trim(), false);
