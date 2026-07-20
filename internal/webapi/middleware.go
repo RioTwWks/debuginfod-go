@@ -29,7 +29,7 @@ func (w *responseWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// MetricsMiddleware учитывает HTTP-метрики для Zabbix.
+// MetricsMiddleware учитывает HTTP-метрики для Zabbix (без Web UI).
 func MetricsMiddleware(collector *metrics.Collector, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rw := &responseWriter{ResponseWriter: w}
@@ -37,8 +37,15 @@ func MetricsMiddleware(collector *metrics.Collector, next http.Handler) http.Han
 		if rw.status == 0 {
 			rw.status = http.StatusOK
 		}
-		collector.RecordHTTP(rw.status, rw.bytes)
+		if shouldRecordHTTPMetric(r.URL.Path) {
+			collector.RecordHTTP(rw.status, rw.bytes)
+		}
 	})
+}
+
+// shouldRecordHTTPMetric возвращает false для /ui/* — polling дашборда не должен раздувать счётчик API.
+func shouldRecordHTTPMetric(path string) bool {
+	return path != "/ui" && !strings.HasPrefix(path, "/ui/")
 }
 
 type gzipResponseWriter struct {

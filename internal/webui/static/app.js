@@ -191,7 +191,7 @@
         value: formatBytes(data.index_bytes_on_disk || 0),
       },
       { label: dedupLabel, value: dedupValue, highlight: !!data.dedup_enabled },
-      { label: "HTTP запросов", value: data.http_requests_total },
+      { label: "HTTP запросов (API)", value: data.http_requests_total },
       { label: "Кэш", value: formatBytes(data.cache_bytes) },
     ];
 

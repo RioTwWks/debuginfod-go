@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -13,7 +12,8 @@ import (
 	"github.com/your-username/debuginfod-go/pkg/elfcomment"
 )
 
-// Discover рекурсивно ищет каталоги build_* под scan roots и регистрирует .debug в БД.
+// Discover рекурсивно ищет каталоги build_* под scan roots и регистрирует .debug в БД
+// (включая вложенные подпапки внутри build_*).
 // Имя «проекта» — относительный путь от scan root до родителя build_* (например Released/QuikServer_16.0).
 // projectFilter пустой — все найденные папки; иначе только точное совпадение пути проекта.
 func Discover(store *storage.Storage, scanRoots []string, projectFilter []string) (int, error) {
@@ -116,43 +116,43 @@ func matchesProjectFilter(projectName string, allowed map[string]struct{}) bool 
 }
 
 func registerDebugFiles(store *storage.Storage, buildDirID int64, dirPath string) (int, error) {
-	entries, err := os.ReadDir(dirPath)
-	if err != nil {
-		return 0, err
-	}
 	count := 0
-	for _, ent := range entries {
-		if ent.IsDir() {
-			continue
+	err := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			slog.Debug("dedup walk build dir", "path", path, "err", walkErr)
+			return nil
 		}
-		name := ent.Name()
-		if !strings.HasSuffix(strings.ToLower(name), ".debug") {
-			continue
+		if d.IsDir() {
+			if path != dirPath && strings.HasPrefix(d.Name(), "build_") {
+				return filepath.SkipDir
+			}
+			return nil
 		}
-		if strings.HasSuffix(strings.ToLower(name), ".xdelta") {
-			continue
+		name := d.Name()
+		lower := strings.ToLower(name)
+		if !strings.HasSuffix(lower, ".debug") {
+			return nil
 		}
-		if strings.HasSuffix(strings.ToLower(name), ".zst") {
-			continue
+		if strings.HasSuffix(lower, ".xdelta") || strings.HasSuffix(lower, ".zst") {
+			return nil
 		}
-		fullPath := filepath.Join(dirPath, name)
-		info, err := ent.Info()
+		info, err := d.Info()
 		if err != nil {
-			continue
+			return nil
 		}
 		meta, err := debugfilename.MetadataFromName(name)
 		if err != nil {
-			slog.Debug("dedup skip file", "path", fullPath, "err", err)
-			continue
+			slog.Debug("dedup skip file", "path", path, "err", err)
+			return nil
 		}
-		tag, err := elfcomment.FromPath(fullPath)
+		tag, err := elfcomment.FromPath(path)
 		if err != nil {
-			slog.Debug("dedup no commit tag", "path", fullPath, "err", err)
+			slog.Debug("dedup no commit tag", "path", path, "err", err)
 			tag = ""
 		}
 		_, err = store.UpsertDedupFile(storage.DedupFile{
 			BuildDirID:   buildDirID,
-			FilePath:     fullPath,
+			FilePath:     path,
 			Filename:     meta.Filename,
 			FileStem:     meta.Stem,
 			Version:      meta.Version,
@@ -161,11 +161,12 @@ func registerDebugFiles(store *storage.Storage, buildDirID int64, dirPath string
 			OriginalSize: info.Size(),
 		})
 		if err != nil {
-			return count, err
+			return err
 		}
 		count++
-	}
-	return count, nil
+		return nil
+	})
+	return count, err
 }
 
 // GroupKey возвращает ключ группировки (метаданные; на pipeline не влияет).

@@ -140,6 +140,49 @@ func TestDiscoverQuikHyphenFilename(t *testing.T) {
 	}
 }
 
+func TestDiscoverNestedDebugInSubdirs(t *testing.T) {
+	root := t.TempDir()
+	buildDir := filepath.Join(root, "Released", "Qt_Library", "qt", "build_1_2026-01-01")
+	nested := filepath.Join(buildDir, "lib", "x86_64", "release")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	debugPath := filepath.Join(nested, "libQt5Core.so.5.15.2.100.debug")
+	if err := os.WriteFile(debugPath, []byte("fake-debug"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := storage.New(filepath.Join(t.TempDir(), "nested.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	n, err := Discover(store, []string{root}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("registered=%d want 1", n)
+	}
+
+	got, err := store.GetDedupFileByPath(debugPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FilePath != debugPath {
+		t.Fatalf("path=%q", got.FilePath)
+	}
+
+	projects, err := store.ListDedupProjectNames()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projects) != 1 || projects[0] != "Released/Qt_Library/qt" {
+		t.Fatalf("projects=%v", projects)
+	}
+}
+
 func TestProjectNameForBuildDir(t *testing.T) {
 	root := "/data/debug_linux"
 	build := "/data/debug_linux/Released/Quik/build_1_2026-01-01"
