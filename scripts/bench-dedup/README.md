@@ -280,12 +280,18 @@ readelf -S file.debug | head -20
 
 ---
 
+Полная сводка сравнения подходов: [COMPARISON.md](./COMPARISON.md).
+
 ## Справка по CLI
 
 ```bash
 ./bench-dedup check-tools [--xdelta3 PATH] [--bsdiff PATH] ...
 
 ./bench-dedup list-groups --scan-path PATH [--project P] [--group-by stem|stem-version|strategy-a] [--min-files N]
+
+./bench-dedup run-matrix --scan-path PATH --workdir DIR [--project P] [--extended] [--output BASE]
+
+./bench-dedup inspect-file --path FILE [--format text|json]
 
 ./bench-dedup list-files --scan-path PATH [--project P] [--max-files N]
 
@@ -295,7 +301,7 @@ readelf -S file.debug | head -20
   [--project P] \
   [--group-by stem] \
   [--algos xdelta3,bsdiff,hdiffpatch] \
-  [--preprocess none,dwz] \
+  [--preprocess none,dwz,decompress-dwz] \
   [--post-compress-base] \
   [--max-groups N] [--max-files N] \
   [--keep-workdir] \

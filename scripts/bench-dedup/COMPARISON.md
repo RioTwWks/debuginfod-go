@@ -54,7 +54,59 @@ dwz: Found compressed .debug_aranges section, not attempting dwz compression
 | `decompress-dwz` | `objcopy --decompress-debug-sections` → `dwz` → diff (эксперимент) |
 | build-time dwz | До сжатия секций в CI — вне scope server-side |
 
-## Рекомендуемая матрица прогонов
+## Полная матрица (все стратегии)
+
+Один прогон **11 сценариев** (3 algo × 3 preprocess + 2 objcopy) или **15** с `--extended`:
+
+```bash
+export SCAN_PATH=/home/ieme/debug_linux
+export PROJECT="Released/QuikServer_16.0_Common_Linux"
+export WORKDIR=/tmp/bench-dedup-matrix-$(date +%Y%m%d)
+
+# Базовая матрица (~30–60 мин, bsdiff медленный)
+./scripts/bench-dedup/run-full-matrix.sh
+
+# + сравнение group-by stem-version / strategy-a (4 доп. сценария)
+EXTENDED=1 ./scripts/bench-dedup/run-full-matrix.sh
+```
+
+Или напрямую:
+
+```bash
+./bench-dedup run-matrix \
+  --scan-path "$SCAN_PATH" \
+  --project "$PROJECT" \
+  --workdir "$WORKDIR" \
+  --output "$WORKDIR/matrix"
+# → matrix.json, matrix.csv, matrix.txt
+```
+
+### Сценарии DefaultMatrix (11)
+
+| ID | algo | preprocess | post-zstd |
+|----|------|------------|-----------|
+| xdelta3_none | xdelta3 | none | — |
+| xdelta3_dwz | xdelta3 | dwz | — |
+| xdelta3_decompress-dwz | xdelta3 | decompress-dwz | — |
+| bsdiff_none | bsdiff | none | — |
+| bsdiff_dwz | bsdiff | dwz | — |
+| bsdiff_decompress-dwz | bsdiff | decompress-dwz | — |
+| hdiffpatch_none | hdiffpatch | none | — |
+| hdiffpatch_dwz | hdiffpatch | dwz | — |
+| hdiffpatch_decompress-dwz | hdiffpatch | decompress-dwz | — |
+| xdelta3_none_objcopy | xdelta3 | none | base |
+| xdelta3_decompress-dwz_objcopy | xdelta3 | decompress-dwz | base |
+
+### Extended (+4): xdelta3 по режимам группировки
+
+- `xdelta3_none_stem-version`
+- `xdelta3_none_strategy-a`
+- `xdelta3_decompress-dwz_stem-version`
+- `xdelta3_decompress-dwz_strategy-a`
+
+**Вне scope bench-dedup:** Strategy C (секционный CAS), zstd whole-file CAS, debuginfod path interning.
+
+## Рекомендуемая матрица прогонов (ручные отдельные тесты)
 
 ```bash
 export WORKDIR=/tmp/bench-dedup-final
