@@ -167,12 +167,30 @@
   function renderStats(data) {
     uptimeEl.textContent = "uptime " + formatDuration(data.uptime_seconds);
 
+    let dedupValue;
+    let dedupLabel = "Экономия dedup";
+    if (data.dedup_enabled) {
+      const pct =
+        data.dedup_saved_percent > 0
+          ? " (" + data.dedup_saved_percent.toFixed(1) + "%)"
+          : "";
+      dedupValue = formatBytes(data.dedup_bytes_saved || 0) + pct;
+    } else {
+      dedupValue = "выключено";
+      dedupLabel = "Экономия dedup (DEBUGINFOD_DEDUP_ENABLED=false)";
+    }
+
     const cards = [
       { label: "Артефакты", value: data.artifacts_total, highlight: true },
       { label: "Executable", value: data.artifacts_executable },
       { label: "Debuginfo", value: data.artifacts_debuginfo },
       { label: "Исходники", value: data.sources_total },
       { label: "Просканировано файлов", value: data.scanned_files_total },
+      {
+        label: "Объём индекса",
+        value: formatBytes(data.index_bytes_on_disk || 0),
+      },
+      { label: dedupLabel, value: dedupValue, highlight: !!data.dedup_enabled },
       { label: "HTTP запросов", value: data.http_requests_total },
       { label: "Кэш", value: formatBytes(data.cache_bytes) },
     ];
@@ -198,7 +216,8 @@
       "<span class='scan-item'><strong>" +
         formatNumber(data.last_scan_indexed) +
         "</strong> <span>проиндексировано</span></span>",
-      "<span class='scan-item'><strong>" +
+      "<span class='scan-item' title='Файлы без изменений (mtime/size) с прошлого scan, а также ELF без build-id'>" +
+        "<strong>" +
         formatNumber(data.last_scan_skipped) +
         "</strong> <span>пропущено</span></span>",
       "<span class='scan-item'><strong>" +

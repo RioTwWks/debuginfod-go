@@ -70,6 +70,9 @@ func TestUIStats(t *testing.T) {
 	if payload.ArtifactsTotal != 1 {
 		t.Fatalf("artifacts_total=%d", payload.ArtifactsTotal)
 	}
+	if payload.DedupEnabled {
+		t.Fatal("expected dedup_enabled=false by default")
+	}
 }
 
 func TestUISearch(t *testing.T) {
