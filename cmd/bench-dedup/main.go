@@ -2,6 +2,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -23,6 +24,9 @@ func main() {
 			return
 		case "list-files":
 			runListFiles(os.Args[2:])
+			return
+		case "inspect-file":
+			runInspectFile(os.Args[2:])
 			return
 		}
 	}
@@ -90,12 +94,45 @@ func runListFiles(args []string) {
 		files = files[:*maxFiles]
 	}
 
-	fmt.Printf("path\tstem\tversion\tbuild_num\tcommit_tag\tbytes\n")
+	fmt.Printf("path\tstem\tversion\tbuild_num\tgit_commit\tbytes\n")
 	for _, f := range files {
 		fmt.Printf("%s\t%s\t%s\t%d\t%s\t%d\n",
 			f.Path, f.FileStem, f.Version, f.FileBuildNum, f.CommitTag, f.Size)
 	}
 	fmt.Fprintf(os.Stderr, "\nTOTAL files=%d\n", len(files))
+}
+
+func runInspectFile(args []string) {
+	fs := flag.NewFlagSet("inspect-file", flag.ExitOnError)
+	path := fs.String("path", "", "путь к .debug")
+	format := fs.String("format", "text", "text|json")
+	parseFlags(fs, args)
+	if *path == "" {
+		fatal("укажите --path")
+	}
+	info, err := benchdedup.InspectFile(*path)
+	if err != nil {
+		fatal(err.Error())
+	}
+	if strings.ToLower(*format) == "json" {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(info); err != nil {
+			fatal(err.Error())
+		}
+		return
+	}
+	fmt.Printf("path: %s\n", info.Path)
+	fmt.Printf("size: %s (%d)\n", benchdedup.FormatBytes(info.Size), info.Size)
+	fmt.Printf("git_commit: %s\n", info.GitCommit)
+	fmt.Printf("dwz: %s\n", info.DwzNote)
+	if len(info.CompressedSections) > 0 {
+		fmt.Printf("compressed_debug_sections: %s\n", strings.Join(info.CompressedSections, ", "))
+	}
+	fmt.Println(".comment:")
+	for _, line := range info.CommentLines {
+		fmt.Printf("  %s\n", line)
+	}
 }
 
 func runListGroups(args []string) {
@@ -155,7 +192,7 @@ func runBenchmark(args []string) {
 	scanPath, project, groupBy := bindCollectFlags(fs)
 	workdir := fs.String("workdir", "", "временный каталог (обязателен)")
 	algos := fs.String("algos", "xdelta3,bsdiff,hdiffpatch", "алгоритмы через запятую")
-	preprocess := fs.String("preprocess", "none,dwz", "препроцессоры: none,dwz")
+	preprocess := fs.String("preprocess", "none,dwz,decompress-dwz", "препроцессоры: none,dwz,decompress-dwz")
 	postCompress := fs.Bool("post-compress-base", false, "objcopy --compress-debug-sections=zstd на base после дельт")
 	minFiles := fs.Int("min-files", 2, "минимум файлов в группе")
 	maxGroups := fs.Int("max-groups", 0, "лимит групп (0 = все)")

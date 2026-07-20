@@ -77,8 +77,11 @@ $SCAN_PATH/Released/QuikServer_16.0_Common_Linux/build_2_.../*.debug
 ### 2.2 Просмотр файлов и групп
 
 ```bash
-# все .debug с метаданными (stem, version, commit_tag)
+# все .debug с метаданными (stem, version, git_commit)
 ./bench-dedup list-files --scan-path "$SCAN_PATH" --project "$PROJECT" | head
+
+# диагностика одного файла (.comment, SHA, сжатые секции, dwz)
+./bench-dedup inspect-file --path "$FILE"
 
 # группы для диффа (по умолчанию --group-by stem)
 ./bench-dedup list-groups \

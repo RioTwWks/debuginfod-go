@@ -60,6 +60,48 @@ func (d *DwzPreprocessor) Prepare(workDir, src string) (string, error) {
 	return dst, nil
 }
 
+// DecompressDwzPreprocessor — objcopy --decompress-debug-sections, затем dwz.
+type DecompressDwzPreprocessor struct {
+	Dwz     string
+	Objcopy string
+}
+
+func NewDecompressDwzPreprocessor(dwz, objcopy string) *DecompressDwzPreprocessor {
+	if dwz == "" {
+		dwz = "dwz"
+	}
+	if objcopy == "" {
+		objcopy = "objcopy"
+	}
+	return &DecompressDwzPreprocessor{Dwz: dwz, Objcopy: objcopy}
+}
+
+func (d *DecompressDwzPreprocessor) Name() string { return "decompress-dwz" }
+
+func (d *DecompressDwzPreprocessor) Available() bool {
+	_, err1 := exec.LookPath(d.Dwz)
+	_, err2 := exec.LookPath(d.Objcopy)
+	return err1 == nil && err2 == nil
+}
+
+func (d *DecompressDwzPreprocessor) Prepare(workDir, src string) (string, error) {
+	dst := filepath.Join(workDir, filepath.Base(src))
+	if err := copyFile(src, dst); err != nil {
+		return "", err
+	}
+	decompress := exec.Command(d.Objcopy, "--decompress-debug-sections", dst)
+	out, err := decompress.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("objcopy decompress %s: %w: %s", dst, err, trimOutput(out))
+	}
+	cmd := exec.Command(d.Dwz, dst)
+	out, err = cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("dwz %s: %w: %s", dst, err, trimOutput(out))
+	}
+	return dst, nil
+}
+
 // ObjcopyZstdPost — сжатие debug-секций ПОСЛЕ дельт (отдельный эксперимент).
 type ObjcopyZstdPost struct {
 	Bin string
@@ -106,6 +148,8 @@ func ResolvePreprocessors(names []string, paths ToolPaths) []Preprocessor {
 			out = append(out, NoPreprocessor{})
 		case "dwz":
 			out = append(out, NewDwzPreprocessor(paths.Dwz))
+		case "decompress-dwz", "dwz-decompress":
+			out = append(out, NewDecompressDwzPreprocessor(paths.Dwz, paths.Objcopy))
 		}
 	}
 	if len(out) == 0 {
