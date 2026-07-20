@@ -3,7 +3,6 @@ package benchdedup
 import (
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -90,38 +89,39 @@ func collectUnderRoot(rootAbs string, allowed map[string]struct{}) ([]DebugFile,
 }
 
 func collectDebugFiles(projectName, dirPath string, dirNum int) ([]DebugFile, error) {
-	entries, err := os.ReadDir(dirPath)
-	if err != nil {
-		return nil, err
-	}
 	var out []DebugFile
-	for _, ent := range entries {
-		if ent.IsDir() {
-			continue
+	err := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
 		}
-		name := ent.Name()
+		if d.IsDir() {
+			if path != dirPath && strings.HasPrefix(d.Name(), "build_") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		name := d.Name()
 		lower := strings.ToLower(name)
 		if !strings.HasSuffix(lower, ".debug") {
-			continue
+			return nil
 		}
 		if strings.HasSuffix(lower, ".xdelta") || strings.HasSuffix(lower, ".zst") {
-			continue
+			return nil
 		}
-		fullPath := filepath.Join(dirPath, name)
-		info, err := ent.Info()
+		info, err := d.Info()
 		if err != nil {
-			continue
+			return nil
 		}
 		meta, err := debugfilename.MetadataFromName(name)
 		if err != nil {
-			continue
+			return nil
 		}
-		tag := elfcomment.FromPathOrEmpty(fullPath)
+		tag := elfcomment.FromPathOrEmpty(path)
 		out = append(out, DebugFile{
 			Project:      projectName,
 			BuildDir:     dirPath,
 			BuildDirNum:  dirNum,
-			Path:         fullPath,
+			Path:         path,
 			Filename:     meta.Filename,
 			FileStem:     meta.Stem,
 			Version:      meta.Version,
@@ -129,8 +129,9 @@ func collectDebugFiles(projectName, dirPath string, dirNum int) ([]DebugFile, er
 			CommitTag:    tag,
 			Size:         info.Size(),
 		})
-	}
-	return out, nil
+		return nil
+	})
+	return out, err
 }
 
 func projectNameForBuildDir(scanRoot, buildDirPath string) string {
