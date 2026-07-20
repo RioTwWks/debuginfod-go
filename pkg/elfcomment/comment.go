@@ -18,6 +18,9 @@ var fullCommitLineRe = regexp.MustCompile(`^[0-9a-f]{40}$`)
 // shortCommitLineRe — строка целиком = short SHA (7–39 hex).
 var shortCommitLineRe = regexp.MustCompile(`^[0-9a-f]{7,39}$`)
 
+// productVersionRe — версия продукта M.m.p.BUILD (не git).
+var productVersionRe = regexp.MustCompile(`^\d+\.\d+\.\d+\.\d+$`)
+
 // gitTagRe — явные git-теги release-* (не версия продукта M.m.p.BUILD).
 var gitTagRe = regexp.MustCompile(`^(?:v?\d+\.\d+\.\d+(?:[-+][\w.-]+)?|release[-_][\w.-]+)$`)
 
@@ -117,10 +120,7 @@ func isNoiseLine(line string) bool {
 		}
 	}
 	// Версия продукта M.m.p.BUILD без префикса — не git commit.
-	if regexp.MustCompile(`^\d+\.\d+\.\d+\.\d+$`).MatchString(line) {
-		return true
-	}
-	return false
+	return productVersionRe.MatchString(line)
 }
 
 func splitCommentLines(data []byte) []string {
