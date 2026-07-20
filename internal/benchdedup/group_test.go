@@ -11,7 +11,7 @@ func TestGroupByStrategyA(t *testing.T) {
 		{Project: "P", FileStem: "lib", Version: "1.0", CommitTag: "abc", FileBuildNum: 20, Size: 200},
 		{Project: "P", FileStem: "lib", Version: "1.0", CommitTag: "xyz", FileBuildNum: 5, Size: 50},
 	}
-	groups := GroupByStrategyA(files)
+	groups := GroupFiles(files, GroupModeStrategyA)
 	if len(groups) != 2 {
 		t.Fatalf("groups=%d want 2", len(groups))
 	}
@@ -24,6 +24,17 @@ func TestGroupByStrategyA(t *testing.T) {
 				t.Fatalf("sort order wrong: %+v", g.Files)
 			}
 		}
+	}
+}
+
+func TestGroupByStemIgnoresCommitTag(t *testing.T) {
+	files := []DebugFile{
+		{Project: "P", FileStem: "lib", Version: "1.0", CommitTag: "DEVOPS-1", FileBuildNum: 10},
+		{Project: "P", FileStem: "lib", Version: "1.0", CommitTag: "DEVOPS-2", FileBuildNum: 20},
+	}
+	groups := FilterGroups(GroupFiles(files, GroupModeStem), 2)
+	if len(groups) != 1 || len(groups[0].Files) != 2 {
+		t.Fatalf("groups=%+v", groups)
 	}
 }
 

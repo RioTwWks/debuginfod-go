@@ -12,13 +12,18 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "check-tools" {
-		runCheckTools(os.Args[2:])
-		return
-	}
-	if len(os.Args) > 1 && os.Args[1] == "list-groups" {
-		runListGroups(os.Args[2:])
-		return
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "check-tools":
+			runCheckTools(os.Args[2:])
+			return
+		case "list-groups":
+			runListGroups(os.Args[2:])
+			return
+		case "list-files":
+			runListFiles(os.Args[2:])
+			return
+		}
 	}
 	runBenchmark(os.Args[1:])
 }
@@ -27,6 +32,28 @@ func parseFlags(fs *flag.FlagSet, args []string) {
 	if err := fs.Parse(args); err != nil {
 		fatal(err.Error())
 	}
+}
+
+func bindCollectFlags(fs *flag.FlagSet) (scanPath, project, groupBy *string) {
+	scanPath = fs.String("scan-path", "", "корень scan path (DEBUGINFOD_SCAN_PATH)")
+	project = fs.String("project", "", "фильтр проекта (можно несколько через запятую)")
+	groupBy = fs.String("group-by", "stem", "группировка: stem (default), stem-version, strategy-a")
+	return scanPath, project, groupBy
+}
+
+func collectFiles(scanPath, project string) ([]benchdedup.DebugFile, error) {
+	return benchdedup.Collect(benchdedup.CollectOptions{
+		ScanRoots:     []string{scanPath},
+		ProjectFilter: splitCSV(project),
+	})
+}
+
+func resolveGroupMode(groupBy string) benchdedup.GroupMode {
+	mode, err := benchdedup.ParseGroupMode(groupBy)
+	if err != nil {
+		fatal(err.Error())
+	}
+	return mode
 }
 
 func runCheckTools(args []string) {
@@ -44,10 +71,35 @@ func runCheckTools(args []string) {
 	}
 }
 
+func runListFiles(args []string) {
+	fs := flag.NewFlagSet("list-files", flag.ExitOnError)
+	scanPath, project, _ := bindCollectFlags(fs)
+	maxFiles := fs.Int("max-files", 0, "лимит строк (0 = все)")
+	parseFlags(fs, args)
+
+	if *scanPath == "" {
+		fatal("укажите --scan-path")
+	}
+
+	files, err := collectFiles(*scanPath, *project)
+	if err != nil {
+		fatal(err.Error())
+	}
+	if *maxFiles > 0 && len(files) > *maxFiles {
+		files = files[:*maxFiles]
+	}
+
+	fmt.Printf("path\tstem\tversion\tbuild_num\tcommit_tag\tbytes\n")
+	for _, f := range files {
+		fmt.Printf("%s\t%s\t%s\t%d\t%s\t%d\n",
+			f.Path, f.FileStem, f.Version, f.FileBuildNum, f.CommitTag, f.Size)
+	}
+	fmt.Fprintf(os.Stderr, "\nTOTAL files=%d\n", len(files))
+}
+
 func runListGroups(args []string) {
 	fs := flag.NewFlagSet("list-groups", flag.ExitOnError)
-	scanPath := fs.String("scan-path", "", "корень scan path (DEBUGINFOD_SCAN_PATH)")
-	project := fs.String("project", "", "фильтр проекта (можно несколько через запятую)")
+	scanPath, project, groupBy := bindCollectFlags(fs)
 	minFiles := fs.Int("min-files", 2, "минимум файлов в группе")
 	maxGroups := fs.Int("max-groups", 0, "лимит групп (0 = все)")
 	parseFlags(fs, args)
@@ -56,17 +108,18 @@ func runListGroups(args []string) {
 		fatal("укажите --scan-path")
 	}
 
-	files, err := benchdedup.Collect(benchdedup.CollectOptions{
-		ScanRoots:     []string{*scanPath},
-		ProjectFilter: splitCSV(*project),
-	})
+	files, err := collectFiles(*scanPath, *project)
 	if err != nil {
 		fatal(err.Error())
 	}
-	groups := benchdedup.FilterGroups(benchdedup.GroupByStrategyA(files), *minFiles)
+	mode := resolveGroupMode(*groupBy)
+	stats := benchdedup.ComputeGroupStats(files, mode)
+	groups := benchdedup.FilterGroups(benchdedup.GroupFiles(files, mode), *minFiles)
 	if *maxGroups > 0 && len(groups) > *maxGroups {
 		groups = groups[:*maxGroups]
 	}
+
+	printGroupDiagnostics(os.Stderr, stats, *minFiles)
 
 	var totalFiles, totalBytes int64
 	for _, g := range groups {
@@ -78,13 +131,22 @@ func runListGroups(args []string) {
 		totalFiles += int64(len(g.Files))
 		fmt.Printf("%s\tfiles=%d\tbytes=%s\n", g.Key.String(), len(g.Files), benchdedup.FormatBytes(gbytes))
 	}
-	fmt.Printf("\nTOTAL groups=%d files=%d bytes=%s\n", len(groups), totalFiles, benchdedup.FormatBytes(totalBytes))
+	fmt.Printf("\nTOTAL groups=%d files=%d bytes=%s (group-by=%s)\n",
+		len(groups), totalFiles, benchdedup.FormatBytes(totalBytes), mode)
+}
+
+func printGroupDiagnostics(w *os.File, stats benchdedup.GroupStats, minFiles int) {
+	fmt.Fprintf(w, "collect: files=%d groups=%d groups>=%d=%d singletons=%d largest=%d group-by=%s\n",
+		stats.TotalFiles, stats.TotalGroups, minFiles, stats.GroupsGE2, stats.Singletons, stats.LargestGroup, stats.Mode)
+	if stats.TotalFiles > 0 && stats.GroupsGE2 == 0 {
+		fmt.Fprintf(w, "hint: все группы одиночные — попробуйте --group-by stem (как production dedup)\n")
+	}
+	fmt.Fprintln(w)
 }
 
 func runBenchmark(args []string) {
 	fs := flag.NewFlagSet("bench-dedup", flag.ExitOnError)
-	scanPath := fs.String("scan-path", "", "корень scan path")
-	project := fs.String("project", "", "фильтр проекта (через запятую)")
+	scanPath, project, groupBy := bindCollectFlags(fs)
 	workdir := fs.String("workdir", "", "временный каталог (обязателен)")
 	algos := fs.String("algos", "xdelta3,bsdiff,hdiffpatch", "алгоритмы через запятую")
 	preprocess := fs.String("preprocess", "none,dwz", "препроцессоры: none,dwz")
@@ -105,15 +167,19 @@ func runBenchmark(args []string) {
 		fatal("укажите --workdir")
 	}
 
-	files, err := benchdedup.Collect(benchdedup.CollectOptions{
+	opts := benchdedup.CollectOptions{
 		ScanRoots:     []string{*scanPath},
 		ProjectFilter: splitCSV(*project),
 		MaxFiles:      *maxFiles,
-	})
+	}
+	files, err := benchdedup.Collect(opts)
 	if err != nil {
 		fatal(err.Error())
 	}
-	groups := benchdedup.FilterGroups(benchdedup.GroupByStrategyA(files), *minFiles)
+	mode := resolveGroupMode(*groupBy)
+	stats := benchdedup.ComputeGroupStats(files, mode)
+	printGroupDiagnostics(os.Stderr, stats, *minFiles)
+	groups := benchdedup.FilterGroups(benchdedup.GroupFiles(files, mode), *minFiles)
 
 	algoList := benchdedup.ResolveAlgos(splitCSV(*algos), paths)
 	if len(algoList) == 0 {
@@ -121,7 +187,7 @@ func runBenchmark(args []string) {
 	}
 	ppList := benchdedup.ResolvePreprocessors(splitCSV(*preprocess), paths)
 
-	opts := benchdedup.RunOptions{
+	runOpts := benchdedup.RunOptions{
 		WorkDir:          filepath.Clean(*workdir),
 		Algos:            algoList,
 		Preprocessors:    ppList,
@@ -132,11 +198,12 @@ func runBenchmark(args []string) {
 		MaxGroups:        *maxGroups,
 	}
 
-	report, err := benchdedup.RunBenchmark(opts)
+	report, err := benchdedup.RunBenchmark(runOpts)
 	if err != nil {
 		fatal(err.Error())
 	}
-	report.ScanInfo = fmt.Sprintf("scan-path=%s project=%q groups=%d files=%d", *scanPath, *project, len(groups), len(files))
+	report.ScanInfo = fmt.Sprintf("scan-path=%s project=%q group-by=%s groups=%d files=%d",
+		*scanPath, *project, mode, len(groups), len(files))
 
 	if *output == "" {
 		if err := benchdedup.WriteReport(os.Stdout, report, *format); err != nil {

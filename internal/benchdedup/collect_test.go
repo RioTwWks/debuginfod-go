@@ -52,7 +52,7 @@ func TestBenchmarkGroupSynthetic(t *testing.T) {
 	}
 
 	g := FileGroup{
-		Key: GroupKey{Project: "P", FileStem: "lib", Version: "1", CommitTag: ""},
+		Key: GroupKey{Project: "P", FileStem: "lib", Version: "1", Mode: GroupModeStem},
 		Files: []DebugFile{
 			{Path: basePath, FileBuildNum: 1, Size: int64(len(base))},
 			{Path: targetPath, FileBuildNum: 2, Size: int64(len(target))},
