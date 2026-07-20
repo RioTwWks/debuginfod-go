@@ -43,8 +43,8 @@ func TestUIIndex(t *testing.T) {
 	if !contains(rec.Body.String(), "debuginfod-go") {
 		t.Fatal("expected HTML body")
 	}
-	if !contains(rec.Body.String(), "xdelta") {
-		t.Fatal("expected xdelta dedup labels in UI")
+	if !contains(rec.Body.String(), "путь") {
+		t.Fatal("expected path search mode in UI")
 	}
 }
 
@@ -100,16 +100,22 @@ func TestUISearch(t *testing.T) {
 }
 
 func TestUISearchGlob(t *testing.T) {
-	mux, store := testMux(t)
+	_, store := testMux(t)
 	defer store.Close()
 
-	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "aaa", Type: "executable", FilePath: "/usr/bin/ls"}, 1)
-	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "bbb", Type: "debuginfo", FilePath: "/usr/lib/debug/libc.so.debug"}, 1)
-	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "ccc", Type: "executable", FilePath: "/opt/bin/tool"}, 1)
+	scanRoot := t.TempDir()
+	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "aaa", Type: "executable", FilePath: scanRoot + "/usr/bin/ls"}, 1)
+	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "bbb", Type: "debuginfo", FilePath: scanRoot + "/usr/lib/debug/libc.so.debug"}, 1)
+	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "ccc", Type: "executable", FilePath: scanRoot + "/opt/bin/tool"}, 1)
 
-	req := httptest.NewRequest(http.MethodGet, "/ui/api/search?key=glob&value=/usr/bin/*", nil)
+	mux2 := http.NewServeMux()
+	Register(mux2, Opts{
+		Store: store, Metrics: metrics.New(), ScanPaths: []string{scanRoot},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/api/search?key=path&value=usr/bin/*", nil)
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
+	mux2.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
@@ -118,7 +124,7 @@ func TestUISearchGlob(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.Key != "glob" {
+	if payload.Key != "path" {
 		t.Fatalf("key=%q", payload.Key)
 	}
 	if payload.Count != 1 || len(payload.Results) != 1 {
@@ -127,18 +133,27 @@ func TestUISearchGlob(t *testing.T) {
 	if payload.Results[0].BuildID != "aaa" {
 		t.Fatalf("buildid=%q", payload.Results[0].BuildID)
 	}
+	if payload.Results[0].RelativePath != "usr/bin/ls" {
+		t.Fatalf("relative=%q", payload.Results[0].RelativePath)
+	}
 }
 
 func TestUISearchFile(t *testing.T) {
-	mux, store := testMux(t)
+	_, store := testMux(t)
 	defer store.Close()
 
-	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "deadbeef", Type: "executable", FilePath: "/usr/bin/hello"}, 1)
-	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "cafebabe", Type: "executable", FilePath: "/usr/bin/other"}, 1)
+	scanRoot := t.TempDir()
+	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "deadbeef", Type: "executable", FilePath: scanRoot + "/usr/bin/hello"}, 1)
+	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "cafebabe", Type: "executable", FilePath: scanRoot + "/usr/bin/other"}, 1)
 
-	req := httptest.NewRequest(http.MethodGet, "/ui/api/search?key=file&value=/usr/bin/hello", nil)
+	mux2 := http.NewServeMux()
+	Register(mux2, Opts{
+		Store: store, Metrics: metrics.New(), ScanPaths: []string{scanRoot},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/api/search?key=name&value=hello", nil)
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
+	mux2.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d", rec.Code)
 	}
@@ -152,11 +167,39 @@ func TestUISearchFile(t *testing.T) {
 	}
 }
 
+func TestUISearchPathBrowse(t *testing.T) {
+	store, err := storage.New(filepath.Join(t.TempDir(), "browse.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	scanRoot := t.TempDir()
+	_ = store.AddArtifact(storage.ArtifactInput{BuildID: "x", Type: "debuginfo", FilePath: scanRoot + "/a/b.debug"}, 1)
+
+	mux := http.NewServeMux()
+	Register(mux, Opts{Store: store, Metrics: metrics.New(), ScanPaths: []string{scanRoot}})
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/api/search?key=path", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d", rec.Code)
+	}
+	var payload SearchResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Results) != 1 {
+		t.Fatalf("results=%d", len(payload.Results))
+	}
+}
+
 func TestUISearchGlobRequiresValue(t *testing.T) {
 	mux, store := testMux(t)
 	defer store.Close()
 
-	req := httptest.NewRequest(http.MethodGet, "/ui/api/search?key=glob", nil)
+	req := httptest.NewRequest(http.MethodGet, "/ui/api/search?key=name", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
