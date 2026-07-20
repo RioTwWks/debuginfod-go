@@ -169,7 +169,7 @@ func registerDebugFiles(store *storage.Storage, buildDirID int64, dirPath string
 }
 
 // GroupKey возвращает ключ группировки (метаданные; на pipeline не влияет).
-// Тег из .comment (git, JIRA или любой другой) — опциональные метаданные в БД,
+// Тег из .comment — git-метка (tag:/commit:/semver/SHA); JIRA не используется.
 // на группировку не влияют: сжимаем одну библиотеку между build_* каталогами.
 // ProjectName нормализуется (схлопываются хвостовые версии в пути).
 func GroupKey(f storage.DedupFile) storage.DedupGroupKey {

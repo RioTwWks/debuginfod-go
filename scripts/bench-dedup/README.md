@@ -13,7 +13,7 @@
 | Пост-сжатие base | `--post-compress-base` → `objcopy --compress-debug-sections=zstd` **после** дельт |
 
 **Группировка (Strategy A):** по умолчанию `(project, file_stem)` — как production dedup.  
-Опционально `--group-by stem-version` или `strategy-a` (включает `commit_tag`; часто даёт 0 групп, если в `.comment` уникальные JIRA-теги).
+Опционально `--group-by stem-version` или `strategy-a` (включает git `commit_tag` из `.comment`).
 
 **Метрики:** суммарный размер до/после, % экономии, время encode/decode, SHA256 после восстановления.
 
@@ -87,8 +87,7 @@ $SCAN_PATH/Released/QuikServer_16.0_Common_Linux/build_2_.../*.debug
   --min-files 2
 ```
 
-Если `groups=0` при `files>0`, в stderr будет диагностика:
-`singletons=72` → слишком строгая группировка. Используйте `--group-by stem` (default с этой версии).
+Если `groups=0` при `files>0`, в stderr будет диагностика — попробуйте `--group-by stem` (default).
 
 Проверьте:
 

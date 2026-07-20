@@ -9,16 +9,16 @@ import (
 	"strings"
 )
 
-// ErrNotFound — метка сборки не найдена в .comment.
+// ErrNotFound — git-метка сборки не найдена в .comment.
 var ErrNotFound = errors.New("build label not found in .comment")
 
-// jiraTagRe — опциональные JIRA/DevOps метки вида DEVOPS-110 (если есть).
-var jiraTagRe = regexp.MustCompile(`[A-Z][A-Z0-9_]*-\d+`)
+// gitTagRe — git-теги/версии вида v1.2.3, v16.0.0.10, release-2026-04-17.
+var gitTagRe = regexp.MustCompile(`(?:^|[\s:(])(v?\d+(?:\.\d+)+(?:[-+][\w.-]+)?|release[-_][\w.-]+)`)
 
-// gitTagRe — опциональные git-теги вида v1.2.3 или release-2026-04-17.
-var gitTagRe = regexp.MustCompile(`(?:^|[\s:(])(v?\d+\.\d+(?:\.\d+)?(?:[-+][\w.-]+)?|release[-_][\w.-]+)`)
+// commitSHARe — hex commit id (short или full).
+var commitSHARe = regexp.MustCompile(`\b[0-9a-f]{7,40}\b`)
 
-// FromPath читает ELF и возвращает метку сборки из .comment, если есть.
+// FromPath читает ELF и возвращает git-метку из .comment, если есть.
 func FromPath(path string) (string, error) {
 	f, err := elf.Open(path)
 	if err != nil {
@@ -28,7 +28,7 @@ func FromPath(path string) (string, error) {
 	return FromELF(f)
 }
 
-// FromELF извлекает метку сборки из открытого ELF (опционально).
+// FromELF извлекает git-метку из открытого ELF (опционально).
 func FromELF(f *elf.File) (string, error) {
 	sec := f.Section(".comment")
 	if sec == nil {
@@ -41,20 +41,11 @@ func FromELF(f *elf.File) (string, error) {
 	return ParseBytes(data)
 }
 
-// ParseBytes ищет метку сборки в .comment. Пустой результат — норма.
+// ParseBytes ищет git-метку в .comment. JIRA-теги (DEVOPS-123) игнорируются.
 func ParseBytes(data []byte) (string, error) {
-	text := string(data)
-	if tag := jiraTagRe.FindString(text); tag != "" {
-		return tag, nil
-	}
-	if m := gitTagRe.FindStringSubmatch(text); len(m) > 1 {
-		return strings.TrimSpace(m[1]), nil
-	}
-	for _, line := range strings.Split(text, "\x00") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
+	lines := splitCommentLines(data)
+
+	for _, line := range lines {
 		lower := strings.ToLower(line)
 		for _, prefix := range []string{"tag:", "commit:", "build:", "git:"} {
 			if strings.HasPrefix(lower, prefix) {
@@ -65,10 +56,44 @@ func ParseBytes(data []byte) (string, error) {
 			}
 		}
 	}
+
+	for _, line := range lines {
+		if isToolchainLine(line) {
+			continue
+		}
+		if m := gitTagRe.FindStringSubmatch(line); len(m) > 1 {
+			return strings.TrimSpace(m[1]), nil
+		}
+		if sha := commitSHARe.FindString(line); sha != "" {
+			return sha, nil
+		}
+	}
 	return "", ErrNotFound
 }
 
-// FromPathOrEmpty возвращает тег или пустую строку (для файлов без тега).
+func isToolchainLine(line string) bool {
+	lower := strings.ToLower(line)
+	for _, prefix := range []string{"gcc:", "clang:", "rustc:", "go version", "go build"} {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func splitCommentLines(data []byte) []string {
+	raw := strings.Split(string(data), "\x00")
+	out := make([]string, 0, len(raw))
+	for _, line := range raw {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+// FromPathOrEmpty возвращает git-метку или пустую строку (для файлов без тега).
 func FromPathOrEmpty(path string) string {
 	tag, err := FromPath(path)
 	if err != nil {
