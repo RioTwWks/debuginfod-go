@@ -4,6 +4,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,7 +120,7 @@ func runListGroups(args []string) {
 		groups = groups[:*maxGroups]
 	}
 
-	printGroupDiagnostics(os.Stderr, stats, *minFiles)
+	_ = printGroupDiagnostics(os.Stderr, stats, *minFiles)
 
 	var totalFiles, totalBytes int64
 	for _, g := range groups {
@@ -135,13 +136,18 @@ func runListGroups(args []string) {
 		len(groups), totalFiles, benchdedup.FormatBytes(totalBytes), mode)
 }
 
-func printGroupDiagnostics(w *os.File, stats benchdedup.GroupStats, minFiles int) {
-	fmt.Fprintf(w, "collect: files=%d groups=%d groups>=%d=%d singletons=%d largest=%d group-by=%s\n",
-		stats.TotalFiles, stats.TotalGroups, minFiles, stats.GroupsGE2, stats.Singletons, stats.LargestGroup, stats.Mode)
-	if stats.TotalFiles > 0 && stats.GroupsGE2 == 0 {
-		fmt.Fprintf(w, "hint: все группы одиночные — попробуйте --group-by stem (как production dedup)\n")
+func printGroupDiagnostics(w io.Writer, stats benchdedup.GroupStats, minFiles int) error {
+	if _, err := fmt.Fprintf(w, "collect: files=%d groups=%d groups>=%d=%d singletons=%d largest=%d group-by=%s\n",
+		stats.TotalFiles, stats.TotalGroups, minFiles, stats.GroupsGE2, stats.Singletons, stats.LargestGroup, stats.Mode); err != nil {
+		return err
 	}
-	fmt.Fprintln(w)
+	if stats.TotalFiles > 0 && stats.GroupsGE2 == 0 {
+		if _, err := fmt.Fprintf(w, "hint: все группы одиночные — попробуйте --group-by stem (как production dedup)\n"); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintln(w)
+	return err
 }
 
 func runBenchmark(args []string) {
@@ -178,7 +184,7 @@ func runBenchmark(args []string) {
 	}
 	mode := resolveGroupMode(*groupBy)
 	stats := benchdedup.ComputeGroupStats(files, mode)
-	printGroupDiagnostics(os.Stderr, stats, *minFiles)
+	_ = printGroupDiagnostics(os.Stderr, stats, *minFiles)
 	groups := benchdedup.FilterGroups(benchdedup.GroupFiles(files, mode), *minFiles)
 
 	algoList := benchdedup.ResolveAlgos(splitCSV(*algos), paths)
