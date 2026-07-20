@@ -4,7 +4,7 @@ GO=go
 GOPATH?=$(shell go env GOPATH)
 SQLITE_DB=debuginfod.sqlite
 
-.PHONY: all build build-find test vet run run-env clean lint fmt docker \
+.PHONY: all build build-find build-bench-dedup bench-dedup test vet run run-env clean lint fmt docker \
 	docker-prep docker-prebuilt docker-up-prebuilt docker-astra docker-up-astra \
 	package package-deb package-rpm \
 	offline-download-deb offline-download-rpm \
@@ -22,6 +22,11 @@ build:
 
 build-find:
 	$(GO) build -o debuginfod-find ./cmd/debuginfod-find
+
+build-bench-dedup:
+	$(GO) build -o bench-dedup ./cmd/bench-dedup
+
+bench-dedup: build-bench-dedup
 
 test:
 	$(GO) test -v ./...

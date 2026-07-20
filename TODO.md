@@ -191,13 +191,15 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 - [x] **zstd + SHA256 CAS dedup** — baseline в коде (см. [docs/QUIK_DEDUP.md](./docs/QUIK_DEDUP.md)); хуже xdelta на реальных данных
 - [ ] **A/B-бенчмарк трёх стратегий** — единая методика на одной выборке `build_*`:
   - метрики: суммарный размер до/после, % экономии, время encode/decode, пик RAM/CPU
-  - проверка: `xdelta3 -d` / `bsdiff` / `zstd -d --patch-from` → SHA256 оригинала; GDB `info sources` на восстановленном ELF
-  - артефакты: скрипт/команды в `scripts/bench-dedup/` (или аналог), таблица результатов в issue/PR
+  - проверка: decode → SHA256; GDB `info sources` на восстановленном ELF
+  - артефакты: `cmd/bench-dedup` + [scripts/bench-dedup/README.md](./scripts/bench-dedup/README.md)
+- [ ] **Strategy A — прогоны и выбор победителя** — см. [scripts/bench-dedup/README.md](./scripts/bench-dedup/README.md)
 
 #### Стратегия A — «альтернативные диффы + DWARF-оптимизация» (внешний контекст 1)
 
-Замена/усиление xdelta3 и предобработка DWARF до создания дельт.
+Инструмент: `make build-bench-dedup`, документация: [scripts/bench-dedup/README.md](./scripts/bench-dedup/README.md).
 
+- [x] **bench-dedup CLI** — collect, group, xdelta3/bsdiff/hdiffpatch, dwz, objcopy post-compress
 - [ ] **bsdiff vs xdelta3 vs HDiffPatch** — A/B на одной группе `(file_stem + version + commit-id)`:
   - размер патча, время создания/восстановления
   - ожидание по литературе: bsdiff 50–80% меньше xdelta (проверить на Quik `.debug`)
