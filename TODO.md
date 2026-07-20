@@ -202,7 +202,7 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 - [x] **bsdiff vs xdelta3** — bsdiff отклонён (63 verify fail); xdelta3 — production
 - [x] **dwz до диффа** — только decompress-dwz; голый dwz не работает на Quik ELF
 - [x] **zstd внутри ELF** — objcopy zstd на base после дельт (+21 п.п.)
-- [ ] **debuginfod path interning** — оценить PR30378 / аналог для SQLite-индекса (экономия БД, не payload)
+- [x] **debuginfod path interning** — **отложено, вне scope A/B dedup:** PR30378 / аналог для SQLite-индекса даёт экономию **метаданных БД**, не payload `.debug`; не входило в `bench-dedup` (см. [docs/DEDUP_STRATEGY_COMPARISON.md](./docs/DEDUP_STRATEGY_COMPARISON.md) §2)
 
 #### Стратегия B — «dwz → xdelta3» (внешний контекст 2)
 
@@ -216,16 +216,15 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 
 #### Стратегия C — «гибрид diff + секционный CAS» (рекомендация ассистента)
 
-Дифф между похожими сборками + дедуп байт-идентичных ELF-секций.
+Дифф между похожими сборками + дедуп байт-идентичных ELF-секций.  
+**Вердикт (2026-07):** отложена — при **76%** у Strategy A/B ROI сомнителен; см. [docs/DEDUP_STRATEGY_COMPARISON.md](./docs/DEDUP_STRATEGY_COMPARISON.md) §2.
 
-- [ ] **Межсборочный diff** — сравнить на одной выборке:
-  - xdelta3 (текущий эталон ~11%)
-  - `zstd --patch-from` (whole-file patch)
-  - diff по отдельным секциям (`.debug_str`, `.debug_abbrev`, `.debug_info`, …) с выбором base по min build number
-- [ ] **Секционный zstd/CAS** — CAS только для байт-идентичных секций между сборками; zstd на уникальные куски
-- [ ] **dwz -m (multifile)** — оптимизация на уровне каталога продукта перед секционным разбором
-- [x] **Интеграция в Go** — xdelta-decompress-dwz в `internal/dedup`, параллельные воркеры `DEBUGINFOD_DEDUP_WORKERS`
-- [ ] **Секционный CAS (Strategy C)** — отложен
+- [x] **Межсборочный diff (xdelta3)** — эталон в `bench-dedup`: **17%** (без preprocess) / **55%** (decompress-dwz) / **76%** (+zstd base); старая оценка «~11%» устарела
+- [x] **Межсборочный diff (`zstd --patch-from`)** — **не тестировалось**; по аналогии с whole-file CAS ожидается ~1–2%; **отложено**
+- [x] **Межсборочный diff (по ELF-секциям)** — **не прототипировано**; сложность restore и схемы БД; **отложено**
+- [x] **Секционный zstd/CAS** — **отложено** (не прототипировалось)
+- [x] **dwz -m (multifile)** — **build-time**, вне server-side scope; **отложено**
+- [x] **Интеграция в Go** — реализована **Strategy A/B** (xdelta-decompress-dwz), не секционный CAS
 
 #### Build-time (отложено, решение за эксплуатацией Quik)
 
@@ -243,4 +242,4 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 
 ---
 
-*Последнее обновление: 2026-07-20*
+*Последнее обновление: 2026-07-20 (Strategy C и path interning — статусы закрыты как «отложено» после A/B)*
