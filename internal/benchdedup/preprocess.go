@@ -3,157 +3,79 @@ package benchdedup
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
+
+	"github.com/your-username/debuginfod-go/internal/dedup"
 )
 
-// Preprocessor — предобработка ELF до создания дельт.
+// Preprocessor — предобработка ELF до создания дельт (копия в workDir).
 type Preprocessor interface {
 	Name() string
 	Available() bool
-	// Prepare копирует src в workDir и применяет препроцессор; возвращает путь к файлу.
 	Prepare(workDir, src string) (string, error)
 }
 
-// NoPreprocessor — без изменений (копия в workDir).
-type NoPreprocessor struct{}
+type copyPreprocessor struct {
+	inner dedup.Preprocessor
+}
 
-func (NoPreprocessor) Name() string      { return "none" }
-func (NoPreprocessor) Available() bool   { return true }
-func (n NoPreprocessor) Prepare(workDir, src string) (string, error) {
+func (c copyPreprocessor) Name() string    { return c.inner.Name() }
+func (c copyPreprocessor) Available() bool { return c.inner.Available() }
+
+func (c copyPreprocessor) Prepare(workDir, src string) (string, error) {
 	dst := filepath.Join(workDir, filepath.Base(src))
 	if err := copyFile(src, dst); err != nil {
+		return "", err
+	}
+	if err := c.inner.ApplyInPlace(dst); err != nil {
 		return "", err
 	}
 	return dst, nil
 }
 
-// DwzPreprocessor — dwz на копии файла (in-place).
-type DwzPreprocessor struct {
-	Bin string
-}
-
-func NewDwzPreprocessor(bin string) *DwzPreprocessor {
-	if bin == "" {
-		bin = "dwz"
-	}
-	return &DwzPreprocessor{Bin: bin}
-}
-
-func (d *DwzPreprocessor) Name() string { return "dwz" }
-
-func (d *DwzPreprocessor) Available() bool {
-	_, err := exec.LookPath(d.Bin)
-	return err == nil
-}
-
-func (d *DwzPreprocessor) Prepare(workDir, src string) (string, error) {
-	dst := filepath.Join(workDir, filepath.Base(src))
-	if err := copyFile(src, dst); err != nil {
-		return "", err
-	}
-	cmd := exec.Command(d.Bin, dst)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("dwz %s: %w: %s", dst, err, trimOutput(out))
-	}
-	return dst, nil
-}
-
-// DecompressDwzPreprocessor — objcopy --decompress-debug-sections, затем dwz.
-type DecompressDwzPreprocessor struct {
-	Dwz     string
-	Objcopy string
-}
-
-func NewDecompressDwzPreprocessor(dwz, objcopy string) *DecompressDwzPreprocessor {
-	if dwz == "" {
-		dwz = "dwz"
-	}
-	if objcopy == "" {
-		objcopy = "objcopy"
-	}
-	return &DecompressDwzPreprocessor{Dwz: dwz, Objcopy: objcopy}
-}
-
-func (d *DecompressDwzPreprocessor) Name() string { return "decompress-dwz" }
-
-func (d *DecompressDwzPreprocessor) Available() bool {
-	_, err1 := exec.LookPath(d.Dwz)
-	_, err2 := exec.LookPath(d.Objcopy)
-	return err1 == nil && err2 == nil
-}
-
-func (d *DecompressDwzPreprocessor) Prepare(workDir, src string) (string, error) {
-	dst := filepath.Join(workDir, filepath.Base(src))
-	if err := copyFile(src, dst); err != nil {
-		return "", err
-	}
-	decompress := exec.Command(d.Objcopy, "--decompress-debug-sections", dst)
-	out, err := decompress.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("objcopy decompress %s: %w: %s", dst, err, trimOutput(out))
-	}
-	cmd := exec.Command(d.Dwz, dst)
-	out, err = cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("dwz %s: %w: %s", dst, err, trimOutput(out))
-	}
-	return dst, nil
-}
-
-// ObjcopyZstdPost — сжатие debug-секций ПОСЛЕ дельт (отдельный эксперимент).
+// ObjcopyZstdPost — сжатие debug-секций zstd в копии (после дельт).
 type ObjcopyZstdPost struct {
-	Bin string
+	inner *dedup.ObjcopyZstd
 }
 
+// NewObjcopyZstdPost создаёт post-compress helper для bench.
 func NewObjcopyZstdPost(bin string) *ObjcopyZstdPost {
-	if bin == "" {
-		bin = "objcopy"
-	}
-	return &ObjcopyZstdPost{Bin: bin}
+	return &ObjcopyZstdPost{inner: dedup.NewObjcopyZstd(bin)}
 }
-
-func (o *ObjcopyZstdPost) Name() string { return "objcopy-zstd" }
 
 func (o *ObjcopyZstdPost) Available() bool {
-	_, err := exec.LookPath(o.Bin)
-	return err == nil
+	return o.inner.Available()
 }
 
-// CompressInPlace сжимает debug-секции zstd в копии файла.
+// CompressInPlace копирует src в workDir и сжимает debug-секции zstd.
 func (o *ObjcopyZstdPost) CompressInPlace(workDir, src string) (string, int64, error) {
 	dst := filepath.Join(workDir, "compressed_"+filepath.Base(src))
 	if err := copyFile(src, dst); err != nil {
 		return "", 0, err
 	}
-	cmd := exec.Command(o.Bin, "--compress-debug-sections=zstd", dst)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", 0, fmt.Errorf("objcopy compress: %w: %s", err, trimOutput(out))
-	}
-	size, err := fileSize(dst)
+	size, err := o.inner.CompressInPlace(dst)
 	if err != nil {
 		return "", 0, err
 	}
 	return dst, size, nil
 }
 
-// ResolvePreprocessors по именам.
+// ResolvePreprocessors по именам (делегирует в internal/dedup).
 func ResolvePreprocessors(names []string, paths ToolPaths) []Preprocessor {
+	tools := dedup.ToolPaths{Dwz: paths.Dwz, Objcopy: paths.Objcopy}
 	var out []Preprocessor
 	for _, name := range names {
 		switch name {
 		case "none", "":
-			out = append(out, NoPreprocessor{})
+			out = append(out, copyPreprocessor{inner: dedup.NoPreprocessor{}})
 		case "dwz":
-			out = append(out, NewDwzPreprocessor(paths.Dwz))
+			out = append(out, copyPreprocessor{inner: dedup.NewDwzPreprocessor(paths.Dwz)})
 		case "decompress-dwz", "dwz-decompress":
-			out = append(out, NewDecompressDwzPreprocessor(paths.Dwz, paths.Objcopy))
+			out = append(out, copyPreprocessor{inner: dedup.NewDecompressDwzPreprocessor(tools)})
 		}
 	}
 	if len(out) == 0 {
-		out = append(out, NoPreprocessor{})
+		out = append(out, copyPreprocessor{inner: dedup.NoPreprocessor{}})
 	}
 	return out
 }

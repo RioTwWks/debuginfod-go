@@ -26,6 +26,8 @@ internal/federation/     # upstream proxy при 404
 internal/cache/          # LRU prune кэша
 internal/logging/        # log/slog JSON
 internal/pathsafe/        # path traversal validation
+internal/dedup/           # Quik .debug dedup: decompress-dwz + xdelta3
+internal/benchdedup/      # офлайн A/B-бенчмарк (cmd/bench-dedup)
 pkg/buildid/             # GNU + Go build-id из ELF notes
 pkg/elfsection/          # сырые ELF-секции для /section
 deploy/                  # systemd unit, Zabbix docs, OPERATIONS.md
@@ -102,7 +104,11 @@ deploy/                  # systemd unit, Zabbix docs, OPERATIONS.md
 | `DEBUGINFOD_CACHE_MAX_BYTES` | `0` | LRU лимит кэша (0=∞) |
 | `DEBUGINFOD_LAZY_EXTRACT` | `true` | Отложенное извлечение |
 | `DEBUGINFOD_UI_ENABLED` | `true` | Web UI на `/ui/` |
-| `DEBUGINFOD_SCAN_WORKERS` | `4` | Параллельные воркеры |
+| `DEBUGINFOD_SCAN_WORKERS` | `4` | Параллельные воркеры индексации |
+| `DEBUGINFOD_DEDUP_ENABLED` | `false` | Quik dedup ingest |
+| `DEBUGINFOD_DEDUP_WORKERS` | `4` | Параллельные воркеры dedup (группы file_stem) |
+| `DEBUGINFOD_DEDUP_STRATEGY` | `xdelta-decompress-dwz` | `xdelta` — без dwz |
+| `DEBUGINFOD_DEDUP_COMPRESS_BASE` | `true` | objcopy zstd на base после дельт |
 | `DEBUGINFOD_URLS` | — | Upstream для федерации |
 | `DEBUGINFOD_ZABBIX_KEY` | — | Токен `/zabbix` |
 | `DEBUGINFOD_CORS_ORIGINS` | — | CORS origins (`*` = все) |
@@ -110,6 +116,8 @@ deploy/                  # systemd unit, Zabbix docs, OPERATIONS.md
 | `DEBUGINFOD_BASIC_AUTH_USER/PASSWORD` | — | Basic Auth |
 | `DEBUGINFOD_TLS_CERT/KEY/CLIENT_CA` | — | TLS и mTLS |
 | `DEBUGINFOD_METADATA_PAGE_SIZE` | `100` | Размер страницы metadata |
+
+Quik dedup: [docs/QUIK_DEDUP.md](../docs/QUIK_DEDUP.md), сравнение стратегий: [docs/DEDUP_STRATEGY_COMPARISON.md](../docs/DEDUP_STRATEGY_COMPARISON.md).
 
 ## Документация для операторов
 

@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/your-username/debuginfod-go/internal/dedup"
 )
 
 func TestCollectSkipsNonDebug(t *testing.T) {
@@ -32,7 +34,8 @@ func TestCollectSkipsNonDebug(t *testing.T) {
 }
 
 func TestBenchmarkGroupSynthetic(t *testing.T) {
-	if !NewXdelta3("").Available() {
+	xd := dedup.NewXdelta("")
+	if !xd.Available() {
 		t.Skip("xdelta3 not in PATH")
 	}
 	dir := t.TempDir()
@@ -61,8 +64,8 @@ func TestBenchmarkGroupSynthetic(t *testing.T) {
 
 	report, err := RunBenchmark(RunOptions{
 		WorkDir:       filepath.Join(dir, "work"),
-		Algos:         []DiffAlgo{NewXdelta3("")},
-		Preprocessors: []Preprocessor{NoPreprocessor{}},
+		Algos:         []DiffAlgo{&xdeltaAlgo{x: xd}},
+		Preprocessors: []Preprocessor{copyPreprocessor{inner: dedup.NoPreprocessor{}}},
 		Groups:        []FileGroup{g},
 	})
 	if err != nil {

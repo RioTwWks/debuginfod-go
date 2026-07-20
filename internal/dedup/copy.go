@@ -2,9 +2,16 @@ package dedup
 
 import (
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 )
+
+func removeWorkDir(dir string) {
+	if err := os.RemoveAll(dir); err != nil {
+		slog.Debug("dedup workdir cleanup", "dir", dir, "err", err)
+	}
+}
 
 func copyFileAtomic(src, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {

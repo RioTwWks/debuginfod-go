@@ -186,6 +186,7 @@ flowchart TD
 
 ```bash
 DEBUGINFOD_DEDUP_ENABLED=true
+DEBUGINFOD_DEDUP_WORKERS=4
 DEBUGINFOD_DEDUP_STRATEGY=xdelta-decompress-dwz   # default
 DEBUGINFOD_DEDUP_COMPRESS_BASE=true               # +objcopy zstd на base (76% vs 55%)
 DEBUGINFOD_XDELTA_PATH=xdelta3

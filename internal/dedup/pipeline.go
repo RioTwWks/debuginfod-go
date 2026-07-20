@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sort"
 
 	"github.com/your-username/debuginfod-go/internal/storage"
 )
@@ -222,69 +221,6 @@ func filterProjects(all []string, single string) []string {
 	return all
 }
 
-func processGroups(opts Options, groups map[string][]storage.DedupFile) (compressed, skipped, errors int, bytesBefore, bytesAfter int64) {
-	opts = normalizeOptions(opts)
-
-	if !opts.DryRun {
-		if !opts.Xdelta.Available() {
-			slog.Error("xdelta3 not found", "bin", opts.Xdelta.Bin)
-			return 0, 0, len(groups), 0, 0
-		}
-		if opts.Preprocessor != nil && opts.Preprocessor.Name() != "none" && !opts.Preprocessor.Available() {
-			slog.Error("dedup preprocessor not available", "name", opts.Preprocessor.Name())
-			return 0, 0, len(groups), 0, 0
-		}
-		if opts.CompressBase && opts.ObjcopyZstd != nil && !opts.ObjcopyZstd.Available() {
-			slog.Error("objcopy not found for compress base")
-			return 0, 0, len(groups), 0, 0
-		}
-	}
-
-	for _, group := range groups {
-		if len(group) == 0 {
-			continue
-		}
-		sort.Slice(group, func(i, j int) bool {
-			if group[i].FileBuildNum != group[j].FileBuildNum {
-				return group[i].FileBuildNum < group[j].FileBuildNum
-			}
-			return group[i].FilePath < group[j].FilePath
-		})
-
-		base := group[0]
-		if len(group) == 1 {
-			if !opts.DryRun {
-				if err := markSingletonFull(opts, base); err != nil {
-					_ = opts.Store.MarkDedupFileError(base.ID, err.Error())
-					errors++
-					continue
-				}
-			}
-			skipped++
-			continue
-		}
-
-		if opts.DryRun {
-			compressed += len(group) - 1
-			skipped++
-			for _, f := range group {
-				bytesBefore += f.OriginalSize
-			}
-			continue
-		}
-
-		c, bBefore, bAfter, err := processGroup(opts, group)
-		compressed += c
-		bytesBefore += bBefore
-		bytesAfter += bAfter
-		if err != nil {
-			errors++
-		}
-		skipped++
-	}
-	return compressed, skipped, errors, bytesBefore, bytesAfter
-}
-
 func normalizeOptions(opts Options) Options {
 	if opts.Xdelta == nil {
 		opts.Xdelta = NewXdelta("")
@@ -374,7 +310,7 @@ func compressOne(opts Options, base, target storage.DedupFile) (deltaSize int64,
 	if err != nil {
 		return 0, err
 	}
-	defer os.RemoveAll(workDir)
+	defer removeWorkDir(workDir)
 
 	prepTarget := filepath.Join(workDir, filepath.Base(target.FilePath))
 	if err := copyFileAtomic(target.FilePath, prepTarget); err != nil {
@@ -396,16 +332,16 @@ func compressOne(opts Options, base, target storage.DedupFile) (deltaSize int64,
 
 	tmpPath := filepath.Join(workDir, "restore-verify.debug")
 	if err := opts.Xdelta.Decode(base.FilePath, deltaPath, tmpPath); err != nil {
-		os.Remove(deltaPath)
+		_ = os.Remove(deltaPath)
 		return 0, fmt.Errorf("verify decode: %w", err)
 	}
 	restoredSHA, err := FileSHA256(tmpPath)
 	if err != nil {
-		os.Remove(deltaPath)
+		_ = os.Remove(deltaPath)
 		return 0, err
 	}
 	if restoredSHA != origSHA {
-		os.Remove(deltaPath)
+		_ = os.Remove(deltaPath)
 		return 0, fmt.Errorf("sha256 mismatch after restore")
 	}
 
