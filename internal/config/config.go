@@ -41,12 +41,17 @@ type Config struct {
 	Dedup            DedupConfig
 }
 
-// DedupConfig — параметры zstd+CAS dedup для Quik .debug.
+// DedupConfig — параметры xdelta dedup для Quik .debug.
 type DedupConfig struct {
-	Enabled  bool
-	Projects []string
-	Workers  int
-	BlobDir  string
+	Enabled      bool
+	Projects     []string
+	Workers      int
+	BlobDir      string // legacy zstd CAS; не используется xdelta-пайплайном
+	Strategy     string
+	CompressBase bool
+	XdeltaPath   string
+	DwzPath      string
+	ObjcopyPath  string
 }
 
 // Load читает .env, переменные окружения и флаги командной строки.
@@ -81,10 +86,15 @@ func Load() Config {
 		AdminKey:         envOr("DEBUGINFOD_ADMIN_KEY", ""),
 		ScanWebhookURL:   envOr("DEBUGINFOD_SCAN_WEBHOOK_URL", ""),
 		Dedup: DedupConfig{
-			Enabled:  envBool("DEBUGINFOD_DEDUP_ENABLED", false),
-			Projects: splitPaths(envOr("DEBUGINFOD_DEDUP_PROJECTS", "")),
-			Workers:  envInt("DEBUGINFOD_DEDUP_WORKERS", 4),
-			BlobDir:  envOr("DEBUGINFOD_DEDUP_BLOB_DIR", ""),
+			Enabled:      envBool("DEBUGINFOD_DEDUP_ENABLED", false),
+			Projects:     splitPaths(envOr("DEBUGINFOD_DEDUP_PROJECTS", "")),
+			Workers:      envInt("DEBUGINFOD_DEDUP_WORKERS", 4),
+			BlobDir:      envOr("DEBUGINFOD_DEDUP_BLOB_DIR", ""),
+			Strategy:     envOr("DEBUGINFOD_DEDUP_STRATEGY", "xdelta-decompress-dwz"),
+			CompressBase: envBool("DEBUGINFOD_DEDUP_COMPRESS_BASE", true),
+			XdeltaPath:   envOr("DEBUGINFOD_XDELTA_PATH", "xdelta3"),
+			DwzPath:      envOr("DEBUGINFOD_DWZ_PATH", "dwz"),
+			ObjcopyPath:  envOr("DEBUGINFOD_OBJCOPY_PATH", "objcopy"),
 		},
 	}
 

@@ -36,7 +36,15 @@ func TestCompressAndVerify(t *testing.T) {
 	}
 }
 
-func TestProcessFilesCompressAndCASRef(t *testing.T) {
+func xdeltaAvailable() bool {
+	return NewXdelta("").Available()
+}
+
+func TestProcessGroupsXdelta(t *testing.T) {
+	if !xdeltaAvailable() {
+		t.Skip("xdelta3 not in PATH")
+	}
+
 	store, err := storage.New(t.TempDir() + "/dedup.sqlite")
 	if err != nil {
 		t.Fatal(err)
@@ -44,19 +52,20 @@ func TestProcessFilesCompressAndCASRef(t *testing.T) {
 	defer store.Close()
 
 	dir := t.TempDir()
-	blobDir := filepath.Join(dir, "blobs")
 	buildDir := filepath.Join(dir, "proj", "build_1_2025-01-01")
 	if err := os.MkdirAll(buildDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	content := []byte("identical debug content\n")
+	baseContent := []byte("ELF base debug content v1\n")
+	targetContent := append(baseContent, []byte("extra debug line\n")...)
+
 	file1 := filepath.Join(buildDir, "lib.so.1.0.0.100.debug")
 	file2 := filepath.Join(buildDir, "lib.so.1.0.0.101.debug")
-	if err := os.WriteFile(file1, content, 0o644); err != nil {
+	if err := os.WriteFile(file1, baseContent, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(file2, content, 0o644); err != nil {
+	if err := os.WriteFile(file2, targetContent, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -64,27 +73,27 @@ func TestProcessFilesCompressAndCASRef(t *testing.T) {
 	bid, _ := store.UpsertDedupBuildDir(pid, buildDir, 1)
 	id1, _ := store.UpsertDedupFile(storage.DedupFile{
 		BuildDirID: bid, FilePath: file1, Filename: "lib.so.1.0.0.100.debug",
-		FileStem: "lib.so", Version: "1.0.0", FileBuildNum: 100, OriginalSize: int64(len(content)),
+		FileStem: "lib.so", Version: "1.0.0", FileBuildNum: 100, OriginalSize: int64(len(baseContent)),
 	})
 	id2, _ := store.UpsertDedupFile(storage.DedupFile{
 		BuildDirID: bid, FilePath: file2, Filename: "lib.so.1.0.0.101.debug",
-		FileStem: "lib.so", Version: "1.0.0", FileBuildNum: 101, OriginalSize: int64(len(content)),
+		FileStem: "lib.so", Version: "1.0.0", FileBuildNum: 101, OriginalSize: int64(len(targetContent)),
 	})
 
 	opts := Options{
-		Store:     store,
-		BlobStore: NewBlobStore(blobDir),
+		Store:        store,
+		Xdelta:       NewXdelta(""),
+		Preprocessor: NoPreprocessor{},
+		CompressBase: false,
 	}
 	files, _ := store.ListPendingDedupFiles([]int64{bid})
-	compressed, dedupRef, _, errs, _, _ := processFiles(opts, files)
+	groups := GroupFiles(files)
+	compressed, _, errs, _, _ := processGroups(opts, groups)
 	if errs != 0 {
 		t.Fatalf("errors=%d", errs)
 	}
 	if compressed != 1 {
 		t.Fatalf("compressed=%d want 1", compressed)
-	}
-	if dedupRef != 1 {
-		t.Fatalf("dedupRef=%d want 1", dedupRef)
 	}
 
 	f1, err := store.GetDedupFileByID(id1)
@@ -95,20 +104,17 @@ func TestProcessFilesCompressAndCASRef(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f1.StorageKind != storage.DedupKindCompressed {
+	if f1.StorageKind != storage.DedupKindBase {
 		t.Fatalf("f1 kind=%s", f1.StorageKind)
 	}
-	if f2.StorageKind != storage.DedupKindRef {
+	if f2.StorageKind != storage.DedupKindDelta {
 		t.Fatalf("f2 kind=%s", f2.StorageKind)
 	}
-	if f1.BlobPath == "" || f1.BlobPath != f2.BlobPath {
-		t.Fatalf("blob paths: %q vs %q", f1.BlobPath, f2.BlobPath)
-	}
-	if _, err := os.Stat(file1); !os.IsNotExist(err) {
-		t.Fatal("original file1 should be removed")
-	}
 	if _, err := os.Stat(file2); !os.IsNotExist(err) {
-		t.Fatal("original file2 should be removed")
+		t.Fatal("original target should be removed")
+	}
+	if _, err := os.Stat(DeltaPathFor(file2)); err != nil {
+		t.Fatalf("delta missing: %v", err)
 	}
 }
 
@@ -122,7 +128,7 @@ func TestRunBackfillDryRun(t *testing.T) {
 	opts := Options{
 		Store:     store,
 		ScanPaths: []string{t.TempDir()},
-		BlobStore: NewBlobStore(t.TempDir()),
+		Xdelta:    NewXdelta(""),
 		Projects:  []string{"QuikServer"},
 		DryRun:    true,
 	}
@@ -135,7 +141,7 @@ func TestRunBackfillDryRun(t *testing.T) {
 	}
 }
 
-func TestRestoreToCache(t *testing.T) {
+func TestRestoreToCacheLegacyZstd(t *testing.T) {
 	store, err := storage.New(t.TempDir() + "/dedup.sqlite")
 	if err != nil {
 		t.Fatal(err)
@@ -182,4 +188,91 @@ func TestRestoreToCache(t *testing.T) {
 	if got != sha {
 		t.Fatalf("sha mismatch: %s vs %s", got, sha)
 	}
+}
+
+func TestRestoreDeltaRoundTrip(t *testing.T) {
+	if !xdeltaAvailable() {
+		t.Skip("xdelta3 not in PATH")
+	}
+
+	store, err := storage.New(t.TempDir() + "/dedup.sqlite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	dir := t.TempDir()
+	cacheDir := filepath.Join(dir, "cache")
+	buildDir := filepath.Join(dir, "build_1")
+	if err := os.MkdirAll(buildDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	baseContent := []byte("base ELF\n")
+	targetContent := append(baseContent, []byte("delta\n")...)
+	basePath := filepath.Join(buildDir, "lib.so.1.0.0.1.debug")
+	targetPath := filepath.Join(buildDir, "lib.so.1.0.0.2.debug")
+	if err := os.WriteFile(basePath, baseContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(targetPath, targetContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	xd := NewXdelta("")
+	deltaPath := DeltaPathFor(targetPath)
+	if err := xd.Encode(basePath, targetPath, deltaPath); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Remove(targetPath)
+
+	wantSHA, err := fileSHA256Bytes(targetContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pid, _ := store.EnsureDedupProject("p")
+	bid, _ := store.UpsertDedupBuildDir(pid, buildDir, 1)
+	baseID, _ := store.UpsertDedupFile(storage.DedupFile{
+		BuildDirID: bid, FilePath: basePath, Filename: filepath.Base(basePath),
+		FileStem: "lib.so", FileBuildNum: 1, OriginalSize: int64(len(baseContent)),
+	})
+	targetID, _ := store.UpsertDedupFile(storage.DedupFile{
+		BuildDirID: bid, FilePath: targetPath, Filename: filepath.Base(targetPath),
+		FileStem: "lib.so", FileBuildNum: 2, OriginalSize: int64(len(targetContent)),
+	})
+	baseSHA, _ := FileSHA256(basePath)
+	_ = store.MarkDedupFileDone(baseID, storage.DedupKindBase, 0, "", baseSHA, int64(len(baseContent)))
+	_ = store.MarkDedupFileDone(targetID, storage.DedupKindDelta, baseID, deltaPath, wantSHA, 0)
+
+	out, err := RestoreToCacheWithOpts(store, RestoreOptions{
+		Xdelta:       xd,
+		CompressBase: false,
+	}, cacheDir, targetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := FileSHA256(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != wantSHA {
+		t.Fatalf("sha mismatch")
+	}
+}
+
+func fileSHA256Bytes(b []byte) (string, error) {
+	f, err := os.CreateTemp("", "sha-*")
+	if err != nil {
+		return "", err
+	}
+	path := f.Name()
+	if _, err := f.Write(b); err != nil {
+		f.Close()
+		os.Remove(path)
+		return "", err
+	}
+	f.Close()
+	defer os.Remove(path)
+	return FileSHA256(path)
 }

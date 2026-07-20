@@ -182,39 +182,36 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
 
 | Подход | Экономия | Комментарий |
 |--------|----------|-------------|
-| xdelta3 (межсборочные дельты) | ~11% | файлы одного коммита, отличаются build number / timestamps |
-| zstd + whole-file CAS (текущий код) | ~1.8% | `dedup_ref=0`, байт-идентичных файлов нет |
+| xdelta3 + decompress-dwz + zstd base | **76%** | bench-dedup 2026-07, **production** |
+| xdelta3 + decompress-dwz | 55% | bench-dedup 2026-07 |
+| xdelta3 (межсборочные дельты) | ~17% | без preprocess |
+| zstd + whole-file CAS | ~1.8% | отклонён |
 
 **Цель исследований:** выбрать гибрид с максимальной экономией при совместимости с GDB/Delve.  
 **Вне scope:** удаление debug-секций (`.debug_macro`, `.debug_types` и т.п.) — не рассматривать.
 
-- [x] **zstd + SHA256 CAS dedup** — baseline в коде (см. [docs/QUIK_DEDUP.md](./docs/QUIK_DEDUP.md)); хуже xdelta на реальных данных
-- [ ] **A/B-бенчмарк трёх стратегий** — единая методика на одной выборке `build_*`:
-  - метрики: суммарный размер до/после, % экономии, время encode/decode, пик RAM/CPU
-  - проверка: decode → SHA256; GDB `info sources` на восстановленном ELF
-  - артефакты: `cmd/bench-dedup` + [scripts/bench-dedup/README.md](./scripts/bench-dedup/README.md)
-- [ ] **Strategy A — прогоны и выбор победителя** — см. [scripts/bench-dedup/README.md](./scripts/bench-dedup/README.md)
+- [x] **zstd + SHA256 CAS dedup** — baseline; хуже xdelta на реальных данных (см. [docs/DEDUP_STRATEGY_COMPARISON.md](./docs/DEDUP_STRATEGY_COMPARISON.md))
+- [x] **A/B-бенчмарк трёх стратегий** — `cmd/bench-dedup`, матрица 11 сценариев, [docs/DEDUP_STRATEGY_COMPARISON.md](./docs/DEDUP_STRATEGY_COMPARISON.md)
+- [x] **Strategy A — прогоны и выбор победителя** — xdelta3 + decompress-dwz + zstd base (76%)
 
 #### Стратегия A — «альтернативные диффы + DWARF-оптимизация» (внешний контекст 1)
 
 Инструмент: `make build-bench-dedup`, документация: [scripts/bench-dedup/README.md](./scripts/bench-dedup/README.md).
 
 - [x] **bench-dedup CLI** — collect, group, xdelta3/bsdiff/hdiffpatch, dwz, objcopy post-compress
-- [ ] **bsdiff vs xdelta3 vs HDiffPatch** — A/B на одной группе `(file_stem + version + commit-id)`:
-  - размер патча, время создания/восстановления
-  - ожидание по литературе: bsdiff 50–80% меньше xdelta (проверить на Quik `.debug`)
-- [ ] **dwz до диффа** — `dwz file.debug` перед base/delta; замерить +10–30% к размеру файлов и влияние на размер дельт
-- [ ] **zstd внутри ELF** — `objcopy --compress-debug-sections=zstd` **только после** дельт (сжатые секции до диффа ломают byte-match)
+- [x] **bsdiff vs xdelta3** — bsdiff отклонён (63 verify fail); xdelta3 — production
+- [x] **dwz до диффа** — только decompress-dwz; голый dwz не работает на Quik ELF
+- [x] **zstd внутри ELF** — objcopy zstd на base после дельт (+21 п.п.)
 - [ ] **debuginfod path interning** — оценить PR30378 / аналог для SQLite-индекса (экономия БД, не payload)
 
 #### Стратегия B — «dwz → xdelta3» (внешний контекст 2)
 
 Пайплайн ingest с фиксированным порядком шагов.
 
-- [ ] **Прототип пайплайна:** распаковка → `dwz` → группировка по commit-id → xdelta3 (base = min build number) → метаданные в PostgreSQL
-- [ ] **Порядок шагов** — зафиксировать: `dwz` строго **до** xdelta; `objcopy --compress` строго **после** дельт (если включаем)
-- [ ] **Ожидаемая экономия** — сверить с гипотезой 20–45% (`dwz` + xdelta) vs текущие ~11% (только xdelta)
-- [ ] **Опционально: objcopy zstd после дельт** — отдельный подэксперимент: влияние на размер хранения base-файлов и совместимость с GDB
+- [x] **Прототип пайплайна:** decompress → dwz → xdelta3 — интегрирован в `internal/dedup`
+- [x] **Порядок шагов** — `decompress-dwz` до xdelta; objcopy zstd после дельт
+- [x] **Ожидаемая экономия** — 55% без zstd base, 76% с zstd base (bench 2026-07)
+- [x] **objcopy zstd после дельт** — `DEBUGINFOD_DEDUP_COMPRESS_BASE=true`
 
 #### Стратегия C — «гибрид diff + секционный CAS» (рекомендация ассистента)
 
@@ -226,7 +223,7 @@ Docker — только для dev/demo (`examples/`, корневой `docker-c
   - diff по отдельным секциям (`.debug_str`, `.debug_abbrev`, `.debug_info`, …) с выбором base по min build number
 - [ ] **Секционный zstd/CAS** — CAS только для байт-идентичных секций между сборками; zstd на уникальные куски
 - [ ] **dwz -m (multifile)** — оптимизация на уровне каталога продукта перед секционным разбором
-- [ ] **Интеграция в Go** — после выбора победителя: гибридный `internal/dedup` (не whole-file CAS-only)
+- [ ] **Интеграция в Go** — [x] xdelta-decompress-dwz в `internal/dedup`; секционный CAS (Strategy C) отложен
 
 #### Build-time (отложено, решение за эксплуатацией Quik)
 

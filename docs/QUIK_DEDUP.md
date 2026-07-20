@@ -1,8 +1,8 @@
-# Quik debuginfo storage (zstd + CAS dedup)
+# Quik debuginfo storage (xdelta3 + decompress-dwz)
 
-Гибридное сжатие `.debug` ELF-файлов Quik/Front: **per-file zstd** + **SHA256 content-addressable dedup**.
+Инкрементальное сжатие `.debug` ELF-файлов Quik/Front: **decompress → dwz → xdelta3** с опциональным **objcopy zstd** на base.
 
-xdelta **не используется** — инкрементальные патчи между сборками дают низкую экономию на DWARF.
+Подробное сравнение стратегий: [DEDUP_STRATEGY_COMPARISON.md](./DEDUP_STRATEGY_COMPARISON.md).
 
 ## Layout на диске
 
@@ -16,40 +16,33 @@ DEBUGINFOD_SCAN_PATH/
   Released/
     QuikServer_16.0_Common_Linux/
       build_482_2025-03-26_…/
-        lib.so.19.1.5.2899.debug
+        lib.so.19.1.5.2899.debug          ← base (после preprocess)
+        lib.so.19.1.5.2900.debug.xdelta   ← delta (оригинал удалён)
 ```
-
-Сжатые blob хранятся в CAS-каталоге (по умолчанию `{DEBUGINFOD_CACHE_DIR}/dedup-blobs/`):
-
-```text
-dedup-blobs/
-  ab/
-    abcdef…<sha256>.zst
-```
-
-Оригинальные `.debug` удаляются после успешного сжатия и проверки SHA256.
 
 ## Имена файлов
 
 В dedup попадает **любой** файл с суффиксом `.debug` внутри `build_*`.
 
-Для известных Quik-шаблонов (`lib.so.M.m.p.BUILD.debug`, `quik-M.m.p.BUILD.debug`) в БД сохраняются stem/version/build. Для произвольных имён — только имя файла без расширения (version и build пустые).
+Для известных Quik-шаблонов (`lib.so.M.m.p.BUILD.debug`, `quik-M.m.p.BUILD.debug`) в БД сохраняются stem/version/build. Для произвольных имён — только имя файла без расширения.
 
 ## Pipeline
 
-Для каждого pending `.debug`:
+Группировка: `NormalizeDedupGroupProject(project) + file_stem`, base = min `file_build_num`.
 
-1. Вычислить SHA256 содержимого.
-2. Если blob с таким SHA уже есть → **CAS ref** (удалить оригинал, ссылка на существующий blob).
-3. Иначе → **zstd-сжатие** в CAS, проверка распаковки, удаление оригинала.
+Для каждой группы из 2+ файлов:
 
-Группировка по `(project, file_stem)` **не требуется** — каждый файл обрабатывается независимо.
+1. `objcopy --decompress-debug-sections` + `dwz` на base (in-place).
+2. Для каждого target: preprocess → `xdelta3 -e` → verify decode → удалить оригинал.
+3. Опционально: `objcopy --compress-debug-sections=zstd` на base (`DEBUGINFOD_DEDUP_COMPRESS_BASE=true`).
+
+Singleton-группы: `storage_kind=full` без изменений.
 
 ### Ingest (после scan)
 
 1. Рекурсивно обнаружить каталоги `build_*` под scan path.
 2. Зарегистрировать `.debug` в таблице `dedup_files`.
-3. Сжать все pending-файлы (zstd + CAS).
+3. Обработать pending-файлы группами (xdelta pipeline).
 
 ### Backfill (для старых сборок)
 
@@ -58,45 +51,42 @@ POST /admin/dedup-backfill?project=Released/QuikServer_16.0_Common_Linux&batch=5
 X-Admin-Token: <DEBUGINFOD_ADMIN_KEY>
 ```
 
-Параметр `project` — полный путь проекта как в UI. Без `project` — все обнаруженные папки.
-
-При обновлении с xdelta legacy-записи (`storage_kind=base|delta`) автоматически сбрасываются в `pending` для повторной обработки.
+При первом запуске после обновления с zstd CAS однократная миграция сбрасывает `compressed`/`ref`/`base`/`delta` → `pending`.
 
 ## Отдача (cache-aside)
 
 При запросе `/buildid/<id>/debuginfo`:
 
-1. Найти `file_path` в `artifacts`.
-2. Проверить `dedup_files`: если `storage_kind=compressed|ref`, распаковать blob в `DEBUGINFOD_CACHE_DIR/dedup-restored/`.
-3. Отдать распакованный файл (`http.ServeFile`).
-
-Повторные запросы используют кэш (проверка size + SHA256).
-
-## БД
-
-Таблицы `dedup_projects`, `dedup_build_dirs`, `dedup_files` — см. `internal/storage/dedup.go`.
-
-`storage_kind`: `full` | `compressed` | `ref`.
-
-Колонка `delta_path` хранит путь к zstd-blob (историческое имя).
+| storage_kind | Действие |
+|--------------|----------|
+| `full`, `base` | отдать `file_path` (GDB читает zstd-секции нативно) |
+| `delta` | decompress base (если zstd) → `xdelta3 -d` → кэш |
+| `compressed`/`ref` | legacy zstd CAS: распаковка blob |
 
 ## Конфигурация
 
-```env
+```bash
 DEBUGINFOD_DEDUP_ENABLED=true
-# Пусто = все найденные папки; иначе фильтр по полному пути проекта (через запятую):
-# DEBUGINFOD_DEDUP_PROJECTS=Released/QuikServer_16.0_Common_Linux
-DEBUGINFOD_DEDUP_WORKERS=4
-# Каталог CAS-blob (по умолчанию: {DEBUGINFOD_CACHE_DIR}/dedup-blobs)
-# DEBUGINFOD_DEDUP_BLOB_DIR=/var/lib/debuginfod-go/blobs
+DEBUGINFOD_DEDUP_STRATEGY=xdelta-decompress-dwz   # или xdelta (без dwz)
+DEBUGINFOD_DEDUP_COMPRESS_BASE=true               # objcopy zstd на base
+DEBUGINFOD_XDELTA_PATH=xdelta3
+DEBUGINFOD_DWZ_PATH=dwz
+DEBUGINFOD_OBJCOPY_PATH=objcopy
 ```
 
-## Ограничения
+Зависимости: `xdelta3`, `dwz`, `binutils` (`objcopy`).
 
-- Только plain `.debug` на диске (не архивы).
-- Внешние зависимости не требуются — zstd встроен в бинарник (klauspost/compress).
-- Экономия CAS заметна только при **байт-идентичных** файлах между сборками; zstd даёт выигрыш на каждом файле.
+## БД
 
-## Отложено (build-time)
+Таблицы `dedup_projects`, `dedup_build_dirs`, `dedup_files`, `dedup_meta` — см. `internal/storage/dedup.go`.
 
-См. [TODO.md](../TODO.md) — оптимизации на стороне CI: `dwz`, `-gz`/`zlib-gnu`, split-dwarf.
+`storage_kind`: `full` | `base` | `delta` | `compressed` | `ref` (legacy).
+
+## Бенчмарки
+
+```bash
+make build-bench-dedup
+./scripts/bench-dedup/run-full-matrix.sh
+```
+
+См. [scripts/bench-dedup/README.md](../scripts/bench-dedup/README.md).
