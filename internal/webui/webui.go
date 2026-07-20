@@ -47,8 +47,12 @@ type StatsResponse struct {
 	LastScanErrors      int    `json:"last_scan_errors"`
 	LastScanFinishedAt  string `json:"last_scan_finished_at,omitempty"`
 	HTTPRequestsTotal   uint64 `json:"http_requests_total"`
-	CacheBytes          int64  `json:"cache_bytes"`
-	ScanEnabled         bool   `json:"scan_enabled"`
+	CacheBytes          int64   `json:"cache_bytes"`
+	IndexBytesOnDisk    int64   `json:"index_bytes_on_disk"`
+	ScanEnabled         bool    `json:"scan_enabled"`
+	DedupEnabled        bool    `json:"dedup_enabled"`
+	DedupBytesSaved     int64   `json:"dedup_bytes_saved"`
+	DedupSavedPercent   float64 `json:"dedup_saved_percent"`
 }
 
 // SearchResponse — JSON результатов поиска.
@@ -141,12 +145,26 @@ func statsHandler(opts Opts) http.HandlerFunc {
 			LastScanErrors:      scan.Errors,
 			HTTPRequestsTotal:   opts.Metrics.HTTPRequests(),
 			ScanEnabled:         opts.ScanEnabled,
+			DedupEnabled:        opts.DedupEnabled,
 		}
 		if !scan.Finished.IsZero() {
 			resp.LastScanFinishedAt = scan.Finished.UTC().Format(time.RFC3339)
 		}
 		if opts.CacheBytes != nil {
 			resp.CacheBytes = opts.CacheBytes()
+		}
+		if summary, err := opts.Store.IndexSummary(); err != nil {
+			slog.Warn("webui stats index summary", "err", err)
+		} else {
+			resp.IndexBytesOnDisk = summary.BytesOnDisk
+		}
+		if opts.DedupEnabled {
+			if totals, err := opts.Store.DedupStorageTotals(); err != nil {
+				slog.Warn("webui stats dedup totals", "err", err)
+			} else {
+				resp.DedupBytesSaved = totals.BytesSaved
+				resp.DedupSavedPercent = totals.SavedPercent
+			}
 		}
 
 		w.Header().Set("Content-Type", "application/json")
