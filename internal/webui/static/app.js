@@ -21,9 +21,6 @@
   const dedupRunsBody = document.getElementById("dedup-runs-body");
   const rescanBtn = document.getElementById("rescan-btn");
   const rescanStatus = document.getElementById("rescan-status");
-  const artifactDetail = document.getElementById("artifact-detail");
-  const artifactDetailBody = document.getElementById("artifact-detail-body");
-  const detailCloseBtn = document.getElementById("detail-close");
 
   let searchKey = "path";
   let nextOffset = 0;
@@ -32,6 +29,7 @@
   let lastScanFinishedAt = "";
   let rescanPollTimer = null;
   let lastResultRows = [];
+  let expandedRowIdx = null;
 
   const hints = {
     path:
@@ -150,73 +148,202 @@
     }
   }
 
-  function hideArtifactDetail() {
-    if (artifactDetail) artifactDetail.hidden = true;
-    if (artifactDetailBody) artifactDetailBody.innerHTML = "";
+  function normalizeRow(row) {
+    if (row.entries && row.entries.length) {
+      return row;
+    }
+    const entry = {
+      buildid: row.buildid,
+      type: row.type,
+      file: row.file,
+      file_path: row.file_path,
+      archive: row.archive,
+      archive_path: row.archive_path,
+      archive_rel: row.archive_rel,
+      member_path: row.member_path,
+      buildid_kind: row.buildid_kind,
+      raw_buildid: row.raw_buildid,
+      relative_path: row.relative_path,
+      filename: row.filename,
+      directory: row.directory,
+      mtime_ns: row.mtime_ns,
+      mtime: row.mtime,
+    };
+    return {
+      buildid: row.buildid,
+      types: row.type ? [row.type] : row.types || [],
+      buildid_kind: row.buildid_kind,
+      raw_buildid: row.raw_buildid,
+      relative_path: row.relative_path,
+      filename: row.filename,
+      directory: row.directory,
+      entries: [entry],
+      sources: row.sources || [],
+      sources_count: row.sources_count || 0,
+    };
   }
 
-  function showArtifactDetail(row) {
-    if (!artifactDetail || !artifactDetailBody) return;
-    const buildid = row.buildid || "";
-    const types = row.types || (row.type ? [row.type] : []);
-    const byType = row.by_type_rel || row.by_type || {};
-    const byTypeAbs = row.by_type || {};
+  function detailField(label, value, mono) {
+    if (value === undefined || value === null || value === "") return "";
+    return (
+      '<div class="detail-field"><span class="detail-label">' +
+      escapeHtml(label) +
+      '</span><span class="detail-value' +
+      (mono ? " mono" : "") +
+      '">' +
+      escapeHtml(String(value)) +
+      "</span></div>"
+    );
+  }
 
-    let pathsHtml = "";
-    types.forEach(function (t) {
-      const rel = byType[t] || row.relative_path || "—";
-      const abs = byTypeAbs[t] || row.file || "—";
-      pathsHtml +=
-        "<tr><th>" +
-        escapeHtml(t) +
-        '</th><td class="mono">' +
-        escapeHtml(rel) +
-        '</td><td class="mono muted">' +
-        escapeHtml(abs) +
-        "</td></tr>";
-    });
+  function renderEntryBlock(entry, buildid) {
+    const bid = entry.buildid || buildid || "";
+    const download =
+      entry.type === "debuginfo" || entry.type === "executable"
+        ? '<a class="type-badge ' +
+          entry.type +
+          '" href="/buildid/' +
+          encodeURIComponent(bid) +
+          "/" +
+          entry.type +
+          '">/buildid/' +
+          escapeHtml(bid) +
+          "/" +
+          entry.type +
+          "</a>"
+        : "";
+    return (
+      '<div class="detail-entry">' +
+      "<h4>" +
+      typeBadges([entry.type]) +
+      "</h4>" +
+      '<div class="detail-grid">' +
+      detailField("Отн. путь", entry.relative_path, true) +
+      detailField("Каталог", entry.directory, true) +
+      detailField("Файл", entry.filename, true) +
+      detailField("Абс. путь", entry.file_path, true) +
+      detailField("Архив (отн.)", entry.archive_rel, true) +
+      detailField("Архив (абс.)", entry.archive_path || entry.archive, true) +
+      detailField("Member", entry.member_path, true) +
+      detailField("Mtime", entry.mtime, false) +
+      detailField("Mtime (ns)", entry.mtime_ns, false) +
+      "</div>" +
+      (download ? '<div class="detail-links">' + download + "</div>" : "") +
+      "</div>"
+    );
+  }
 
-    artifactDetailBody.innerHTML =
-      '<dl class="detail-dl">' +
-      "<dt>Build-ID</dt><dd class='mono'>" +
+  function renderSourcesBlock(row) {
+    const sources = row.sources || [];
+    const total = row.sources_count || sources.length;
+    if (!total) return "";
+    let html =
+      '<div class="detail-section"><h4>Исходники (' +
+      formatNumber(total) +
+      ")</h4>";
+    if (!sources.length) {
+      html += '<p class="muted">Показаны не все — см. /buildid/…/source</p>';
+    } else {
+      html +=
+        '<table class="detail-table"><thead><tr><th>source path</th><th>отн. путь</th><th>архив</th><th>mtime</th></tr></thead><tbody>';
+      sources.forEach(function (s) {
+        html +=
+          "<tr><td class='mono'>" +
+          escapeHtml(s.source_path) +
+          "</td><td class='mono'>" +
+          escapeHtml(s.relative_path) +
+          "</td><td class='mono'>" +
+          escapeHtml(s.archive_rel || s.archive_path || "—") +
+          "</td><td>" +
+          escapeHtml(s.mtime || "—") +
+          "</td></tr>";
+      });
+      html += "</tbody></table>";
+    }
+    html += "</div>";
+    return html;
+  }
+
+  function renderDetailInner(row) {
+    const data = normalizeRow(row);
+    const buildid = data.buildid || "";
+    const copyBtn =
+      '<button type="button" class="copy-btn" data-copy="' +
       escapeHtml(buildid) +
-      " <button type='button' class='copy-btn' data-copy='" +
-      escapeHtml(buildid) +
-      "'>копировать</button></dd>" +
-      (row.raw_buildid && row.raw_buildid !== buildid
-        ? "<dt>Raw build-id</dt><dd class='mono'>" + escapeHtml(row.raw_buildid) + "</dd>"
-        : "") +
-      (row.buildid_kind
-        ? "<dt>Kind</dt><dd>" + escapeHtml(row.buildid_kind) + "</dd>"
-        : "") +
-      "<dt>Типы</dt><dd>" +
-      typeBadges(types) +
-      "</dd>" +
-      "</dl>" +
-      '<table class="detail-table"><thead><tr><th>тип</th><th>отн. путь</th><th>абс. путь</th></tr></thead><tbody>' +
-      pathsHtml +
-      "</tbody></table>" +
-      '<div class="detail-links">' +
-      artifactLinks(buildid, types) +
+      '">копировать build-id</button>';
+    let html =
+      '<div class="detail-section"><h4>Идентификация</h4><div class="detail-grid">' +
+      detailField("Build-ID", buildid, true) +
+      detailField("Raw build-id", data.raw_buildid, true) +
+      detailField("Build-ID kind", data.buildid_kind, false) +
+      "</div>" +
+      copyBtn +
       "</div>";
 
-    artifactDetail.hidden = false;
-    artifactDetailBody.querySelectorAll(".copy-btn").forEach(function (btn) {
-      btn.addEventListener("click", function () {
+    const entries = data.entries || [];
+    html +=
+      '<div class="detail-section"><h4>Артефакты по типам (' +
+      entries.length +
+      ")</h4>";
+    entries.forEach(function (entry) {
+      html += renderEntryBlock(entry, buildid);
+    });
+    html += "</div>";
+
+    html += renderSourcesBlock(data);
+
+    const types = data.types || [];
+    if (types.length) {
+      html +=
+        '<div class="detail-section"><h4>API</h4><div class="detail-links">' +
+        artifactLinks(buildid, types) +
+        ' <a class="badge link" href="/metadata?key=buildid&amp;value=' +
+        encodeURIComponent(buildid) +
+        '" target="_blank" rel="noopener">metadata</a>' +
+        "</div></div>";
+    }
+    return html;
+  }
+
+  function bindCopyButtons(root) {
+    if (!root) return;
+    root.querySelectorAll(".copy-btn").forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.stopPropagation();
         const text = btn.getAttribute("data-copy") || "";
         navigator.clipboard.writeText(text).catch(function () {});
         btn.textContent = "скопировано";
         setTimeout(function () {
-          btn.textContent = "копировать";
+          btn.textContent = "копировать build-id";
         }, 1500);
       });
     });
   }
 
+  function refreshExpandedRows() {
+    resultsBody.querySelectorAll(".artifact-row").forEach(function (tr) {
+      const idx = parseInt(tr.getAttribute("data-idx") || "-1", 10);
+      const expanded = idx === expandedRowIdx;
+      tr.classList.toggle("expanded", expanded);
+      const toggle = tr.querySelector(".col-toggle");
+      if (toggle) toggle.textContent = expanded ? "▼" : "›";
+    });
+    resultsBody.querySelectorAll(".artifact-detail-row").forEach(function (tr) {
+      const idx = parseInt(tr.getAttribute("data-detail-for") || "-1", 10);
+      tr.hidden = idx !== expandedRowIdx;
+    });
+  }
+
+  function toggleRow(idx) {
+    expandedRowIdx = expandedRowIdx === idx ? null : idx;
+    refreshExpandedRows();
+    bindCopyButtons(resultsBody);
+  }
+
   function clearSearchResults(message) {
     nextOffset = 0;
     lastSearchValue = "";
-    hideArtifactDetail();
+    expandedRowIdx = null;
     searchStatus.textContent = message || "";
     searchStatus.classList.remove("error");
     resultsTable.hidden = true;
@@ -621,15 +748,33 @@
     }
   }
 
+  function renderDetailRow(row, idx) {
+    const hidden = idx !== expandedRowIdx;
+    return (
+      '<tr class="artifact-detail-row" data-detail-for="' +
+      idx +
+      '"' +
+      (hidden ? " hidden" : "") +
+      '><td colspan="6" class="artifact-detail-cell">' +
+      renderDetailInner(row) +
+      "</td></tr>"
+    );
+  }
+
   function renderGroupedRow(row, idx) {
     const types = row.types || [];
     const rel = row.relative_path || row.file || "—";
     const parts = splitRelativePath(rel);
+    const expanded = idx === expandedRowIdx;
     return (
-      '<tr class="artifact-row" tabindex="0" data-idx="' +
+      '<tr class="artifact-row' +
+      (expanded ? " expanded" : "") +
+      '" tabindex="0" data-idx="' +
       idx +
       '">' +
-      '<td class="col-toggle" title="Подробнее">›</td>' +
+      '<td class="col-toggle" title="Подробнее">' +
+      (expanded ? "▼" : "›") +
+      "</td>" +
       '<td class="mono path-cell" title="' +
       escapeHtml(rel) +
       '">' +
@@ -651,7 +796,8 @@
       '<td class="links">' +
       artifactLinks(row.buildid, types) +
       "</td>" +
-      "</tr>"
+      "</tr>" +
+      renderDetailRow(row, idx)
     );
   }
 
@@ -659,11 +805,16 @@
     const types = [row.type];
     const rel = row.relative_path || row.file || "—";
     const parts = splitRelativePath(rel);
+    const expanded = idx === expandedRowIdx;
     return (
-      '<tr class="artifact-row" tabindex="0" data-idx="' +
+      '<tr class="artifact-row' +
+      (expanded ? " expanded" : "") +
+      '" tabindex="0" data-idx="' +
       idx +
       '">' +
-      '<td class="col-toggle" title="Подробнее">›</td>' +
+      '<td class="col-toggle" title="Подробнее">' +
+      (expanded ? "▼" : "›") +
+      "</td>" +
       '<td class="mono path-cell" title="' +
       escapeHtml(rel) +
       '">' +
@@ -683,20 +834,20 @@
       '<td class="links">' +
       artifactLinks(row.buildid, types) +
       "</td>" +
-      "</tr>"
+      "</tr>" +
+      renderDetailRow(row, idx)
     );
   }
 
   function bindResultRows() {
     resultsBody.querySelectorAll(".artifact-row").forEach(function (tr) {
       tr.addEventListener("click", function (e) {
-        if (e.target.closest("a")) return;
+        if (e.target.closest("a") || e.target.closest("button")) return;
         const idx = parseInt(tr.getAttribute("data-idx") || "-1", 10);
-        if (idx >= 0 && lastResultRows[idx]) {
-          showArtifactDetail(lastResultRows[idx]);
-        }
+        if (idx >= 0) toggleRow(idx);
       });
     });
+    bindCopyButtons(resultsBody);
   }
 
   function renderResults(data, append) {
@@ -713,6 +864,7 @@
     const baseIdx = append ? lastResultRows.length : 0;
     if (!append) {
       lastResultRows = rows.slice();
+      expandedRowIdx = null;
     } else {
       lastResultRows = lastResultRows.concat(rows);
     }
@@ -745,7 +897,6 @@
       resultsBody.insertAdjacentHTML("beforeend", html);
     } else {
       resultsBody.innerHTML = html;
-      hideArtifactDetail();
     }
     bindResultRows();
 
@@ -777,10 +928,6 @@
 
   if (rescanBtn) {
     rescanBtn.addEventListener("click", triggerRescan);
-  }
-
-  if (detailCloseBtn) {
-    detailCloseBtn.addEventListener("click", hideArtifactDetail);
   }
 
   let debounce;

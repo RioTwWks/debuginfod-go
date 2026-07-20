@@ -452,6 +452,67 @@ body {
   background: var(--surface2);
 }
 
+.artifact-row.expanded {
+  background: var(--surface2);
+}
+
+.artifact-detail-row.hidden {
+  display: none;
+}
+
+.artifact-detail-cell {
+  padding: 0.75rem 1rem 1rem 2rem !important;
+  background: var(--surface2);
+  border-top: 1px solid var(--border);
+}
+
+.detail-section {
+  margin-bottom: 1rem;
+}
+
+.detail-section h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.5rem 1rem;
+}
+
+.detail-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.detail-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.detail-value {
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+
+.detail-entry {
+  margin-bottom: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.detail-entry h4 {
+  margin: 0 0 0.5rem;
+}
+
 .artifact-detail {
   margin-top: 1rem;
   border: 1px solid var(--accent);
