@@ -39,6 +39,7 @@ type ArtifactRecord struct {
 	Sources      []UISourceRecord `json:"sources,omitempty"`
 	SourcesCount int              `json:"sources_count,omitempty"`
 	Comment      *UICommentInfo   `json:"comment,omitempty"`
+	GitCommit    string           `json:"git_commit,omitempty"`
 }
 
 // MetadataResponse — JSON-ответ эндпоинта /metadata.
@@ -123,6 +124,7 @@ func migrateSQLite(db *sql.DB) error {
 		"ALTER TABLE artifacts ADD COLUMN member_path TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE artifacts ADD COLUMN build_id_kind TEXT NOT NULL DEFAULT 'gnu'",
 		"ALTER TABLE artifacts ADD COLUMN raw_build_id TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE artifacts ADD COLUMN git_commit TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE sources ADD COLUMN archive_path TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE sources ADD COLUMN member_path TEXT NOT NULL DEFAULT ''",
 	} {
@@ -163,6 +165,7 @@ type ArtifactInput struct {
 	MemberPath  string
 	BuildIDKind string
 	RawBuildID  string
+	GitCommit   string
 }
 
 type artifactRow struct {
@@ -173,30 +176,32 @@ type artifactRow struct {
 	MemberPath  string
 	BuildIDKind string
 	RawBuildID  string
+	GitCommit   string
 	MtimeNs     int64
 }
 
-const artifactSelectColumns = `build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id, mtime_ns`
+const artifactSelectColumns = `build_id, file_path, type, archive_path, member_path, build_id_kind, raw_build_id, git_commit, mtime_ns`
 
 // AddArtifact сохраняет или обновляет артефакт.
 func (s *Storage) AddArtifact(in ArtifactInput, mtimeNS int64) error {
 	q := rebind(`
 		INSERT INTO artifacts (
 			build_id, file_path, type, archive_path, member_path,
-			build_id_kind, raw_build_id, mtime_ns
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			build_id_kind, raw_build_id, git_commit, mtime_ns
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(build_id, type) DO UPDATE SET
 			file_path = excluded.file_path,
 			archive_path = excluded.archive_path,
 			member_path = excluded.member_path,
 			build_id_kind = excluded.build_id_kind,
 			raw_build_id = excluded.raw_build_id,
+			git_commit = excluded.git_commit,
 			mtime_ns = excluded.mtime_ns
 		WHERE excluded.mtime_ns >= artifacts.mtime_ns
 	`, s.dialect)
 	_, err := s.db.Exec(q,
 		in.BuildID, in.FilePath, in.Type, in.ArchivePath, in.MemberPath,
-		in.BuildIDKind, in.RawBuildID, mtimeNS)
+		in.BuildIDKind, in.RawBuildID, in.GitCommit, mtimeNS)
 	return err
 }
 
@@ -546,7 +551,7 @@ func scanArtifactRow(rows *sql.Rows) (ArtifactRecord, error) {
 	var row artifactRow
 	err := rows.Scan(
 		&row.BuildID, &row.FilePath, &row.Type, &row.ArchivePath, &row.MemberPath,
-		&row.BuildIDKind, &row.RawBuildID, &row.MtimeNs,
+		&row.BuildIDKind, &row.RawBuildID, &row.GitCommit, &row.MtimeNs,
 	)
 	if err != nil {
 		return ArtifactRecord{}, err
@@ -560,6 +565,7 @@ func (r artifactRow) toRecord() ArtifactRecord {
 		Type:        r.Type,
 		BuildIDKind: r.BuildIDKind,
 		RawBuildID:  r.RawBuildID,
+		GitCommit:   r.GitCommit,
 		MtimeNs:     r.MtimeNs,
 	}
 	if r.ArchivePath != "" {

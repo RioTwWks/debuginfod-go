@@ -19,6 +19,7 @@ import (
 	"github.com/your-username/debuginfod-go/internal/metrics"
 	"github.com/your-username/debuginfod-go/internal/storage"
 	"github.com/your-username/debuginfod-go/pkg/buildid"
+	"github.com/your-username/debuginfod-go/pkg/elfcomment"
 )
 
 type scanJob struct {
@@ -319,6 +320,10 @@ func (i *Indexer) indexELF(path string, mtimeNS int64, archivePath, memberPath s
 	defer elfFile.Close()
 
 	artifactType := buildid.ArtifactType(path, elfFile)
+	gitCommit := ""
+	if artifactType == "debuginfo" {
+		gitCommit = elfcomment.FromPathOrEmpty(path)
+	}
 	row := storage.ArtifactInput{
 		BuildID:     result.Value,
 		Type:        artifactType,
@@ -327,6 +332,7 @@ func (i *Indexer) indexELF(path string, mtimeNS int64, archivePath, memberPath s
 		MemberPath:  memberPath,
 		BuildIDKind: string(result.Kind),
 		RawBuildID:  result.Raw,
+		GitCommit:   gitCommit,
 	}
 	if err := i.storage.AddArtifact(row, mtimeNS); err != nil {
 		return err

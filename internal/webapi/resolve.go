@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/your-username/debuginfod-go/internal/archive"
 	"github.com/your-username/debuginfod-go/internal/pathsafe"
@@ -59,9 +61,22 @@ func openArtifact(cacheDir string, loc storage.ArtifactLocation, restorer DedupR
 	return path, func() { _ = os.Remove(path) }, nil
 }
 
-// serveResolvedFile отдаёт файл клиенту.
-func serveResolvedFile(w http.ResponseWriter, r *http.Request, path string) {
+// serveResolvedFile отдаёт файл клиенту с оригинальным именем.
+func serveResolvedFile(w http.ResponseWriter, r *http.Request, path, downloadName string) {
+	if downloadName == "" {
+		downloadName = filepath.Base(path)
+	}
+	setContentDisposition(w, downloadName)
 	http.ServeFile(w, r, path)
+}
+
+func setContentDisposition(w http.ResponseWriter, filename string) {
+	filename = strings.TrimSpace(filename)
+	if filename == "" {
+		return
+	}
+	safe := strings.ReplaceAll(filename, `"`, "")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+safe+`"`)
 }
 
 // extractSectionFromLocations извлекает секцию ELF с поддержкой lazy-архивов.
@@ -99,6 +114,7 @@ func streamMember(w http.ResponseWriter, archivePath, memberPath string) error {
 	}
 	defer rc.Close()
 	w.Header().Set("Content-Type", "application/octet-stream")
+	setContentDisposition(w, filepath.Base(memberPath))
 	_, err = io.Copy(w, rc)
 	return err
 }

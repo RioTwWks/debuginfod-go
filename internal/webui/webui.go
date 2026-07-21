@@ -78,6 +78,15 @@ type ScansResponse struct {
 	DedupEnabled   bool                         `json:"dedup_enabled"`
 }
 
+// BrowseResponse — дерево .debug для Web UI.
+type BrowseResponse struct {
+	Query    string               `json:"query,omitempty"`
+	Projects []storage.UITreeNode `json:"projects"`
+	Count    int                  `json:"count"`
+	Limit    int                  `json:"limit"`
+	Complete bool                 `json:"complete"`
+}
+
 // Register добавляет маршруты Web UI в mux.
 func Register(mux *http.ServeMux, opts Opts) {
 	static, err := fs.Sub(staticFiles, "static")
@@ -99,6 +108,7 @@ func Register(mux *http.ServeMux, opts Opts) {
 		http.NotFound(w, r)
 	})
 	mux.HandleFunc("/ui/api/stats", statsHandler(opts))
+	mux.HandleFunc("/ui/api/browse", browseHandler(opts))
 	mux.HandleFunc("/ui/api/search", searchHandler(opts))
 	mux.HandleFunc("/ui/api/scans", scansHandler(opts))
 	mux.HandleFunc("/ui/api/rescan", rescanHandler(opts))
@@ -166,6 +176,53 @@ func statsHandler(opts Opts) http.HandlerFunc {
 				resp.DedupBytesSaved = totals.BytesSaved
 				resp.DedupSavedPercent = totals.SavedPercent
 			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}
+}
+
+func browseHandler(opts Opts) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		query := strings.TrimSpace(r.URL.Query().Get("q"))
+		limit := 2000
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+				limit = n
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+
+		records, err := opts.Store.SearchDebugFilesForUI(ctx, opts.ScanPaths, query, limit)
+		if err != nil {
+			slog.Error("webui browse", "query", query, "err", err)
+			http.Error(w, "browse error", http.StatusInternalServerError)
+			return
+		}
+		for i := range records {
+			storage.EnrichArtifactComment(&records[i])
+		}
+
+		projects := storage.BuildUITree(opts.ScanPaths, records)
+		complete := len(records) < limit
+
+		resp := BrowseResponse{
+			Query:    query,
+			Projects: projects,
+			Count:    len(records),
+			Limit:    limit,
+			Complete: complete,
+		}
+		if resp.Projects == nil {
+			resp.Projects = []storage.UITreeNode{}
 		}
 
 		w.Header().Set("Content-Type", "application/json")

@@ -43,8 +43,8 @@ func TestUIIndex(t *testing.T) {
 	if !contains(rec.Body.String(), "debuginfod-go") {
 		t.Fatal("expected HTML body")
 	}
-	if !contains(rec.Body.String(), "путь") {
-		t.Fatal("expected path search mode in UI")
+	if !contains(rec.Body.String(), "Файлы .debug") {
+		t.Fatal("expected browse section in UI")
 	}
 }
 
@@ -72,6 +72,59 @@ func TestUIStats(t *testing.T) {
 	}
 	if payload.DedupEnabled {
 		t.Fatal("expected dedup_enabled=false by default")
+	}
+}
+
+func TestUIBrowse(t *testing.T) {
+	store, err := storage.New(filepath.Join(t.TempDir(), "browse.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	scanRoot := t.TempDir()
+	_ = store.AddArtifact(storage.ArtifactInput{
+		BuildID: "aaa", Type: "debuginfo",
+		FilePath: scanRoot + "/Released/ProjA/build_1/libfoo.so.debug",
+		GitCommit: "9ae10425c6bbb99c7ee1f71a3941fd7aee058227",
+	}, 1)
+	_ = store.AddArtifact(storage.ArtifactInput{
+		BuildID: "bbb", Type: "executable",
+		FilePath: scanRoot + "/Released/ProjA/build_1/bin/quik",
+	}, 1)
+
+	mux := http.NewServeMux()
+	Register(mux, Opts{Store: store, Metrics: metrics.New(), ScanPaths: []string{scanRoot}})
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/api/browse", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var payload BrowseResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Count != 1 {
+		t.Fatalf("count=%d want 1 debug file", payload.Count)
+	}
+	if len(payload.Projects) != 1 || payload.Projects[0].Name != "Released/ProjA" {
+		t.Fatalf("projects=%+v", payload.Projects)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/ui/api/browse?q=9ae10425", nil)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d", rec.Code)
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Count != 1 {
+		t.Fatalf("commit search count=%d", payload.Count)
 	}
 }
 

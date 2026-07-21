@@ -63,6 +63,7 @@ func migratePostgres(db *sql.DB) error {
 	for _, stmt := range []string{
 		"ALTER TABLE sources ADD COLUMN IF NOT EXISTS archive_path TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE sources ADD COLUMN IF NOT EXISTS member_path TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS git_commit TEXT NOT NULL DEFAULT ''",
 	} {
 		_, _ = db.Exec(stmt)
 	}
