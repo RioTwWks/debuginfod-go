@@ -200,7 +200,7 @@
     return n;
   }
 
-  function renderTreeNode(node, depth) {
+  function renderTreeNode(node, depth, expandAll) {
     const files = node.files || [];
     const children = node.children || [];
     const fileCount = countTreeFiles(node);
@@ -214,9 +214,10 @@
       "tree-node" +
       (depth === 0 ? " tree-project" : "") +
       (children.length === 0 && files.length > 0 && depth > 0 ? " tree-leaf-dir" : "");
+    const openAttr = expandAll ? " open" : "";
 
     if (children.length === 0 && files.length > 0 && depth > 0) {
-      let html = '<details class="' + nodeClass + '">';
+      let html = '<details class="' + nodeClass + '"' + openAttr + ">";
       html += "<summary>" + label + "</summary>";
       html += '<div class="tree-files">';
       files.forEach(function (f) {
@@ -226,7 +227,7 @@
       return html;
     }
 
-    let html = '<details class="' + nodeClass + '">';
+    let html = '<details class="' + nodeClass + '"' + openAttr + ">";
     html += "<summary>" + label + "</summary>";
     html += '<div class="tree-body">';
 
@@ -239,14 +240,14 @@
     }
 
     children.forEach(function (child) {
-      html += renderTreeNode(child, depth + 1);
+      html += renderTreeNode(child, depth + 1, expandAll);
     });
 
     html += "</div></details>";
     return html;
   }
 
-  function renderBrowseTree(projects) {
+  function renderBrowseTree(projects, expandAll) {
     if (!projects || !projects.length) {
       browseTree.innerHTML = '<p class="muted">Ничего не найдено</p>';
       browseTree.hidden = false;
@@ -255,11 +256,20 @@
 
     browseTree.innerHTML = projects
       .map(function (project) {
-        return renderTreeNode(project, 0);
+        return renderTreeNode(project, 0, expandAll);
       })
       .join("");
     browseTree.hidden = false;
+    if (expandAll) {
+      expandBrowseTree();
+    }
     bindFileInfoButtons();
+  }
+
+  function expandBrowseTree() {
+    browseTree.querySelectorAll("details.tree-node").forEach(function (el) {
+      el.open = true;
+    });
   }
 
   function bindFileInfoButtons() {
@@ -632,7 +642,7 @@
       }
       searchStatus.textContent = status;
 
-      renderBrowseTree(data.projects || []);
+      renderBrowseTree(data.projects || [], !!query);
     } catch (err) {
       if (reqId !== browseRequestId) return;
       searchStatus.textContent = "Ошибка: " + err.message;
