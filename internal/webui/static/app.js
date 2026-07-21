@@ -187,8 +187,13 @@
       formatNumber(fileCount) +
       "</span>";
 
+    const nodeClass =
+      "tree-node" +
+      (depth === 0 ? " tree-project" : "") +
+      (children.length === 0 && files.length > 0 && depth > 0 ? " tree-leaf-dir" : "");
+
     if (children.length === 0 && files.length > 0 && depth > 0) {
-      let html = '<details class="tree-node tree-leaf-dir" open>';
+      let html = '<details class="' + nodeClass + '">';
       html += "<summary>" + label + "</summary>";
       html += '<div class="tree-files">';
       files.forEach(function (f) {
@@ -198,7 +203,7 @@
       return html;
     }
 
-    let html = '<details class="tree-node" open>';
+    let html = '<details class="' + nodeClass + '">';
     html += "<summary>" + label + "</summary>";
     html += '<div class="tree-body">';
 
