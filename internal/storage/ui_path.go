@@ -71,9 +71,20 @@ func EnrichArtifactRecord(rec *ArtifactRecord, scanRoots []string) {
 	if rec == nil {
 		return
 	}
-	rec.RelativePath = ArtifactDisplayPath(*rec, scanRoots)
-	rec.Filename = ArtifactFilename(*rec)
-	rec.Directory = ArtifactDirectory(*rec, scanRoots)
+	if rec.File != "" {
+		rec.RelativePath = ArtifactDisplayPath(*rec, scanRoots)
+		rec.Filename = ArtifactFilename(*rec)
+		rec.Directory = ArtifactDirectory(*rec, scanRoots)
+	} else if rec.RelativePath != "" {
+		if rec.Filename == "" {
+			rec.Filename = filepath.Base(rec.RelativePath)
+		}
+		if rec.Directory == "" {
+			if i := strings.LastIndex(rec.RelativePath, "/"); i >= 0 {
+				rec.Directory = rec.RelativePath[:i]
+			}
+		}
+	}
 	if rec.ArchivePath != "" {
 		rec.ArchiveRel = RelativeToScanRoots(rec.ArchivePath, scanRoots)
 	}

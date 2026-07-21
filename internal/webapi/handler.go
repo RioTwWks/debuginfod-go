@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -213,7 +214,17 @@ func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, buildID,
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	serveResolvedFile(w, r, path)
+	serveResolvedFile(w, r, path, artifactDownloadName(loc))
+}
+
+func artifactDownloadName(loc storage.ArtifactLocation) string {
+	if loc.MemberPath != "" {
+		return filepath.Base(loc.MemberPath)
+	}
+	if loc.FilePath != "" {
+		return filepath.Base(loc.FilePath)
+	}
+	return ""
 }
 
 func (h *Handler) validateArchiveAccess(archivePath, memberPath string) error {
@@ -260,7 +271,7 @@ func (h *Handler) serveSource(w http.ResponseWriter, r *http.Request, buildID, s
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	serveResolvedFile(w, r, path)
+	serveResolvedFile(w, r, path, filepath.Base(sourcePath))
 }
 
 func (h *Handler) serveSection(w http.ResponseWriter, r *http.Request, buildID, sectionName string) {

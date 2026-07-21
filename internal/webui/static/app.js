@@ -4,12 +4,8 @@
   const uptimeEl = document.getElementById("uptime");
   const searchForm = document.getElementById("search-form");
   const searchInput = document.getElementById("search-input");
-  const searchHint = document.getElementById("search-hint");
   const searchStatus = document.getElementById("search-status");
-  const resultsTable = document.getElementById("results-table");
-  const resultsBody = document.getElementById("results-body");
-  const loadMoreBtn = document.getElementById("load-more");
-  const modeButtons = document.querySelectorAll(".mode-btn");
+  const browseTree = document.getElementById("browse-tree");
   const mainTabs = document.querySelectorAll(".main-tab");
   const tabDashboard = document.getElementById("tab-dashboard");
   const tabScans = document.getElementById("tab-scans");
@@ -22,29 +18,10 @@
   const rescanBtn = document.getElementById("rescan-btn");
   const rescanStatus = document.getElementById("rescan-status");
 
-  let searchKey = "path";
-  let nextOffset = 0;
   let lastSearchValue = "";
   let scansLoaded = false;
   let lastScanFinishedAt = "";
-  let rescanPollTimer = null;
-  let lastResultRows = [];
-  let expandedRowIdx = null;
-
-  const hints = {
-    path:
-      "Путь относительно SCAN_PATH. Пустой запрос — обзор первых 50 файлов. Подстрока или fnmatch: Released/Quik*, *lib.so*.debug",
-    name:
-      "Имя файла (basename): quik-16.0.0.10.debug, *.debug, libQt5*. Введите запрос и нажмите «Найти».",
-    buildid:
-      "Префикс hex build-id (необязательно). Пустой запрос — первые 50. Длинные SHA показываются сокращённо — кликните строку для деталей.",
-  };
-
-  const placeholders = {
-    path: "Released/Quik* или build_*/*.debug",
-    name: "Имя файла, например quik-16.0.0.10.debug",
-    buildid: "Префикс build-id, например 006f5ce9",
-  };
+  let browseRequestId = 0;
 
   function formatNumber(n) {
     return new Intl.NumberFormat("ru-RU").format(n);
@@ -85,54 +62,6 @@
     return div.innerHTML;
   }
 
-  function shortBuildID(id) {
-    if (!id || id.length <= 16) return id;
-    return id.slice(0, 8) + "…" + id.slice(-6);
-  }
-
-  function splitRelativePath(rel) {
-    if (!rel) return { dir: "—", file: "—" };
-    const i = rel.lastIndexOf("/");
-    if (i < 0) return { dir: "—", file: rel };
-    return { dir: rel.slice(0, i), file: rel.slice(i + 1) };
-  }
-
-  function typeBadges(types) {
-    const list = types || [];
-    if (!list.length) return '<span class="muted">—</span>';
-    return list
-      .map(function (t) {
-        return (
-          '<span class="type-badge ' + escapeHtml(t) + '">' + escapeHtml(t) + "</span>"
-        );
-      })
-      .join(" ");
-  }
-
-  function artifactLinks(buildid, types) {
-    const available = (types || []).filter(function (t) {
-      return t === "debuginfo" || t === "executable";
-    });
-    if (!available.length) {
-      return '<span class="muted">—</span>';
-    }
-    return available
-      .map(function (t) {
-        return (
-          '<a class="type-badge ' +
-          t +
-          '" href="/buildid/' +
-          encodeURIComponent(buildid) +
-          "/" +
-          t +
-          '" download>' +
-          escapeHtml(t) +
-          "</a>"
-        );
-      })
-      .join("");
-  }
-
   function setMainTab(tab) {
     mainTabs.forEach(function (btn) {
       const active = btn.dataset.tab === tab;
@@ -146,42 +75,6 @@
     if (tab === "scans" && !scansLoaded) {
       loadScans();
     }
-  }
-
-  function normalizeRow(row) {
-    if (row.entries && row.entries.length) {
-      return row;
-    }
-    const entry = {
-      buildid: row.buildid,
-      type: row.type,
-      file: row.file,
-      file_path: row.file_path,
-      archive: row.archive,
-      archive_path: row.archive_path,
-      archive_rel: row.archive_rel,
-      member_path: row.member_path,
-      buildid_kind: row.buildid_kind,
-      raw_buildid: row.raw_buildid,
-      relative_path: row.relative_path,
-      filename: row.filename,
-      directory: row.directory,
-      mtime_ns: row.mtime_ns,
-      mtime: row.mtime,
-      comment: row.comment,
-    };
-    return {
-      buildid: row.buildid,
-      types: row.type ? [row.type] : row.types || [],
-      buildid_kind: row.buildid_kind,
-      raw_buildid: row.raw_buildid,
-      relative_path: row.relative_path,
-      filename: row.filename,
-      directory: row.directory,
-      entries: [entry],
-      sources: row.sources || [],
-      sources_count: row.sources_count || 0,
-    };
   }
 
   function detailField(label, value, mono) {
@@ -205,13 +98,13 @@
       return "";
     }
     let html =
-      '<div class="detail-section comment-section"><h4>ELF .comment</h4><div class="detail-grid">';
+      '<div class="file-comment"><div class="detail-grid">';
     html += detailField("Toolchain", comment.toolchain, false);
     html += detailField("Copyright", comment.copyright, false);
     if (comment.labels && comment.labels.length) {
       html += detailField("Метки", comment.labels.join(" · "), false);
     }
-    html += detailField("Версия продукта", comment.product_version, false);
+    html += detailField("Версия", comment.product_version, false);
     html += detailField("Git commit", comment.git_commit, true);
     html += "</div>";
     if (comment.lines && comment.lines.length) {
@@ -224,178 +117,137 @@
     return html;
   }
 
-  function renderEntryBlock(entry, buildid) {
-    const bid = entry.buildid || buildid || "";
-    const download =
-      entry.type === "debuginfo" || entry.type === "executable"
-        ? '<a class="type-badge ' +
-          entry.type +
-          '" href="/buildid/' +
-          encodeURIComponent(bid) +
-          "/" +
-          entry.type +
-          '">/buildid/' +
-          escapeHtml(bid) +
-          "/" +
-          entry.type +
-          "</a>"
-        : "";
-    return (
-      '<div class="detail-entry">' +
-      "<h4>" +
-      typeBadges([entry.type]) +
-      "</h4>" +
-      '<div class="detail-grid">' +
-      detailField("Отн. путь", entry.relative_path, true) +
-      detailField("Каталог", entry.directory, true) +
-      detailField("Файл", entry.filename, true) +
-      detailField("Абс. путь", entry.file_path, true) +
-      detailField("Архив (отн.)", entry.archive_rel, true) +
-      detailField("Архив (абс.)", entry.archive_path || entry.archive, true) +
-      detailField("Member", entry.member_path, true) +
-      detailField("Mtime", entry.mtime, false) +
-      detailField("Mtime (ns)", entry.mtime_ns, false) +
-      "</div>" +
-      renderCommentBlock(entry.comment) +
-      (download ? '<div class="detail-links">' + download + "</div>" : "") +
-      "</div>"
-    );
+  function downloadHref(file) {
+    const type = file.type === "executable" ? "executable" : "debuginfo";
+    return "/buildid/" + encodeURIComponent(file.buildid) + "/" + type;
   }
 
-  function renderSourcesBlock(row) {
-    const sources = row.sources || [];
-    const total = row.sources_count || sources.length;
-    if (!total) return "";
+  function renderFileRow(file) {
+    const name = file.filename || "—";
+    const href = downloadHref(file);
+    const commit = file.git_commit || (file.comment && file.comment.git_commit);
+    const commitHtml = commit
+      ? '<span class="file-commit mono" title="git commit">' +
+        escapeHtml(commit.slice(0, 12)) +
+        "…</span>"
+      : "";
+    const detailsId = "file-" + escapeHtml(file.buildid + "-" + name).replace(/[^a-zA-Z0-9_-]/g, "_");
+    const hasDetails =
+      commit ||
+      (file.comment &&
+        ((file.comment.lines && file.comment.lines.length) ||
+          file.comment.toolchain ||
+          file.comment.copyright));
+
     let html =
-      '<div class="detail-section"><h4>Исходники (' +
-      formatNumber(total) +
-      ")</h4>";
-    if (!sources.length) {
-      html += '<p class="muted">Показаны не все — см. /buildid/…/source</p>';
-    } else {
+      '<div class="tree-file">' +
+      '<a class="file-download mono" href="' +
+      href +
+      '" download="' +
+      escapeHtml(name) +
+      '" title="' +
+      escapeHtml(file.relative_path || name) +
+      '">' +
+      escapeHtml(name) +
+      "</a>" +
+      commitHtml;
+
+    if (hasDetails) {
       html +=
-        '<table class="detail-table"><thead><tr><th>source path</th><th>отн. путь</th><th>архив</th><th>mtime</th></tr></thead><tbody>';
-      sources.forEach(function (s) {
-        html +=
-          "<tr><td class='mono'>" +
-          escapeHtml(s.source_path) +
-          "</td><td class='mono'>" +
-          escapeHtml(s.relative_path) +
-          "</td><td class='mono'>" +
-          escapeHtml(s.archive_rel || s.archive_path || "—") +
-          "</td><td>" +
-          escapeHtml(s.mtime || "—") +
-          "</td></tr>";
-      });
-      html += "</tbody></table>";
+        '<button type="button" class="file-info-btn" aria-expanded="false" data-target="' +
+        detailsId +
+        '">i</button>' +
+        '<div class="file-details" id="' +
+        detailsId +
+        '" hidden>' +
+        detailField("Путь", file.relative_path, true) +
+        renderCommentBlock(file.comment) +
+        "</div>";
     }
+
     html += "</div>";
     return html;
   }
 
-  function renderDetailInner(row) {
-    const data = normalizeRow(row);
-    const buildid = data.buildid || "";
-    const copyBtn =
-      '<button type="button" class="copy-btn" data-copy="' +
-      escapeHtml(buildid) +
-      '">копировать build-id</button>';
-    let html =
-      '<div class="detail-section"><h4>Идентификация</h4><div class="detail-grid">' +
-      detailField("Build-ID", buildid, true) +
-      detailField("Raw build-id", data.raw_buildid, true) +
-      detailField("Build-ID kind", data.buildid_kind, false) +
-      "</div>" +
-      copyBtn +
-      "</div>";
-
-    const entries = data.entries || [];
-    html +=
-      '<div class="detail-section"><h4>Артефакты по типам (' +
-      entries.length +
-      ")</h4>";
-    entries.forEach(function (entry) {
-      html += renderEntryBlock(entry, buildid);
+  function countTreeFiles(node) {
+    let n = (node.files || []).length;
+    (node.children || []).forEach(function (child) {
+      n += countTreeFiles(child);
     });
-    html += "</div>";
+    return n;
+  }
 
-    html += renderSourcesBlock(data);
+  function renderTreeNode(node, depth) {
+    const files = node.files || [];
+    const children = node.children || [];
+    const fileCount = countTreeFiles(node);
+    const label =
+      escapeHtml(node.name) +
+      ' <span class="tree-count">' +
+      formatNumber(fileCount) +
+      "</span>";
 
-    const types = data.types || [];
-    if (types.length) {
-      html +=
-        '<div class="detail-section"><h4>API</h4><div class="detail-links">' +
-        artifactLinks(buildid, types) +
-        ' <a class="badge link" href="/metadata?key=buildid&amp;value=' +
-        encodeURIComponent(buildid) +
-        '" target="_blank" rel="noopener">metadata</a>' +
-        "</div></div>";
+    if (children.length === 0 && files.length > 0 && depth > 0) {
+      let html = '<details class="tree-node tree-leaf-dir" open>';
+      html += "<summary>" + label + "</summary>";
+      html += '<div class="tree-files">';
+      files.forEach(function (f) {
+        html += renderFileRow(f);
+      });
+      html += "</div></details>";
+      return html;
     }
+
+    let html = '<details class="tree-node" open>';
+    html += "<summary>" + label + "</summary>";
+    html += '<div class="tree-body">';
+
+    if (files.length) {
+      html += '<div class="tree-files">';
+      files.forEach(function (f) {
+        html += renderFileRow(f);
+      });
+      html += "</div>";
+    }
+
+    children.forEach(function (child) {
+      html += renderTreeNode(child, depth + 1);
+    });
+
+    html += "</div></details>";
     return html;
   }
 
-  function bindCopyButtons(root) {
-    if (!root) return;
-    root.querySelectorAll(".copy-btn").forEach(function (btn) {
+  function renderBrowseTree(projects) {
+    if (!projects || !projects.length) {
+      browseTree.innerHTML = '<p class="muted">Ничего не найдено</p>';
+      browseTree.hidden = false;
+      return;
+    }
+
+    browseTree.innerHTML = projects
+      .map(function (project) {
+        return renderTreeNode(project, 0);
+      })
+      .join("");
+    browseTree.hidden = false;
+    bindFileInfoButtons();
+  }
+
+  function bindFileInfoButtons() {
+    browseTree.querySelectorAll(".file-info-btn").forEach(function (btn) {
       btn.addEventListener("click", function (e) {
+        e.preventDefault();
         e.stopPropagation();
-        const text = btn.getAttribute("data-copy") || "";
-        navigator.clipboard.writeText(text).catch(function () {});
-        btn.textContent = "скопировано";
-        setTimeout(function () {
-          btn.textContent = "копировать build-id";
-        }, 1500);
+        const id = btn.getAttribute("data-target");
+        const panel = document.getElementById(id);
+        if (!panel) return;
+        const open = panel.hidden;
+        panel.hidden = !open;
+        btn.setAttribute("aria-expanded", open ? "true" : "false");
+        btn.classList.toggle("active", open);
       });
     });
-  }
-
-  function refreshExpandedRows() {
-    resultsBody.querySelectorAll(".artifact-row").forEach(function (tr) {
-      const idx = parseInt(tr.getAttribute("data-idx") || "-1", 10);
-      const expanded = idx === expandedRowIdx;
-      tr.classList.toggle("expanded", expanded);
-      const toggle = tr.querySelector(".col-toggle");
-      if (toggle) toggle.textContent = expanded ? "▼" : "›";
-    });
-    resultsBody.querySelectorAll(".artifact-detail-row").forEach(function (tr) {
-      const idx = parseInt(tr.getAttribute("data-detail-for") || "-1", 10);
-      tr.hidden = idx !== expandedRowIdx;
-    });
-  }
-
-  function toggleRow(idx) {
-    expandedRowIdx = expandedRowIdx === idx ? null : idx;
-    refreshExpandedRows();
-    bindCopyButtons(resultsBody);
-  }
-
-  function clearSearchResults(message) {
-    nextOffset = 0;
-    lastSearchValue = "";
-    expandedRowIdx = null;
-    searchStatus.textContent = message || "";
-    searchStatus.classList.remove("error");
-    resultsTable.hidden = true;
-    resultsBody.innerHTML = "";
-    loadMoreBtn.hidden = true;
-  }
-
-  function setSearchMode(key) {
-    searchKey = key;
-    nextOffset = 0;
-    modeButtons.forEach(function (btn) {
-      const active = btn.dataset.key === key;
-      btn.classList.toggle("active", active);
-      btn.setAttribute("aria-selected", active ? "true" : "false");
-    });
-    searchInput.placeholder = placeholders[key] || "";
-    searchHint.textContent = hints[key] || "";
-    searchInput.value = "";
-    if (key === "path" || key === "buildid") {
-      doSearch("", false);
-    } else {
-      clearSearchResults("Введите имя файла и нажмите «Найти»");
-    }
   }
 
   async function loadStats() {
@@ -512,7 +364,7 @@
         scansLoaded = false;
         await loadScans();
       }
-      doSearch(lastSearchValue, false);
+      doBrowse(lastSearchValue);
       if (rescanStatus) {
         rescanStatus.textContent = "готово";
         setTimeout(function () {
@@ -550,7 +402,7 @@
               resolve();
               return;
             }
-            rescanPollTimer = setTimeout(poll, 2000);
+            setTimeout(poll, 2000);
           })
           .catch(reject);
       }
@@ -726,212 +578,39 @@
     );
   }
 
-  function buildSearchParams(value, append) {
-    const params = new URLSearchParams();
-    params.set("key", searchKey);
-    if (searchKey === "buildid") {
-      if (value) params.set("q", value);
-    } else {
-      if (value) params.set("value", value);
-      if (append && nextOffset > 0) {
-        params.set("offset", String(nextOffset));
-      }
-    }
-    return params;
-  }
-
-  async function doSearch(query, append) {
-    if (!append && searchKey === "name" && !query) {
-      clearSearchResults("Введите имя файла и нажмите «Найти»");
-      return;
-    }
-
-    if (!append) {
-      nextOffset = 0;
-      lastSearchValue = query;
-      searchStatus.textContent = "Поиск…";
-      searchStatus.classList.remove("error");
-      resultsTable.hidden = true;
-      loadMoreBtn.hidden = true;
-    } else {
-      loadMoreBtn.disabled = true;
-      loadMoreBtn.textContent = "Загрузка…";
-    }
+  async function doBrowse(query) {
+    lastSearchValue = query;
+    const reqId = ++browseRequestId;
+    searchStatus.textContent = "Поиск…";
+    searchStatus.classList.remove("error");
 
     try {
-      const params = buildSearchParams(append ? lastSearchValue : query, append);
-      const res = await fetch("/ui/api/search?" + params.toString());
+      const params = new URLSearchParams();
+      if (query) params.set("q", query);
+      const res = await fetch("/ui/api/browse?" + params.toString());
       if (!res.ok) {
         const text = await res.text();
         throw new Error(text || "HTTP " + res.status);
       }
       const data = await res.json();
-      renderResults(data, append);
+      if (reqId !== browseRequestId) return;
+
+      let status = "Найдено файлов: " + formatNumber(data.count || 0);
+      if (query) {
+        status += ' по «' + query + '»';
+      }
+      if (data.complete === false) {
+        status += " (показаны первые " + formatNumber(data.limit || 0) + ")";
+      }
+      searchStatus.textContent = status;
+
+      renderBrowseTree(data.projects || []);
     } catch (err) {
-      searchStatus.textContent = "Ошибка поиска: " + err.message;
+      if (reqId !== browseRequestId) return;
+      searchStatus.textContent = "Ошибка: " + err.message;
       searchStatus.classList.add("error");
-      loadMoreBtn.hidden = true;
-    } finally {
-      loadMoreBtn.disabled = false;
-      loadMoreBtn.textContent = "Ещё результаты";
+      browseTree.hidden = true;
     }
-  }
-
-  function renderDetailRow(row, idx) {
-    const hidden = idx !== expandedRowIdx;
-    return (
-      '<tr class="artifact-detail-row" data-detail-for="' +
-      idx +
-      '"' +
-      (hidden ? " hidden" : "") +
-      '><td colspan="6" class="artifact-detail-cell">' +
-      renderDetailInner(row) +
-      "</td></tr>"
-    );
-  }
-
-  function renderGroupedRow(row, idx) {
-    const types = row.types || [];
-    const rel = row.relative_path || row.file || "—";
-    const parts = splitRelativePath(rel);
-    const expanded = idx === expandedRowIdx;
-    return (
-      '<tr class="artifact-row' +
-      (expanded ? " expanded" : "") +
-      '" tabindex="0" data-idx="' +
-      idx +
-      '">' +
-      '<td class="col-toggle" title="Подробнее">' +
-      (expanded ? "▼" : "›") +
-      "</td>" +
-      '<td class="mono path-cell" title="' +
-      escapeHtml(rel) +
-      '">' +
-      escapeHtml(parts.dir) +
-      "</td>" +
-      '<td class="mono" title="' +
-      escapeHtml(parts.file) +
-      '">' +
-      escapeHtml(parts.file) +
-      "</td>" +
-      "<td>" +
-      typeBadges(types) +
-      "</td>" +
-      '<td class="mono" title="' +
-      escapeHtml(row.buildid) +
-      '">' +
-      escapeHtml(shortBuildID(row.buildid)) +
-      "</td>" +
-      '<td class="links">' +
-      artifactLinks(row.buildid, types) +
-      "</td>" +
-      "</tr>" +
-      renderDetailRow(row, idx)
-    );
-  }
-
-  function renderFlatRow(row, idx) {
-    const types = [row.type];
-    const rel = row.relative_path || row.file || "—";
-    const parts = splitRelativePath(rel);
-    const expanded = idx === expandedRowIdx;
-    return (
-      '<tr class="artifact-row' +
-      (expanded ? " expanded" : "") +
-      '" tabindex="0" data-idx="' +
-      idx +
-      '">' +
-      '<td class="col-toggle" title="Подробнее">' +
-      (expanded ? "▼" : "›") +
-      "</td>" +
-      '<td class="mono path-cell" title="' +
-      escapeHtml(rel) +
-      '">' +
-      escapeHtml(parts.dir) +
-      "</td>" +
-      '<td class="mono">' +
-      escapeHtml(parts.file || row.filename || "—") +
-      "</td>" +
-      "<td>" +
-      typeBadges(types) +
-      "</td>" +
-      '<td class="mono" title="' +
-      escapeHtml(row.buildid) +
-      '">' +
-      escapeHtml(shortBuildID(row.buildid)) +
-      "</td>" +
-      '<td class="links">' +
-      artifactLinks(row.buildid, types) +
-      "</td>" +
-      "</tr>" +
-      renderDetailRow(row, idx)
-    );
-  }
-
-  function bindResultRows() {
-    resultsBody.querySelectorAll(".artifact-row").forEach(function (tr) {
-      tr.addEventListener("click", function (e) {
-        if (e.target.closest("a") || e.target.closest("button")) return;
-        const idx = parseInt(tr.getAttribute("data-idx") || "-1", 10);
-        if (idx >= 0) toggleRow(idx);
-      });
-    });
-    bindCopyButtons(resultsBody);
-  }
-
-  function renderResults(data, append) {
-    let label = "";
-    if (searchKey === "buildid") {
-      label = data.query ? ' по «' + data.query + '»' : " (обзор)";
-    } else if (searchKey === "path") {
-      label = data.value ? ' по пути «' + data.value + '»' : " (обзор)";
-    } else {
-      label = data.value ? ' по имени «' + data.value + '»' : "";
-    }
-
-    const rows = data.grouped && data.grouped.length ? data.grouped : data.results || [];
-    const baseIdx = append ? lastResultRows.length : 0;
-    if (!append) {
-      lastResultRows = rows.slice();
-      expandedRowIdx = null;
-    } else {
-      lastResultRows = lastResultRows.concat(rows);
-    }
-
-    const totalShown = lastResultRows.length;
-
-    let status = "Найдено: " + formatNumber(rows.length) + label;
-    if (append) {
-      status = "Показано: " + formatNumber(totalShown) + label;
-    }
-    if (!data.complete) {
-      status += " (есть ещё — нажмите «Ещё результаты»)";
-    }
-    searchStatus.textContent = status;
-
-    if (!rows.length) {
-      if (!append) resultsTable.hidden = true;
-      loadMoreBtn.hidden = true;
-      return;
-    }
-
-    const html = rows
-      .map(function (row, i) {
-        const idx = baseIdx + i;
-        return data.grouped ? renderGroupedRow(row, idx) : renderFlatRow(row, idx);
-      })
-      .join("");
-
-    if (append) {
-      resultsBody.insertAdjacentHTML("beforeend", html);
-    } else {
-      resultsBody.innerHTML = html;
-    }
-    bindResultRows();
-
-    resultsTable.hidden = false;
-    nextOffset = data.next_offset || 0;
-    loadMoreBtn.hidden = data.complete || !nextOffset;
   }
 
   mainTabs.forEach(function (btn) {
@@ -940,19 +619,9 @@
     });
   });
 
-  modeButtons.forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      setSearchMode(btn.dataset.key);
-    });
-  });
-
   searchForm.addEventListener("submit", function (e) {
     e.preventDefault();
-    doSearch(searchInput.value.trim(), false);
-  });
-
-  loadMoreBtn.addEventListener("click", function () {
-    doSearch(lastSearchValue, true);
+    doBrowse(searchInput.value.trim());
   });
 
   if (rescanBtn) {
@@ -961,17 +630,14 @@
 
   let debounce;
   searchInput.addEventListener("input", function () {
-    if (searchKey !== "buildid" && searchKey !== "path") {
-      return;
-    }
     clearTimeout(debounce);
     debounce = setTimeout(function () {
-      doSearch(searchInput.value.trim(), false);
-    }, 350);
+      doBrowse(searchInput.value.trim());
+    }, 250);
   });
 
   loadStats();
   setInterval(loadStats, 30000);
   setMainTab("dashboard");
-  doSearch("", false);
+  doBrowse("");
 })();
