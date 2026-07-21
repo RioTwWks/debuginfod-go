@@ -341,7 +341,8 @@ export DEBUGINFOD_URLS="https://primary/debuginfod,https://backup/debuginfod"
 |---------|----------|---------|
 | `healthz` не отвечает | `systemctl status debuginfod-go` | Логи, права на `/var/lib`, CGO/SQLite |
 | 404 на build-id | `curl .../metadata?key=buildid&value=<id>` | Добавить scan path, дождаться rescan |
-| Медленный scan | `last_scan_duration_ms` в `/zabbix` | Сузить `SCAN_PATH`, увеличить `SCAN_WORKERS` |
+| Медленный scan | `last_scan_duration_ms` в `/zabbix` | Сузить `SCAN_PATH`, увеличить `SCAN_WORKERS` (до 8 на 10 ГБ RAM) |
+| Медленный dedup / рост SWAP | `free -h`, `pgrep -a xdelta` | `DEDUP_WORKERS=4` (не 8) при ~10 ГБ RAM; см. [QUIK_DEDUP.md](../docs/QUIK_DEDUP.md) |
 | Диск заполнен | `df`, `cache_bytes` в `/zabbix` | LRU: `CACHE_MAX_BYTES`, очистка cache |
 | 403 Forbidden | [security/README.md](./security/README.md) | Путь вне scan roots; проверить `pathsafe` |
 | PostgreSQL connection | `journalctl -u debuginfod-go` | URL, firewall, `BindReadOnlyPaths` для socket |

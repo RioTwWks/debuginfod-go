@@ -200,7 +200,7 @@ func browseHandler(opts Opts) http.HandlerFunc {
 		}
 
 		query := strings.TrimSpace(r.URL.Query().Get("q"))
-		limit := 2000
+		limit := 0
 		if raw := r.URL.Query().Get("limit"); raw != "" {
 			if n, err := strconv.Atoi(raw); err == nil && n > 0 {
 				limit = n

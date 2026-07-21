@@ -56,9 +56,10 @@ func IsDebugUIFile(rec ArtifactRecord) bool {
 }
 
 // SearchDebugFilesForUI — единый поиск по пути, имени, commit, build-id.
+// limit <= 0 — без ограничения (для дерева browse).
 func (s *Storage) SearchDebugFilesForUI(ctx context.Context, scanRoots []string, query string, limit int) ([]ArtifactRecord, error) {
-	if limit <= 0 || limit > 5000 {
-		limit = 2000
+	if limit > 50000 {
+		limit = 50000
 	}
 	rows, err := s.db.QueryContext(ctx, rebind(`
 		SELECT `+artifactSelectColumns+`
@@ -123,7 +124,7 @@ func matchesUnifiedQuery(query string, rec ArtifactRecord) bool {
 func BuildUITree(scanRoots []string, records []ArtifactRecord) []UITreeNode {
 	files := make([]UITreeFile, 0, len(records))
 	for _, rec := range records {
-		files = append(files, ArtifactRecordToUITreeFile(rec, scanRoots))
+		files = append(files, ArtifactRecordToUITreeFile(rec, scanRoots, true))
 	}
 	return BuildUITreeFromFiles(files)
 }

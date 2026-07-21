@@ -77,6 +77,24 @@ DEBUGINFOD_OBJCOPY_PATH=objcopy
 
 Группы `(project, file_stem)` обрабатываются параллельно (`DEBUGINFOD_DEDUP_WORKERS`).
 
+### Подбор воркеров (RAM ~10 ГБ, Qt + Quik)
+
+| Переменная | Рекомендация | Комментарий |
+|------------|--------------|-------------|
+| `DEBUGINFOD_SCAN_WORKERS` | `8` | Индексация ELF — в основном I/O, можно держать высоким |
+| `DEBUGINFOD_DEDUP_WORKERS` | `4` | Каждый воркер — `xdelta3`/`dwz`/`objcopy` на крупных `.debug`; 8 параллельно даёт SWAP |
+
+При `DEDUP_WORKERS=8` на 10 ГБ RAM типично: несколько процессов `xdelta3`/`dwz` по ~100% CPU и рост SWAP (3+ ГБ). С `DEDUP_WORKERS=4` dedup часто **быстрее** за счёт меньшего thrashing.
+
+Проверка во время dedup:
+
+```bash
+watch -n2 'free -h; echo; ps aux --sort=-%mem | head -15'
+pgrep -a 'xdelta|objcopy|dwz'
+```
+
+Если SWAP растёт — снизить `DEBUGINFOD_DEDUP_WORKERS` до `2–3`. Увеличивать SWAP «для скорости» не имеет смысла.
+
 Зависимости: `xdelta3`, `dwz`, `binutils` (`objcopy`).
 
 ## БД

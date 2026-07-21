@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -119,5 +120,65 @@ func TestBrowseFilesForUISkipsDedupWhenIndexed(t *testing.T) {
 	}
 	if len(files) != 1 || files[0].Source != "artifact" {
 		t.Fatalf("files=%+v", files)
+	}
+}
+
+func TestBrowseFilesForUIUnlimitedIncludesAllProjects(t *testing.T) {
+	root := t.TempDir()
+	store, err := New(filepath.Join(t.TempDir(), "browse-all.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	addDedup := func(project, relPath string) {
+		t.Helper()
+		abs := filepath.Join(root, relPath)
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(abs, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		pid, err := store.EnsureDedupProject(project)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bid, err := store.UpsertDedupBuildDir(pid, filepath.Dir(abs), 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.UpsertDedupFile(DedupFile{
+			BuildDirID: bid, FilePath: abs, Filename: filepath.Base(abs),
+			FileStem: "lib", Version: "1", FileBuildNum: 1,
+			Status: DedupStatusDone, StorageKind: DedupKindFull,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for i := 0; i < 50; i++ {
+		addDedup("Released/Big", filepath.Join("Released", "Big", "build_1", fmt.Sprintf("lib%d.debug", i)))
+	}
+	addDedup("Unsorted/Late", filepath.Join("Unsorted", "Late", "build_1", "tail.debug"))
+
+	limited, complete, err := store.BrowseFilesForUI(context.Background(), []string{root}, "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if complete || len(limited) != 10 {
+		t.Fatalf("limited: complete=%v len=%d", complete, len(limited))
+	}
+
+	all, complete, err := store.BrowseFilesForUI(context.Background(), []string{root}, "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !complete || len(all) != 51 {
+		t.Fatalf("all: complete=%v len=%d want 51", complete, len(all))
+	}
+	tree := BuildUITreeFromFiles(all)
+	if len(tree) != 2 {
+		t.Fatalf("projects=%d want Released/Big + Unsorted/Late", len(tree))
 	}
 }
