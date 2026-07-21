@@ -8,9 +8,10 @@ import (
 )
 
 // BrowseFilesForUI объединяет артефакты индекса и dedup-файлы без build-id.
+// limit <= 0 — вернуть все совпадения (без обрезки).
 func (s *Storage) BrowseFilesForUI(ctx context.Context, scanRoots []string, query string, limit int) ([]UITreeFile, bool, error) {
-	if limit <= 0 || limit > 10000 {
-		limit = 5000
+	if limit > 50000 {
+		limit = 50000
 	}
 
 	artifacts, err := s.SearchDebugFilesForUI(ctx, scanRoots, query, 0)
@@ -24,9 +25,10 @@ func (s *Storage) BrowseFilesForUI(ctx context.Context, scanRoots []string, quer
 		return nil, false, err
 	}
 
+	enrichComment := strings.TrimSpace(query) != ""
 	files := make([]UITreeFile, 0, len(artifacts)+len(dedupFiles))
 	for i := range artifacts {
-		files = append(files, ArtifactRecordToUITreeFile(artifacts[i], scanRoots))
+		files = append(files, ArtifactRecordToUITreeFile(artifacts[i], scanRoots, enrichComment))
 	}
 	for _, df := range dedupFiles {
 		files = append(files, DedupFileToUITreeFile(df, scanRoots))
@@ -39,9 +41,10 @@ func (s *Storage) BrowseFilesForUI(ctx context.Context, scanRoots []string, quer
 		return files[i].RelativePath < files[j].RelativePath
 	})
 
-	complete := len(files) <= limit
-	if len(files) > limit {
+	complete := true
+	if limit > 0 && len(files) > limit {
 		files = files[:limit]
+		complete = false
 	}
 	if files == nil {
 		files = []UITreeFile{}
@@ -137,9 +140,11 @@ func matchesUnifiedQueryForDedup(query string, df DedupFile, rel string) bool {
 }
 
 // ArtifactRecordToUITreeFile конвертирует артефакт в лист дерева.
-func ArtifactRecordToUITreeFile(rec ArtifactRecord, scanRoots []string) UITreeFile {
+func ArtifactRecordToUITreeFile(rec ArtifactRecord, scanRoots []string, enrichComment bool) UITreeFile {
 	EnrichArtifactRecord(&rec, scanRoots)
-	EnrichArtifactComment(&rec)
+	if enrichComment {
+		EnrichArtifactComment(&rec)
+	}
 	rel := rec.RelativePath
 	if rel == "" {
 		rel = ArtifactDisplayPath(rec, scanRoots)
