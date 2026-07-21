@@ -1,13 +1,18 @@
 package webui
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/your-username/debuginfod-go/internal/dedup"
 	"github.com/your-username/debuginfod-go/internal/metrics"
 	"github.com/your-username/debuginfod-go/internal/storage"
 )
@@ -72,6 +77,71 @@ func TestUIStats(t *testing.T) {
 	}
 	if payload.DedupEnabled {
 		t.Fatal("expected dedup_enabled=false by default")
+	}
+}
+
+func TestUIBrowseDedupDownload(t *testing.T) {
+	root := t.TempDir()
+	buildDir := filepath.Join(root, "Released", "Qt_Library", "qt", "build_1_2026-01-01")
+	if err := os.MkdirAll(buildDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	debugPath := filepath.Join(buildDir, "libQt5Core.so.5.15.2.100.debug")
+	content := []byte("fake-debug-content")
+	if err := os.WriteFile(debugPath, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := storage.New(filepath.Join(t.TempDir(), "browse-dedup-ui.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	if _, err := dedup.Discover(store, []string{root}, nil); err != nil {
+		t.Fatal(err)
+	}
+	df, err := store.GetDedupFileByPath(debugPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mux := http.NewServeMux()
+	Register(mux, Opts{
+		Store:        store,
+		Metrics:      metrics.New(),
+		ScanPaths:    []string{root},
+		AllowedRoots: []string{root},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/api/browse", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("browse status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload BrowseResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Count != 1 {
+		t.Fatalf("count=%d want 1", payload.Count)
+	}
+	if len(payload.Projects) != 1 || payload.Projects[0].Name != "Released/Qt_Library/qt" {
+		t.Fatalf("projects=%+v", payload.Projects)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/ui/api/download/dedup/"+strconv.FormatInt(df.ID, 10), nil)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("download status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if cd := rec.Header().Get("Content-Disposition"); !strings.Contains(cd, "libQt5Core.so.5.15.2.100.debug") {
+		t.Fatalf("content-disposition=%q", cd)
+	}
+	if !bytes.Equal(rec.Body.Bytes(), content) {
+		t.Fatalf("body=%q", rec.Body.Bytes())
 	}
 }
 

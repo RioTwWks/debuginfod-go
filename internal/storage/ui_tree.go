@@ -13,7 +13,10 @@ import (
 type UITreeFile struct {
 	Filename     string         `json:"filename"`
 	RelativePath string         `json:"relative_path"`
-	BuildID      string         `json:"buildid"`
+	Project      string         `json:"project,omitempty"`
+	BuildID      string         `json:"buildid,omitempty"`
+	DedupID      int64          `json:"dedup_id,omitempty"`
+	Source       string         `json:"source,omitempty"`
 	Type         string         `json:"type"`
 	GitCommit    string         `json:"git_commit,omitempty"`
 	Comment      *UICommentInfo `json:"comment,omitempty"`
@@ -85,7 +88,7 @@ func (s *Storage) SearchDebugFilesForUI(ctx context.Context, scanRoots []string,
 			continue
 		}
 		out = append(out, rec)
-		if len(out) >= limit {
+		if limit > 0 && len(out) >= limit {
 			break
 		}
 	}
@@ -118,36 +121,30 @@ func matchesUnifiedQuery(query string, rec ArtifactRecord) bool {
 
 // BuildUITree группирует файлы: проект → каталоги → *.debug.
 func BuildUITree(scanRoots []string, records []ArtifactRecord) []UITreeNode {
+	files := make([]UITreeFile, 0, len(records))
+	for _, rec := range records {
+		files = append(files, ArtifactRecordToUITreeFile(rec, scanRoots))
+	}
+	return BuildUITreeFromFiles(files)
+}
+
+// BuildUITreeFromFiles строит дерево из готовых листьев.
+func BuildUITreeFromFiles(files []UITreeFile) []UITreeNode {
 	type projMap = map[string]map[string][]UITreeFile
 	projects := make(projMap)
 
-	for _, rec := range records {
-		EnrichArtifactRecord(&rec, scanRoots)
-		rel := rec.RelativePath
-		if rel == "" {
-			rel = ArtifactDisplayPath(rec, scanRoots)
+	for _, file := range files {
+		project := file.Project
+		if project == "" {
+			project = UIProjectFromRelativePath(file.RelativePath)
 		}
-		project := UIProjectFromRelativePath(rel)
-		rest := strings.TrimPrefix(rel, project)
+		rest := strings.TrimPrefix(file.RelativePath, project)
 		rest = strings.TrimPrefix(rest, "/")
 		dir := filepath.ToSlash(filepath.Dir(rest))
 		if dir == "." {
 			dir = ""
 		}
 
-		gitCommit := rec.GitCommit
-		if gitCommit == "" && rec.Comment != nil {
-			gitCommit = rec.Comment.GitCommit
-		}
-
-		file := UITreeFile{
-			Filename:     rec.Filename,
-			RelativePath: rel,
-			BuildID:      rec.BuildID,
-			Type:         rec.Type,
-			GitCommit:    gitCommit,
-			Comment:      rec.Comment,
-		}
 		if projects[project] == nil {
 			projects[project] = make(map[string][]UITreeFile)
 		}

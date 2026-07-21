@@ -356,13 +356,16 @@ func NewMux(opts ServerOpts) http.Handler {
 
 	if opts.UIEnabled {
 		webui.Register(mux, webui.Opts{
-			Store:        opts.Store,
-			Metrics:      opts.Metrics,
-			CacheBytes:   opts.CacheBytes,
-			ScanPaths:    opts.ScanPaths,
-			DedupEnabled: opts.DedupEnabled,
-			ScanEnabled:  opts.ScanTrigger != nil,
-			ScanTrigger:  opts.ScanTrigger,
+			Store:         opts.Store,
+			Metrics:       opts.Metrics,
+			CacheBytes:    opts.CacheBytes,
+			ScanPaths:     opts.ScanPaths,
+			CacheDir:      opts.CacheDir,
+			AllowedRoots:  pathsafe.AllowedRoots(opts.ScanPaths, opts.CacheDir),
+			DedupRestorer: opts.DedupRestorer,
+			DedupEnabled:  opts.DedupEnabled,
+			ScanEnabled:   opts.ScanTrigger != nil,
+			ScanTrigger:   opts.ScanTrigger,
 		})
 	}
 

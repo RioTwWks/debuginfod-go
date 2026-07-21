@@ -23,15 +23,23 @@ type ScanTrigger interface {
 	Trigger()
 }
 
+// DedupRestorer восстанавливает dedup-файл для скачивания из Web UI.
+type DedupRestorer interface {
+	RestoreToCache(cacheDir, filePath string) (string, error)
+}
+
 // Opts — зависимости Web UI.
 type Opts struct {
-	Store        *storage.Storage
-	Metrics      *metrics.Collector
-	CacheBytes   func() int64
-	ScanPaths    []string
-	DedupEnabled bool
-	ScanEnabled  bool
-	ScanTrigger  ScanTrigger
+	Store         *storage.Storage
+	Metrics       *metrics.Collector
+	CacheBytes    func() int64
+	ScanPaths     []string
+	CacheDir      string
+	AllowedRoots  []string
+	DedupRestorer DedupRestorer
+	DedupEnabled  bool
+	ScanEnabled   bool
+	ScanTrigger   ScanTrigger
 }
 
 // StatsResponse — JSON для панели статистики.
@@ -109,6 +117,7 @@ func Register(mux *http.ServeMux, opts Opts) {
 	})
 	mux.HandleFunc("/ui/api/stats", statsHandler(opts))
 	mux.HandleFunc("/ui/api/browse", browseHandler(opts))
+	mux.HandleFunc("/ui/api/download/dedup/", dedupDownloadHandler(opts))
 	mux.HandleFunc("/ui/api/search", searchHandler(opts))
 	mux.HandleFunc("/ui/api/scans", scansHandler(opts))
 	mux.HandleFunc("/ui/api/rescan", rescanHandler(opts))
@@ -201,23 +210,19 @@ func browseHandler(opts Opts) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		defer cancel()
 
-		records, err := opts.Store.SearchDebugFilesForUI(ctx, opts.ScanPaths, query, limit)
+		files, complete, err := opts.Store.BrowseFilesForUI(ctx, opts.ScanPaths, query, limit)
 		if err != nil {
 			slog.Error("webui browse", "query", query, "err", err)
 			http.Error(w, "browse error", http.StatusInternalServerError)
 			return
 		}
-		for i := range records {
-			storage.EnrichArtifactComment(&records[i])
-		}
 
-		projects := storage.BuildUITree(opts.ScanPaths, records)
-		complete := len(records) < limit
+		projects := storage.BuildUITreeFromFiles(files)
 
 		resp := BrowseResponse{
 			Query:    query,
 			Projects: projects,
-			Count:    len(records),
+			Count:    len(files),
 			Limit:    limit,
 			Complete: complete,
 		}
