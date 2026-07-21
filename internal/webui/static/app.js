@@ -135,6 +135,9 @@
   }
 
   function downloadHref(file) {
+    if (file.dedup_id) {
+      return "/ui/api/download/dedup/" + encodeURIComponent(file.dedup_id);
+    }
     const type = file.type === "executable" ? "executable" : "debuginfo";
     return "/buildid/" + encodeURIComponent(file.buildid) + "/" + type;
   }
@@ -148,7 +151,10 @@
         escapeHtml(commit.slice(0, 12)) +
         "…</span>"
       : "";
-    const detailsId = "file-" + escapeHtml(file.buildid + "-" + name).replace(/[^a-zA-Z0-9_-]/g, "_");
+    const rowKey = file.dedup_id
+      ? "dedup-" + file.dedup_id
+      : (file.buildid || "file") + "-" + name;
+    const detailsId = "file-" + escapeHtml(rowKey).replace(/[^a-zA-Z0-9_-]/g, "_");
     const hasDetails =
       commit ||
       (file.comment &&
