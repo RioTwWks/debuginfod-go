@@ -43,8 +43,25 @@
   }
 
   function formatMs(ms) {
-    if (ms < 1000) return ms + " ms";
-    return (ms / 1000).toFixed(1) + " с";
+    if (ms === undefined || ms === null || ms < 0) return "—";
+    const totalSec = Math.floor(ms / 1000);
+    if (totalSec > 59 * 60) {
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      const parts = [h + " ч"];
+      if (m > 0) parts.push(m + " мин");
+      if (s > 0) parts.push(s + " с");
+      return parts.join(" ");
+    }
+    if (totalSec > 60) {
+      const m = Math.floor(totalSec / 60);
+      const s = totalSec % 60;
+      return s > 0 ? m + " мин " + s + " с" : m + " мин";
+    }
+    if (totalSec === 60) return "1 мин";
+    if (totalSec < 1 && ms > 0) return "<1 с";
+    return totalSec + " с";
   }
 
   function formatDate(iso) {
@@ -327,8 +344,8 @@
         formatNumber(data.last_scan_errors) +
         "</strong> <span>ошибок</span></span>",
       "<span class='scan-item'><strong>" +
-        formatNumber(data.last_scan_duration_ms) +
-        " ms</strong> <span>длительность</span></span>",
+        escapeHtml(formatMs(data.last_scan_duration_ms)) +
+        "</strong> <span>длительность</span></span>",
     ];
     if (data.last_scan_finished_at) {
       scanParts.push(
