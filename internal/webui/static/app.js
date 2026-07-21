@@ -168,6 +168,7 @@
       directory: row.directory,
       mtime_ns: row.mtime_ns,
       mtime: row.mtime,
+      comment: row.comment,
     };
     return {
       buildid: row.buildid,
@@ -194,6 +195,33 @@
       escapeHtml(String(value)) +
       "</span></div>"
     );
+  }
+
+  function renderCommentBlock(comment) {
+    if (
+      !comment ||
+      ((!comment.lines || !comment.lines.length) && !comment.git_commit)
+    ) {
+      return "";
+    }
+    let html =
+      '<div class="detail-section comment-section"><h4>ELF .comment</h4><div class="detail-grid">';
+    html += detailField("Toolchain", comment.toolchain, false);
+    html += detailField("Copyright", comment.copyright, false);
+    if (comment.labels && comment.labels.length) {
+      html += detailField("Метки", comment.labels.join(" · "), false);
+    }
+    html += detailField("Версия продукта", comment.product_version, false);
+    html += detailField("Git commit", comment.git_commit, true);
+    html += "</div>";
+    if (comment.lines && comment.lines.length) {
+      html +=
+        '<pre class="comment-raw">' +
+        escapeHtml(comment.lines.join("\n")) +
+        "</pre>";
+    }
+    html += "</div>";
+    return html;
   }
 
   function renderEntryBlock(entry, buildid) {
@@ -228,6 +256,7 @@
       detailField("Mtime", entry.mtime, false) +
       detailField("Mtime (ns)", entry.mtime_ns, false) +
       "</div>" +
+      renderCommentBlock(entry.comment) +
       (download ? '<div class="detail-links">' + download + "</div>" : "") +
       "</div>"
     );
