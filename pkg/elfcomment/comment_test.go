@@ -4,6 +4,28 @@ import (
 	"testing"
 )
 
+func TestParseInfoQuikComment(t *testing.T) {
+	data := []byte("GCC: (AstraLinuxSE 8.3.0-6) 8.3.0\x00" +
+		"(c) ARQA Technologies, 2000-2026\x00" +
+		"Core Library\x00" +
+		"Quik Server\x00" +
+		"16.0.0.1\x00" +
+		"9ae10425c6bbb99c7ee1f71a3941fd7aee058227\x00")
+	info := ParseInfo(data)
+	if info.Toolchain == "" || info.Copyright == "" {
+		t.Fatalf("toolchain/copyright: %+v", info)
+	}
+	if info.ProductVersion != "16.0.0.1" {
+		t.Fatalf("version=%q", info.ProductVersion)
+	}
+	if info.GitCommit != "9ae10425c6bbb99c7ee1f71a3941fd7aee058227" {
+		t.Fatalf("commit=%q", info.GitCommit)
+	}
+	if len(info.Labels) < 2 {
+		t.Fatalf("labels=%v", info.Labels)
+	}
+}
+
 func TestParseBytesQuikComment(t *testing.T) {
 	data := []byte("GCC: (AstraLinuxSE 8.3.0-6) 8.3.0\x00" +
 		"(c) ARQA Technologies, 2000-2026\x00" +

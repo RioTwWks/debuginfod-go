@@ -76,6 +76,7 @@ func (s *Storage) SearchBuildIDGroupedForUI(ctx context.Context, query string, l
 			g.Types = append(g.Types, rec.Type)
 		}
 		g.Entries = append(g.Entries, rec)
+		EnrichArtifactComment(&g.Entries[len(g.Entries)-1])
 		if rec.BuildIDKind != "" {
 			g.BuildIDKind = rec.BuildIDKind
 		}

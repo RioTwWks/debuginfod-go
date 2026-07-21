@@ -38,6 +38,7 @@ type ArtifactRecord struct {
 	Mtime        string `json:"mtime,omitempty"`
 	Sources      []UISourceRecord `json:"sources,omitempty"`
 	SourcesCount int              `json:"sources_count,omitempty"`
+	Comment      *UICommentInfo   `json:"comment,omitempty"`
 }
 
 // MetadataResponse — JSON-ответ эндпоинта /metadata.

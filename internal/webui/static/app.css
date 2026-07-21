@@ -456,6 +456,27 @@ body {
   background: var(--surface2);
 }
 
+.comment-block h5 {
+  margin: 0.75rem 0 0.5rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.comment-raw {
+  margin: 0.5rem 0 0;
+  padding: 0.65rem 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+}
+
 .artifact-detail-row.hidden {
   display: none;
 }

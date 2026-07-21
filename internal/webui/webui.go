@@ -346,6 +346,7 @@ func scansHandler(opts Opts) http.HandlerFunc {
 func enrichFlatSearchResults(ctx context.Context, opts Opts, results []storage.ArtifactRecord) {
 	for i := range results {
 		storage.EnrichArtifactRecord(&results[i], opts.ScanPaths)
+		storage.EnrichArtifactComment(&results[i])
 		sources, count, err := opts.Store.ListSourcesForBuildIDUI(ctx, results[i].BuildID, opts.ScanPaths, 20)
 		if err != nil {
 			continue
