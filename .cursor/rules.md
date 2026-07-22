@@ -99,7 +99,8 @@ deploy/                  # systemd unit, Zabbix docs, OPERATIONS.md
 | `DEBUGINFOD_PORT` | `8002` | HTTP-порт |
 | `DEBUGINFOD_RESCAN_INTERVAL` | `1h` | Периодический rescan |
 | `DEBUGINFOD_METADATA_MAXTIME` | `5s` | Таймаут metadata |
-| `DEBUGINFOD_LOG_LEVEL` | `info` | slog level |
+| `DEBUGINFOD_LOG_LEVEL` | `info` | slog level (stdout/journald) |
+| `DEBUGINFOD_LOG_DIR` | — | Каталог ежедневных логов `debuginfod-YYYY-MM-DD.log` (в файле всегда DEBUG) |
 | `DEBUGINFOD_CACHE_DIR` | `.debuginfod-cache` | Кэш извлечённых файлов |
 | `DEBUGINFOD_CACHE_MAX_BYTES` | `0` | LRU лимит кэша (0=∞) |
 | `DEBUGINFOD_LAZY_EXTRACT` | `true` | Отложенное извлечение |
