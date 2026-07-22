@@ -19,6 +19,7 @@ type Config struct {
 	RescanInterval   time.Duration
 	MetadataMaxTime  time.Duration
 	LogLevel         string
+	LogDir           string
 	CacheDir         string
 	CacheMaxBytes    int64
 	ScanWorkers      int
@@ -66,6 +67,7 @@ func Load() Config {
 		RescanInterval:  envDuration("DEBUGINFOD_RESCAN_INTERVAL", time.Hour),
 		MetadataMaxTime: envDuration("DEBUGINFOD_METADATA_MAXTIME", 5*time.Second),
 		LogLevel:        envOr("DEBUGINFOD_LOG_LEVEL", "info"),
+		LogDir:          envOr("DEBUGINFOD_LOG_DIR", ""),
 		CacheDir:        envOr("DEBUGINFOD_CACHE_DIR", ".debuginfod-cache"),
 		CacheMaxBytes:   envInt64("DEBUGINFOD_CACHE_MAX_BYTES", 0),
 		ScanWorkers:     envInt("DEBUGINFOD_SCAN_WORKERS", 4),

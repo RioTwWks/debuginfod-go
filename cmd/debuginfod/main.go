@@ -24,7 +24,13 @@ import (
 
 func main() {
 	cfg := config.Load()
-	logging.Setup(cfg.LogLevel)
+	_, logCloser := logging.Setup(logging.Options{
+		Level:  cfg.LogLevel,
+		LogDir: cfg.LogDir,
+	})
+	if logCloser != nil {
+		defer func() { _ = logCloser.Close() }()
+	}
 
 	if err := os.MkdirAll(cfg.CacheDir, 0o755); err != nil {
 		slog.Error("create cache dir", "err", err)
