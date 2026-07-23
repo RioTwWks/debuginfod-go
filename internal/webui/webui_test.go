@@ -54,6 +54,9 @@ func TestUIIndex(t *testing.T) {
 	if !contains(rec.Body.String(), "debuginfo_ico.png") || !contains(rec.Body.String(), "debuginfo_2x.png") {
 		t.Fatal("expected favicon and logo in HTML")
 	}
+	if !contains(rec.Body.String(), "theme-toggle") {
+		t.Fatal("expected theme toggle in HTML")
+	}
 }
 
 func TestUIStaticBrandingAssets(t *testing.T) {

@@ -3,28 +3,47 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
   <title>debuginfod-go</title>
   <link rel="icon" href="/ui/static/debuginfo_ico.png" type="image/png">
   <link rel="apple-touch-icon" href="/ui/static/debuginfo_ico.png">
   <link rel="stylesheet" href="/ui/static/app.css">
+  <script>
+    (function () {
+      var t = localStorage.getItem("debuginfod-ui-theme");
+      if (!t && window.matchMedia("(prefers-color-scheme: light)").matches) {
+        t = "light";
+      }
+      if (t) {
+        document.documentElement.setAttribute("data-theme", t);
+      }
+    })();
+  </script>
 </head>
 <body>
   <header class="header">
-    <div class="header-brand">
-      <img
-        class="header-logo"
-        src="/ui/static/debuginfo_2x.png"
-        width="48"
-        height="48"
-        alt=""
-        decoding="async"
-      >
-      <div class="header-inner">
-        <h1>debuginfod-go</h1>
-        <p class="subtitle">Статистика индекса и обзор .debug файлов</p>
-      </div>
+    <div class="header-start">
+      <a class="header-logo-link" href="/ui/" title="debuginfod-go">
+        <img
+          class="header-logo"
+          src="/ui/static/debuginfo_2x.png"
+          alt="debuginfod-go"
+          decoding="async"
+        >
+      </a>
+      <p class="header-tagline">Статистика индекса и обзор .debug файлов</p>
     </div>
-    <div class="header-meta">
+    <div class="header-actions">
+      <button
+        type="button"
+        id="theme-toggle"
+        class="theme-toggle"
+        aria-label="Переключить тему"
+        title="Светлая / тёмная тема"
+      >
+        <span class="theme-toggle-icon theme-icon-dark" aria-hidden="true">☀</span>
+        <span class="theme-toggle-icon theme-icon-light" aria-hidden="true">☾</span>
+      </button>
       <span id="uptime" class="badge">uptime —</span>
       <button type="button" id="rescan-btn" class="badge rescan-btn" title="Переиндексировать SCAN_PATH; при включённом dedup — ingest xdelta (decompress-dwz)">
         Сканировать

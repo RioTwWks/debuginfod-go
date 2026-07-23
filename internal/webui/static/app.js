@@ -1,4 +1,5 @@
 (function () {
+  const THEME_KEY = "debuginfod-ui-theme";
   const statsGrid = document.getElementById("stats-grid");
   const scanInfo = document.getElementById("scan-info");
   const uptimeEl = document.getElementById("uptime");
@@ -17,6 +18,7 @@
   const dedupRunsBody = document.getElementById("dedup-runs-body");
   const rescanBtn = document.getElementById("rescan-btn");
   const rescanStatus = document.getElementById("rescan-status");
+  const themeToggle = document.getElementById("theme-toggle");
 
   let lastSearchValue = "";
   let scansLoaded = false;
@@ -77,6 +79,38 @@
     const div = document.createElement("div");
     div.textContent = s;
     return div.innerHTML;
+  }
+
+  function currentTheme() {
+    return document.documentElement.getAttribute("data-theme") === "light"
+      ? "light"
+      : "dark";
+  }
+
+  function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    if (themeToggle) {
+      themeToggle.setAttribute(
+        "aria-label",
+        theme === "light" ? "Включить тёмную тему" : "Включить светлую тему"
+      );
+    }
+  }
+
+  function initTheme() {
+    const stored = localStorage.getItem(THEME_KEY);
+    const theme =
+      stored ||
+      (window.matchMedia("(prefers-color-scheme: light)").matches
+        ? "light"
+        : "dark");
+    applyTheme(theme);
+  }
+
+  function toggleTheme() {
+    const next = currentTheme() === "dark" ? "light" : "dark";
+    localStorage.setItem(THEME_KEY, next);
+    applyTheme(next);
   }
 
   function setMainTab(tab) {
@@ -670,6 +704,16 @@
     rescanBtn.addEventListener("click", triggerRescan);
   }
 
+  if (themeToggle) {
+    themeToggle.addEventListener("click", toggleTheme);
+  }
+
+  initTheme();
+  loadStats();
+  setInterval(loadStats, 30000);
+  setMainTab("dashboard");
+  doBrowse("");
+
   let debounce;
   searchInput.addEventListener("input", function () {
     clearTimeout(debounce);
@@ -677,9 +721,4 @@
       doBrowse(searchInput.value.trim());
     }, 250);
   });
-
-  loadStats();
-  setInterval(loadStats, 30000);
-  setMainTab("dashboard");
-  doBrowse("");
 })();
