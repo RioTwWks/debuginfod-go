@@ -364,18 +364,20 @@ body {
 }
 
 .search-form button {
-  padding: 0.65rem 1.25rem;
-  background: linear-gradient(135deg, var(--accent-hot) 0%, var(--accent-hot-hover) 100%);
+  padding: 0.65rem 1.1rem;
+  background: var(--red);
   color: #fff;
-  border: none;
+  border: 1px solid #a4161a;
   border-radius: var(--radius);
   font-weight: 600;
+  font-family: var(--mono);
+  font-size: 0.85rem;
   cursor: pointer;
   white-space: nowrap;
 }
 
 .search-form button:hover {
-  filter: brightness(1.05);
+  background: #c1121f;
 }
 
 .hint {
