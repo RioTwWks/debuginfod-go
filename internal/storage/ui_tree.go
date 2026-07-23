@@ -224,18 +224,6 @@ func BuildUITreeFromFiles(files []UITreeFile) []UITreeNode {
 	return out
 }
 
-func sortUITreeFiles(files []UITreeFile) []UITreeFile {
-	if len(files) == 0 {
-		return nil
-	}
-	sort.Slice(files, func(i, j int) bool {
-		return files[i].Filename < files[j].Filename
-	})
-	out := make([]UITreeFile, len(files))
-	copy(out, files)
-	return out
-}
-
 func sortUITreeFilesByPath(files []UITreeFile) []UITreeFile {
 	if len(files) == 0 {
 		return nil
