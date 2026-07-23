@@ -102,11 +102,33 @@ func runGroupJob(opts Options, job groupJob) groupTotals {
 	base := group[0]
 	if len(group) == 1 {
 		if !opts.DryRun {
+			existing, baseErr := findGroupBase(opts.Store, base)
+			if baseErr == nil {
+				after, compressErr := compressOne(opts, existing, base)
+				if compressErr != nil {
+					_ = opts.Store.MarkDedupFileError(base.ID, compressErr.Error())
+					total.errors++
+					return total
+				}
+				total.compressed++
+				total.bytesBefore += base.OriginalSize
+				total.bytesAfter += after
+				total.skipped++
+				return total
+			}
+			if !isNotFound(baseErr) {
+				_ = opts.Store.MarkDedupFileError(base.ID, baseErr.Error())
+				total.errors++
+				return total
+			}
 			if err := markSingletonFull(opts, base); err != nil {
 				_ = opts.Store.MarkDedupFileError(base.ID, err.Error())
 				total.errors++
 				return total
 			}
+		} else if existing, baseErr := findGroupBase(opts.Store, base); baseErr == nil {
+			_ = existing
+			total.compressed++
 		}
 		total.skipped++
 		return total

@@ -117,6 +117,9 @@ func dedupSchemaSQLite() string {
 		);
 		CREATE INDEX IF NOT EXISTS idx_dedup_files_status ON dedup_files(status);
 		CREATE INDEX IF NOT EXISTS idx_dedup_files_group ON dedup_files(file_stem, version, commit_tag);
+		CREATE INDEX IF NOT EXISTS idx_dedup_files_commit_tag ON dedup_files(commit_tag);
+		CREATE INDEX IF NOT EXISTS idx_dedup_files_filename ON dedup_files(filename);
+		CREATE INDEX IF NOT EXISTS idx_dedup_files_file_stem ON dedup_files(file_stem);
 	`
 }
 
@@ -158,6 +161,9 @@ func dedupSchemaPostgres() string {
 		);
 		CREATE INDEX IF NOT EXISTS idx_dedup_files_status ON dedup_files(status);
 		CREATE INDEX IF NOT EXISTS idx_dedup_files_group ON dedup_files(file_stem, version, commit_tag);
+		CREATE INDEX IF NOT EXISTS idx_dedup_files_commit_tag ON dedup_files(commit_tag);
+		CREATE INDEX IF NOT EXISTS idx_dedup_files_filename ON dedup_files(filename);
+		CREATE INDEX IF NOT EXISTS idx_dedup_files_file_stem ON dedup_files(file_stem);
 	`
 }
 
@@ -175,7 +181,19 @@ func migrateDedup(db *sql.DB, dialect Dialect) error {
 	if err := migrateDedupMetaTable(db, dialect); err != nil {
 		return err
 	}
-	return migrateDedupStrategyOnce(db, dialect)
+	if err := migrateDedupStrategyOnce(db, dialect); err != nil {
+		return err
+	}
+	for _, stmt := range []string{
+		"CREATE INDEX IF NOT EXISTS idx_dedup_files_commit_tag ON dedup_files(commit_tag)",
+		"CREATE INDEX IF NOT EXISTS idx_dedup_files_filename ON dedup_files(filename)",
+		"CREATE INDEX IF NOT EXISTS idx_dedup_files_file_stem ON dedup_files(file_stem)",
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("migrate dedup index: %w", err)
+		}
+	}
+	return nil
 }
 
 func migrateDedupMetaTable(db *sql.DB, dialect Dialect) error {
@@ -806,6 +824,49 @@ func joinStrings(parts []string, sep string) string {
 		out += sep + parts[i]
 	}
 	return out
+}
+
+// DedupFileSnapshot — лёгкая запись для incremental discover.
+type DedupFileSnapshot struct {
+	Status       DedupBuildStatus
+	OriginalSize int64
+	CommitTag    string
+}
+
+// GetDedupFileSnapshotByPath возвращает снимок существующей записи dedup.
+func (s *Storage) GetDedupFileSnapshotByPath(filePath string) (DedupFileSnapshot, bool, error) {
+	var snap DedupFileSnapshot
+	err := s.db.QueryRow(rebind(`
+		SELECT status, original_size, commit_tag FROM dedup_files WHERE file_path = ?
+	`, s.dialect), filePath).Scan(&snap.Status, &snap.OriginalSize, &snap.CommitTag)
+	if errors.Is(err, sql.ErrNoRows) {
+		return DedupFileSnapshot{}, false, nil
+	}
+	return snap, true, err
+}
+
+// ListDedupBasesByStem возвращает base-файлы для file_stem (новые первыми).
+func (s *Storage) ListDedupBasesByStem(fileStem string, limit int) ([]DedupFile, error) {
+	if limit <= 0 {
+		limit = 32
+	}
+	rows, err := s.db.Query(rebind(`
+		SELECT f.id, f.build_dir_id, p.name, f.file_path, f.filename,
+			f.file_stem, f.version, f.file_build_num, f.commit_tag,
+			f.storage_kind, f.base_file_id, f.delta_path, f.sha256,
+			f.original_size, f.compressed_size, f.status, f.error_msg
+		FROM dedup_files f
+		JOIN dedup_build_dirs b ON b.id = f.build_dir_id
+		JOIN dedup_projects p ON p.id = b.project_id
+		WHERE f.file_stem = ? AND f.storage_kind = 'base' AND f.status = 'done'
+		ORDER BY f.file_build_num DESC, f.id DESC
+		LIMIT ?
+	`, s.dialect), fileStem, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanDedupFiles(rows)
 }
 
 // HasPendingFilesInBuildDir проверяет, остались ли pending файлы в каталоге.

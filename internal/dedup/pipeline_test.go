@@ -261,6 +261,90 @@ func TestRestoreDeltaRoundTrip(t *testing.T) {
 	}
 }
 
+func TestProcessGroupsIncrementalBase(t *testing.T) {
+	if !xdeltaAvailable() {
+		t.Skip("xdelta3 not in PATH")
+	}
+
+	store, err := storage.New(t.TempDir() + "/incr-dedup.sqlite")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	dir := t.TempDir()
+	build1 := filepath.Join(dir, "Released", "Quik", "build_1_2026-01-01")
+	build2 := filepath.Join(dir, "Released", "Quik", "build_2_2026-01-02")
+	for _, d := range []string{build1, build2} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	baseContent := []byte("ELF base debug content v1\n")
+	target1Content := append(baseContent, []byte("extra v2\n")...)
+	target2Content := append(baseContent, []byte("extra v3\n")...)
+
+	fileBase := filepath.Join(build1, "lib.so.1.0.0.100.debug")
+	fileT1 := filepath.Join(build1, "lib.so.1.0.0.101.debug")
+	fileT2 := filepath.Join(build2, "lib.so.1.0.0.102.debug")
+	for path, content := range map[string][]byte{
+		fileBase: baseContent, fileT1: target1Content, fileT2: target2Content,
+	} {
+		if err := os.WriteFile(path, content, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	pid, _ := store.EnsureDedupProject("Released/Quik")
+	bid1, _ := store.UpsertDedupBuildDir(pid, build1, 1)
+	bid2, _ := store.UpsertDedupBuildDir(pid, build2, 2)
+	idBase, _ := store.UpsertDedupFile(storage.DedupFile{
+		BuildDirID: bid1, FilePath: fileBase, Filename: filepath.Base(fileBase),
+		FileStem: "lib.so", Version: "1.0.0", FileBuildNum: 100, OriginalSize: int64(len(baseContent)),
+	})
+	idT1, _ := store.UpsertDedupFile(storage.DedupFile{
+		BuildDirID: bid1, FilePath: fileT1, Filename: filepath.Base(fileT1),
+		FileStem: "lib.so", Version: "1.0.0", FileBuildNum: 101, OriginalSize: int64(len(target1Content)),
+	})
+	idT2, _ := store.UpsertDedupFile(storage.DedupFile{
+		BuildDirID: bid2, FilePath: fileT2, Filename: filepath.Base(fileT2),
+		FileStem: "lib.so", Version: "1.0.0", FileBuildNum: 102, OriginalSize: int64(len(target2Content)),
+	})
+
+	opts := Options{
+		Store:        store,
+		Xdelta:       NewXdelta(""),
+		Preprocessor: NoPreprocessor{},
+		CompressBase: false,
+	}
+
+	files1, _ := store.ListPendingDedupFiles([]int64{bid1})
+	groups1 := GroupFiles(files1)
+	if compressed, _, errs, _, _ := processGroups(opts, groups1); errs != 0 || compressed != 1 {
+		t.Fatalf("initial group compressed=%d errs=%d", compressed, errs)
+	}
+	baseRec, err := store.GetDedupFileByID(idBase)
+	if err != nil || baseRec.StorageKind != storage.DedupKindBase {
+		t.Fatalf("base kind=%s err=%v", baseRec.StorageKind, err)
+	}
+
+	files2, _ := store.ListPendingDedupFiles([]int64{bid2})
+	groups2 := GroupFiles(files2)
+	compressed, _, errs, _, _ := processGroups(opts, groups2)
+	if errs != 0 || compressed != 1 {
+		t.Fatalf("incremental compressed=%d errs=%d", compressed, errs)
+	}
+	t2, err := store.GetDedupFileByID(idT2)
+	if err != nil || t2.StorageKind != storage.DedupKindDelta {
+		t.Fatalf("target2 kind=%s err=%v", t2.StorageKind, err)
+	}
+	_ = idT1
+	if t2.BaseFileID.Int64 != idBase {
+		t.Fatalf("delta base_id=%d want %d", t2.BaseFileID.Int64, idBase)
+	}
+}
+
 func fileSHA256Bytes(b []byte) (string, error) {
 	f, err := os.CreateTemp("", "sha-*")
 	if err != nil {

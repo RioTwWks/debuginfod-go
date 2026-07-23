@@ -70,5 +70,8 @@ func migratePostgres(db *sql.DB) error {
 	if err := migrateDedup(db, DialectPostgres); err != nil {
 		return err
 	}
-	return migrateHistory(db, DialectPostgres)
+	if err := migrateHistory(db, DialectPostgres); err != nil {
+		return err
+	}
+	return migrateUIIndexes(db)
 }

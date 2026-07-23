@@ -87,6 +87,7 @@ type ScansResponse struct {
 }
 
 // BrowseResponse — дерево .debug для Web UI.
+// BrowseResponse — дерево .debug для Web UI (группировка по git commit).
 type BrowseResponse struct {
 	Query    string               `json:"query,omitempty"`
 	Projects []storage.UITreeNode `json:"projects"`

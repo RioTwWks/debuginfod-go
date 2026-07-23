@@ -140,6 +140,13 @@ func registerDebugFiles(store *storage.Storage, buildDirID int64, dirPath string
 		if err != nil {
 			return nil
 		}
+		snap, exists, err := store.GetDedupFileSnapshotByPath(path)
+		if err != nil {
+			return err
+		}
+		if exists && snap.Status == storage.DedupStatusDone && snap.OriginalSize == info.Size() {
+			return nil
+		}
 		meta, err := debugfilename.MetadataFromName(name)
 		if err != nil {
 			slog.Debug("dedup skip file", "path", path, "err", err)

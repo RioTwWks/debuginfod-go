@@ -133,7 +133,10 @@ func migrateSQLite(db *sql.DB) error {
 	if err := migrateDedup(db, DialectSQLite); err != nil {
 		return err
 	}
-	return migrateHistory(db, DialectSQLite)
+	if err := migrateHistory(db, DialectSQLite); err != nil {
+		return err
+	}
+	return migrateUIIndexes(db)
 }
 
 // Close закрывает соединение с базой данных.

@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -54,23 +55,41 @@ func (s *Storage) BrowseFilesForUI(ctx context.Context, scanRoots []string, quer
 
 // SearchDedupFilesForUI возвращает dedup-файлы, отсутствующие в индексе артефактов.
 func (s *Storage) SearchDedupFilesForUI(ctx context.Context, scanRoots []string, query string, skipPaths map[string]struct{}) ([]DedupFile, error) {
-	rows, err := s.db.QueryContext(ctx, rebind(`
-		SELECT f.id, f.build_dir_id, p.name, f.file_path, f.filename,
-			f.file_stem, f.version, f.file_build_num, f.commit_tag,
-			f.storage_kind, f.base_file_id, f.delta_path, f.sha256,
-			f.original_size, f.compressed_size, f.status, f.error_msg
-		FROM dedup_files f
-		JOIN dedup_build_dirs b ON b.id = f.build_dir_id
-		JOIN dedup_projects p ON p.id = b.project_id
-		WHERE f.status != 'error'
-		ORDER BY f.file_path
-	`, s.dialect))
+	query = strings.TrimSpace(query)
+	var rows *sql.Rows
+	var err error
+	if isSimpleSearchQuery(query) {
+		where, args := dedupSearchSQLFilter(query)
+		rows, err = s.db.QueryContext(ctx, rebind(`
+			SELECT f.id, f.build_dir_id, p.name, f.file_path, f.filename,
+				f.file_stem, f.version, f.file_build_num, f.commit_tag,
+				f.storage_kind, f.base_file_id, f.delta_path, f.sha256,
+				f.original_size, f.compressed_size, f.status, f.error_msg
+			FROM dedup_files f
+			JOIN dedup_build_dirs b ON b.id = f.build_dir_id
+			JOIN dedup_projects p ON p.id = b.project_id
+			WHERE f.status != 'error'
+			`+where+`
+			ORDER BY f.file_path
+		`, s.dialect), args...)
+	} else {
+		rows, err = s.db.QueryContext(ctx, rebind(`
+			SELECT f.id, f.build_dir_id, p.name, f.file_path, f.filename,
+				f.file_stem, f.version, f.file_build_num, f.commit_tag,
+				f.storage_kind, f.base_file_id, f.delta_path, f.sha256,
+				f.original_size, f.compressed_size, f.status, f.error_msg
+			FROM dedup_files f
+			JOIN dedup_build_dirs b ON b.id = f.build_dir_id
+			JOIN dedup_projects p ON p.id = b.project_id
+			WHERE f.status != 'error'
+			ORDER BY f.file_path
+		`, s.dialect))
+	}
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	query = strings.TrimSpace(query)
 	var out []DedupFile
 	for rows.Next() {
 		if err := ctx.Err(); err != nil {
@@ -137,6 +156,17 @@ func matchesUnifiedQueryForDedup(query string, df DedupFile, rel string) bool {
 		GitCommit:    df.CommitTag,
 	}
 	return matchesUnifiedQuery(query, rec)
+}
+
+func dedupSearchSQLFilter(query string) (string, []any) {
+	pattern := "%" + strings.ToLower(query) + "%"
+	return `
+		AND (
+			LOWER(f.file_path) LIKE ? OR
+			LOWER(f.filename) LIKE ? OR
+			LOWER(f.commit_tag) LIKE ?
+		)
+	`, []any{pattern, pattern, pattern}
 }
 
 // ArtifactRecordToUITreeFile конвертирует артефакт в лист дерева.
