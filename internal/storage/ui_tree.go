@@ -25,10 +25,11 @@ type UITreeFile struct {
 	Comment      *UICommentInfo `json:"comment,omitempty"`
 }
 
-// UITreeNode — узел дерева (группа по git commit).
+// UITreeNode — узел дерева (группа по commit или проект/каталог).
 type UITreeNode struct {
 	Name     string       `json:"name"`
 	Path     string       `json:"path"`
+	Group    string       `json:"group,omitempty"` // "commit" или "project"
 	Files    []UITreeFile `json:"files,omitempty"`
 	Children []UITreeNode `json:"children,omitempty"`
 }
@@ -181,7 +182,7 @@ func UICommitLabel(commit string) string {
 	return commit
 }
 
-// BuildUITree группирует файлы по git commit.
+// BuildUITree группирует файлы: с commit — по commit, без — проект → каталоги.
 func BuildUITree(scanRoots []string, records []ArtifactRecord) []UITreeNode {
 	files := make([]UITreeFile, 0, len(records))
 	for _, rec := range records {
@@ -190,10 +191,30 @@ func BuildUITree(scanRoots []string, records []ArtifactRecord) []UITreeNode {
 	return BuildUITreeFromFiles(files)
 }
 
-// BuildUITreeFromFiles строит дерево: commit → *.debug.
+// BuildUITreeFromFiles строит дерево с гибридной группировкой.
 func BuildUITreeFromFiles(files []UITreeFile) []UITreeNode {
-	commits := make(map[string][]UITreeFile)
+	var withCommit, withoutCommit []UITreeFile
+	for _, file := range files {
+		if hasUICommit(file) {
+			withCommit = append(withCommit, file)
+		} else {
+			withoutCommit = append(withoutCommit, file)
+		}
+	}
 
+	out := buildCommitGroups(withCommit)
+	if len(withoutCommit) > 0 {
+		out = append(out, buildProjectDirTree(withoutCommit)...)
+	}
+	return out
+}
+
+func hasUICommit(file UITreeFile) bool {
+	return UICommitKey(file) != uiNoCommitLabel
+}
+
+func buildCommitGroups(files []UITreeFile) []UITreeNode {
+	commits := make(map[string][]UITreeFile)
 	for _, file := range files {
 		key := UICommitKey(file)
 		commits[key] = append(commits[key], file)
@@ -203,23 +224,103 @@ func BuildUITreeFromFiles(files []UITreeFile) []UITreeNode {
 	for name := range commits {
 		names = append(names, name)
 	}
-	sort.Slice(names, func(i, j int) bool {
-		if names[i] == uiNoCommitLabel {
-			return false
-		}
-		if names[j] == uiNoCommitLabel {
-			return true
-		}
-		return names[i] < names[j]
-	})
+	sort.Strings(names)
 
 	out := make([]UITreeNode, 0, len(names))
 	for _, commit := range names {
 		out = append(out, UITreeNode{
 			Name:  UICommitLabel(commit),
 			Path:  commit,
+			Group: "commit",
 			Files: sortUITreeFilesByPath(commits[commit]),
 		})
+	}
+	return out
+}
+
+func buildProjectDirTree(files []UITreeFile) []UITreeNode {
+	type projMap = map[string]map[string][]UITreeFile
+	projects := make(projMap)
+
+	for _, file := range files {
+		project := file.Project
+		if project == "" {
+			project = UIProjectFromRelativePath(file.RelativePath)
+		}
+		rest := strings.TrimPrefix(file.RelativePath, project)
+		rest = strings.TrimPrefix(rest, "/")
+		dir := filepath.ToSlash(filepath.Dir(rest))
+		if dir == "." {
+			dir = ""
+		}
+
+		if projects[project] == nil {
+			projects[project] = make(map[string][]UITreeFile)
+		}
+		projects[project][dir] = append(projects[project][dir], file)
+	}
+
+	projectNames := make([]string, 0, len(projects))
+	for name := range projects {
+		projectNames = append(projectNames, name)
+	}
+	sort.Strings(projectNames)
+
+	out := make([]UITreeNode, 0, len(projectNames))
+	for _, pname := range projectNames {
+		root := UITreeNode{Name: pname, Path: pname, Group: "project"}
+		root.Children, root.Files = buildDirChildren(pname, projects[pname])
+		out = append(out, root)
+	}
+	return out
+}
+
+type treeNode struct {
+	children map[string]*treeNode
+	files    []UITreeFile
+}
+
+func buildDirChildren(project string, dirs map[string][]UITreeFile) ([]UITreeNode, []UITreeFile) {
+	if len(dirs) == 0 {
+		return nil, nil
+	}
+
+	root := &treeNode{children: make(map[string]*treeNode)}
+	for dir, files := range dirs {
+		parts := []string{}
+		if dir != "" {
+			parts = strings.Split(dir, "/")
+		}
+		cur := root
+		for _, part := range parts {
+			if cur.children[part] == nil {
+				cur.children[part] = &treeNode{children: make(map[string]*treeNode)}
+			}
+			cur = cur.children[part]
+		}
+		cur.files = append(cur.files, files...)
+	}
+	return treeNodeToUI(project, root), sortUITreeFilesByPath(root.files)
+}
+
+func treeNodeToUI(base string, n *treeNode) []UITreeNode {
+	names := make([]string, 0, len(n.children))
+	for name := range n.children {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	out := make([]UITreeNode, 0, len(names))
+	for _, name := range names {
+		child := n.children[name]
+		path := base + "/" + name
+		node := UITreeNode{
+			Name:     name,
+			Path:     path,
+			Files:    sortUITreeFilesByPath(child.files),
+			Children: treeNodeToUI(path, child),
+		}
+		out = append(out, node)
 	}
 	return out
 }

@@ -153,11 +153,8 @@ func TestUIBrowseDedupDownload(t *testing.T) {
 	if payload.Count != 1 {
 		t.Fatalf("count=%d want 1", payload.Count)
 	}
-	if len(payload.Projects) != 1 {
+	if len(payload.Projects) != 1 || payload.Projects[0].Group != "project" || payload.Projects[0].Name != "Released/Qt_Library/qt" {
 		t.Fatalf("projects=%+v", payload.Projects)
-	}
-	if payload.Projects[0].Path == "" {
-		t.Fatalf("expected commit path in tree node: %+v", payload.Projects[0])
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/ui/api/download/dedup/"+strconv.FormatInt(df.ID, 10), nil)
@@ -209,7 +206,7 @@ func TestUIBrowse(t *testing.T) {
 	if payload.Count != 1 {
 		t.Fatalf("count=%d want 1 debug file", payload.Count)
 	}
-	if len(payload.Projects) != 1 || payload.Projects[0].Path != "9ae10425c6bbb99c7ee1f71a3941fd7aee058227" {
+	if len(payload.Projects) != 1 || payload.Projects[0].Group != "commit" || payload.Projects[0].Path != "9ae10425c6bbb99c7ee1f71a3941fd7aee058227" {
 		t.Fatalf("projects=%+v", payload.Projects)
 	}
 
