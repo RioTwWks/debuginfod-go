@@ -21,162 +21,187 @@
   </script>
 </head>
 <body>
-  <header class="masthead">
-    <div class="masthead-inner">
-      <a class="masthead-brand" href="/ui/" title="debuginfod-go">
-        <img
-          class="masthead-logo"
-          src="/ui/static/debuginfo_2x.png"
-          alt="debuginfod-go"
-          decoding="async"
-        >
-      </a>
-      <div class="masthead-tools">
-        <button
-          type="button"
-          id="theme-toggle"
-          class="tool-icon"
-          aria-label="Переключить тему"
-          title="Светлая / тёмная тема"
-        >
-          <span class="theme-toggle-icon theme-icon-dark" aria-hidden="true">☀</span>
-          <span class="theme-toggle-icon theme-icon-light" aria-hidden="true">☾</span>
+  <div class="shell">
+    <aside class="brand-wall" aria-label="Бренд и навигация">
+      <header class="brand-hero">
+        <a class="brand-logo-wrap" href="/ui/" title="debuginfod-go — на главную">
+          <span class="brand-logo-frame" aria-hidden="true"></span>
+          <img
+            class="brand-logo"
+            src="/ui/static/debuginfo_2x.png"
+            alt="debuginfod-go"
+            width="1200"
+            height="627"
+            decoding="async"
+          >
+        </a>
+        <p class="brand-caption">Индекс .debug · GNU build-id · xdelta</p>
+      </header>
+
+      <nav class="brand-nav main-tabs" role="tablist" aria-label="Разделы">
+        <button type="button" class="brand-tab main-tab active" data-tab="dashboard" role="tab" aria-selected="true">
+          Обзор
         </button>
-        <span id="uptime" class="tool-chip">uptime —</span>
-        <button type="button" id="rescan-btn" class="tool-btn tool-btn-accent" title="Переиндексировать SCAN_PATH; при включённом dedup — ingest xdelta (decompress-dwz)">
+        <button type="button" class="brand-tab main-tab" data-tab="scans" role="tab" aria-selected="false">
+          Сканирования
+        </button>
+      </nav>
+
+      <div class="brand-spacer"></div>
+
+      <div class="brand-status">
+        <span id="uptime" class="brand-chip">uptime —</span>
+        <span id="rescan-status" class="brand-chip brand-chip-warn" hidden></span>
+      </div>
+
+      <div class="brand-actions">
+        <button type="button" id="rescan-btn" class="brand-cta" title="Переиндексировать SCAN_PATH; при включённом dedup — ingest xdelta (decompress-dwz)">
           Сканировать
         </button>
-        <span id="rescan-status" class="tool-chip tool-chip-warn" hidden></span>
-        <a class="tool-chip tool-chip-link" href="/healthz" target="_blank" rel="noopener">healthz</a>
-        <a class="tool-chip tool-chip-link" href="/zabbix" target="_blank" rel="noopener">zabbix</a>
+        <button type="button" id="theme-toggle" class="brand-ghost" aria-label="Переключить тему" title="Светлая / тёмная тема">
+          <span class="theme-toggle-icon theme-icon-dark" aria-hidden="true">Светлая тема</span>
+          <span class="theme-toggle-icon theme-icon-light" aria-hidden="true">Тёмная тема</span>
+        </button>
+        <div class="brand-links">
+          <a href="/healthz" target="_blank" rel="noopener">healthz</a>
+          <a href="/zabbix" target="_blank" rel="noopener">zabbix</a>
+        </div>
       </div>
-    </div>
-  </header>
 
-  <main class="shell">
-    <p class="page-intro">Статистика индекса и обзор <code>*.debug</code> файлов</p>
-    <nav class="main-tabs" role="tablist" aria-label="Разделы">
-      <button type="button" class="main-tab active" data-tab="dashboard" role="tab" aria-selected="true">Дашборд</button>
-      <button type="button" class="main-tab" data-tab="scans" role="tab" aria-selected="false">Сканирования</button>
-    </nav>
+      <p class="brand-api">
+        API <code>/metadata?key=glob&amp;value=/bin/*</code>
+      </p>
+    </aside>
 
-    <div id="tab-dashboard" class="tab-panel active" role="tabpanel">
-      <section class="stats-grid" id="stats-grid" aria-live="polite">
-        <div class="stat-card loading"><span class="stat-label">Загрузка…</span></div>
-      </section>
+    <main class="workspace">
+      <div id="tab-dashboard" class="workspace-view active" role="tabpanel">
+        <header class="workspace-top">
+          <div class="status-ribbon" id="stats-grid" aria-live="polite">
+            <div class="stat-card loading"><span class="stat-label">Загрузка…</span></div>
+          </div>
+        </header>
 
-      <section class="panel">
-        <h2>Последнее сканирование</h2>
-        <div class="scan-row" id="scan-info">—</div>
-        <p class="hint">«Пропущено» — файлы без изменений с прошлого прохода (mtime и размер совпали) или ELF без GNU build-id. При инкрементальном scan это нормально: почти всё дерево уже в индексе, обрабатываются только новые/изменённые файлы.</p>
-      </section>
+        <section class="finder-bar" aria-label="Поиск">
+          <form id="search-form" class="search-form finder-form">
+            <label class="finder-label" for="search-input">Поиск .debug</label>
+            <div class="finder-input-wrap">
+              <input
+                type="search"
+                id="search-input"
+                name="q"
+                placeholder="путь, имя файла или commit id…"
+                autocomplete="off"
+                spellcheck="false"
+              >
+            </div>
+          </form>
+          <p class="finder-hint" id="search-hint">
+            Относительный путь от SCAN_PATH, имя <code>*.debug</code>, git commit. Маски <code>*</code> <code>?</code>.
+          </p>
+          <div id="search-status" class="search-status"></div>
+        </section>
 
-      <section class="panel">
-        <h2>Файлы .debug</h2>
-        <form id="search-form" class="search-form">
-          <input
-            type="search"
-            id="search-input"
-            name="q"
-            placeholder="Путь, имя файла или commit id…"
-            autocomplete="off"
-            spellcheck="false"
-          >
-        </form>
-        <p class="hint" id="search-hint">Поиск по относительному пути (от SCAN_PATH), имени <code>*.debug</code> и git commit. Подстрока или маска <code>*</code> <code>?</code>. Результаты обновляются при вводе.</p>
-        <div id="search-status" class="search-status"></div>
-        <div id="browse-tree" class="browse-tree" hidden></div>
-      </section>
-    </div>
+        <div class="workspace-grid">
+          <aside class="scan-rail" aria-labelledby="scan-rail-title">
+            <h2 id="scan-rail-title" class="rail-heading">Последнее сканирование</h2>
+            <div class="scan-row" id="scan-info">—</div>
+            <p class="rail-note">
+              «Пропущено» — без изменений с прошлого прохода или ELF без GNU build-id. При инкрементальном scan это нормально.
+            </p>
+          </aside>
 
-    <div id="tab-scans" class="tab-panel" role="tabpanel" hidden>
-      <section class="panel">
-        <h2>Сводка индекса</h2>
-        <div class="dedup-summary" id="index-summary">Загрузка…</div>
-      </section>
-
-      <section class="panel">
-        <h2>Хранение .debug (xdelta + decompress-dwz)</h2>
-        <div class="dedup-summary" id="dedup-summary">Загрузка…</div>
-        <p class="hint" id="dedup-status"></p>
-      </section>
-
-      <section class="panel">
-        <h2>По папкам (build_*)</h2>
-        <div class="table-wrap">
-          <table class="results-table" id="dedup-projects-table">
-            <thead>
-              <tr>
-                <th>папка</th>
-                <th>build dirs</th>
-                <th>файлов</th>
-                <th>base</th>
-                <th>delta</th>
-                <th>full</th>
-                <th>было</th>
-                <th>на диске</th>
-                <th>экономия</th>
-              </tr>
-            </thead>
-            <tbody id="dedup-projects-body">
-              <tr><td colspan="9" class="muted">Загрузка…</td></tr>
-            </tbody>
-          </table>
+          <section class="tree-canvas" aria-labelledby="tree-deck-title">
+            <h2 id="tree-deck-title" class="canvas-heading">Файлы .debug</h2>
+            <div id="browse-tree" class="browse-tree" hidden></div>
+          </section>
         </div>
-      </section>
+      </div>
 
-      <section class="panel">
-        <h2>История индексации</h2>
-        <div class="table-wrap">
-          <table class="results-table" id="scan-runs-table">
-            <thead>
-              <tr>
-                <th>завершено</th>
-                <th>длительность</th>
-                <th>проиндексировано</th>
-                <th title="Без изменений с прошлого scan или без build-id">пропущено</th>
-                <th>ошибок</th>
-                <th>артефактов</th>
-                <th>файлов</th>
-                <th>объём</th>
-              </tr>
-            </thead>
-            <tbody id="scan-runs-body">
-              <tr><td colspan="8" class="muted">Загрузка…</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <div id="tab-scans" class="workspace-view" role="tabpanel" hidden>
+        <section class="ledger-section">
+          <h2 class="ledger-heading"><span class="ledger-num">01</span> Сводка индекса</h2>
+          <div class="dedup-summary" id="index-summary">Загрузка…</div>
+        </section>
 
-      <section class="panel">
-        <h2>История dedup (xdelta)</h2>
-        <div class="table-wrap">
-          <table class="results-table" id="dedup-runs-table">
-            <thead>
-              <tr>
-                <th>завершено</th>
-                <th>длительность</th>
-                <th>проект</th>
-                <th>дельт</th>
-                <th>групп</th>
-                <th>ошибок</th>
-                <th>было</th>
-                <th>на диске</th>
-                <th>экономия</th>
-              </tr>
-            </thead>
-            <tbody id="dedup-runs-body">
-              <tr><td colspan="9" class="muted">Загрузка…</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
-  </main>
+        <section class="ledger-section">
+          <h2 class="ledger-heading"><span class="ledger-num">02</span> Хранение .debug (xdelta + decompress-dwz)</h2>
+          <div class="dedup-summary" id="dedup-summary">Загрузка…</div>
+          <p class="hint" id="dedup-status"></p>
+        </section>
 
-  <footer class="foot">
-    <span>debuginfod HTTP API: <code>/metadata?key=glob&amp;value=/bin/*</code></span>
-  </footer>
+        <section class="ledger-section">
+          <h2 class="ledger-heading"><span class="ledger-num">03</span> По папкам (build_*)</h2>
+          <div class="table-wrap">
+            <table class="results-table" id="dedup-projects-table">
+              <thead>
+                <tr>
+                  <th>папка</th>
+                  <th>build dirs</th>
+                  <th>файлов</th>
+                  <th>base</th>
+                  <th>delta</th>
+                  <th>full</th>
+                  <th>было</th>
+                  <th>на диске</th>
+                  <th>экономия</th>
+                </tr>
+              </thead>
+              <tbody id="dedup-projects-body">
+                <tr><td colspan="9" class="muted">Загрузка…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="ledger-section">
+          <h2 class="ledger-heading"><span class="ledger-num">04</span> История индексации</h2>
+          <div class="table-wrap">
+            <table class="results-table" id="scan-runs-table">
+              <thead>
+                <tr>
+                  <th>завершено</th>
+                  <th>длительность</th>
+                  <th>проиндексировано</th>
+                  <th title="Без изменений с прошлого scan или без build-id">пропущено</th>
+                  <th>ошибок</th>
+                  <th>артефактов</th>
+                  <th>файлов</th>
+                  <th>объём</th>
+                </tr>
+              </thead>
+              <tbody id="scan-runs-body">
+                <tr><td colspan="8" class="muted">Загрузка…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="ledger-section">
+          <h2 class="ledger-heading"><span class="ledger-num">05</span> История dedup (xdelta)</h2>
+          <div class="table-wrap">
+            <table class="results-table" id="dedup-runs-table">
+              <thead>
+                <tr>
+                  <th>завершено</th>
+                  <th>длительность</th>
+                  <th>проект</th>
+                  <th>дельт</th>
+                  <th>групп</th>
+                  <th>ошибок</th>
+                  <th>было</th>
+                  <th>на диске</th>
+                  <th>экономия</th>
+                </tr>
+              </thead>
+              <tbody id="dedup-runs-body">
+                <tr><td colspan="9" class="muted">Загрузка…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
 
   <script src="/ui/static/app.js"></script>
 </body>
