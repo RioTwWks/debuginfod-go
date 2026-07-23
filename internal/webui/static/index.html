@@ -21,40 +21,40 @@
   </script>
 </head>
 <body>
-  <header class="header">
-    <div class="header-start">
-      <a class="header-logo-link" href="/ui/" title="debuginfod-go">
+  <header class="masthead">
+    <div class="masthead-inner">
+      <a class="masthead-brand" href="/ui/" title="debuginfod-go">
         <img
-          class="header-logo"
+          class="masthead-logo"
           src="/ui/static/debuginfo_2x.png"
           alt="debuginfod-go"
           decoding="async"
         >
       </a>
-      <p class="header-tagline">Статистика индекса и обзор .debug файлов</p>
-    </div>
-    <div class="header-actions">
-      <button
-        type="button"
-        id="theme-toggle"
-        class="theme-toggle"
-        aria-label="Переключить тему"
-        title="Светлая / тёмная тема"
-      >
-        <span class="theme-toggle-icon theme-icon-dark" aria-hidden="true">☀</span>
-        <span class="theme-toggle-icon theme-icon-light" aria-hidden="true">☾</span>
-      </button>
-      <span id="uptime" class="badge">uptime —</span>
-      <button type="button" id="rescan-btn" class="badge rescan-btn" title="Переиндексировать SCAN_PATH; при включённом dedup — ingest xdelta (decompress-dwz)">
-        Сканировать
-      </button>
-      <span id="rescan-status" class="badge rescan-status" hidden></span>
-      <a class="badge link" href="/healthz" target="_blank" rel="noopener">healthz</a>
-      <a class="badge link" href="/zabbix" target="_blank" rel="noopener">zabbix</a>
+      <div class="masthead-tools">
+        <button
+          type="button"
+          id="theme-toggle"
+          class="tool-icon"
+          aria-label="Переключить тему"
+          title="Светлая / тёмная тема"
+        >
+          <span class="theme-toggle-icon theme-icon-dark" aria-hidden="true">☀</span>
+          <span class="theme-toggle-icon theme-icon-light" aria-hidden="true">☾</span>
+        </button>
+        <span id="uptime" class="tool-chip">uptime —</span>
+        <button type="button" id="rescan-btn" class="tool-btn tool-btn-accent" title="Переиндексировать SCAN_PATH; при включённом dedup — ingest xdelta (decompress-dwz)">
+          Сканировать
+        </button>
+        <span id="rescan-status" class="tool-chip tool-chip-warn" hidden></span>
+        <a class="tool-chip tool-chip-link" href="/healthz" target="_blank" rel="noopener">healthz</a>
+        <a class="tool-chip tool-chip-link" href="/zabbix" target="_blank" rel="noopener">zabbix</a>
+      </div>
     </div>
   </header>
 
-  <main class="container">
+  <main class="shell">
+    <p class="page-intro">Статистика индекса и обзор <code>*.debug</code> файлов</p>
     <nav class="main-tabs" role="tablist" aria-label="Разделы">
       <button type="button" class="main-tab active" data-tab="dashboard" role="tab" aria-selected="true">Дашборд</button>
       <button type="button" class="main-tab" data-tab="scans" role="tab" aria-selected="false">Сканирования</button>
@@ -174,7 +174,7 @@
     </div>
   </main>
 
-  <footer class="footer">
+  <footer class="foot">
     <span>debuginfod HTTP API: <code>/metadata?key=glob&amp;value=/bin/*</code></span>
   </footer>
 
