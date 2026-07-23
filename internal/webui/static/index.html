@@ -47,7 +47,10 @@
         </button>
       </nav>
 
-      <div class="brand-spacer"></div>
+      <section class="brand-scan" aria-labelledby="scan-rail-title" title="«Пропущено» — без изменений с прошлого прохода или ELF без GNU build-id">
+        <h2 id="scan-rail-title" class="brand-scan-title">Последний scan</h2>
+        <div class="scan-row" id="scan-info">—</div>
+      </section>
 
       <div class="brand-status">
         <span id="uptime" class="brand-chip">uptime —</span>
@@ -58,13 +61,15 @@
         <button type="button" id="rescan-btn" class="brand-cta" title="Переиндексировать SCAN_PATH; при включённом dedup — ingest xdelta (decompress-dwz)">
           Сканировать
         </button>
-        <button type="button" id="theme-toggle" class="brand-ghost" aria-label="Переключить тему" title="Светлая / тёмная тема">
-          <span class="theme-toggle-icon theme-icon-dark" aria-hidden="true">Светлая тема</span>
-          <span class="theme-toggle-icon theme-icon-light" aria-hidden="true">Тёмная тема</span>
-        </button>
-        <div class="brand-links">
-          <a href="/healthz" target="_blank" rel="noopener">healthz</a>
-          <a href="/zabbix" target="_blank" rel="noopener">zabbix</a>
+        <div class="brand-toolbar">
+          <button type="button" id="theme-toggle" class="brand-ghost" aria-label="Переключить тему" title="Светлая / тёмная тема">
+            <span class="theme-toggle-icon theme-icon-dark" aria-hidden="true">Светлая</span>
+            <span class="theme-toggle-icon theme-icon-light" aria-hidden="true">Тёмная</span>
+          </button>
+          <div class="brand-links">
+            <a href="/healthz" target="_blank" rel="noopener">healthz</a>
+            <a href="/zabbix" target="_blank" rel="noopener">zabbix</a>
+          </div>
         </div>
       </div>
 
@@ -101,20 +106,10 @@
           <div id="search-status" class="search-status"></div>
         </section>
 
-        <div class="workspace-grid">
-          <aside class="scan-rail" aria-labelledby="scan-rail-title">
-            <h2 id="scan-rail-title" class="rail-heading">Последнее сканирование</h2>
-            <div class="scan-row" id="scan-info">—</div>
-            <p class="rail-note">
-              «Пропущено» — без изменений с прошлого прохода или ELF без GNU build-id. При инкрементальном scan это нормально.
-            </p>
-          </aside>
-
-          <section class="tree-canvas" aria-labelledby="tree-deck-title">
-            <h2 id="tree-deck-title" class="canvas-heading">Файлы .debug</h2>
-            <div id="browse-tree" class="browse-tree" hidden></div>
-          </section>
-        </div>
+        <section class="tree-canvas" aria-labelledby="tree-deck-title">
+          <h2 id="tree-deck-title" class="canvas-heading">Файлы .debug</h2>
+          <div id="browse-tree" class="browse-tree" hidden></div>
+        </section>
       </div>
 
       <div id="tab-scans" class="workspace-view" role="tabpanel" hidden>
