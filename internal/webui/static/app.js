@@ -1,5 +1,4 @@
 (function () {
-  const THEME_KEY = "debuginfod-ui-theme";
   const statsGrid = document.getElementById("stats-grid");
   const scanInfo = document.getElementById("scan-info");
   const uptimeEl = document.getElementById("uptime");
@@ -18,7 +17,8 @@
   const dedupRunsBody = document.getElementById("dedup-runs-body");
   const rescanBtn = document.getElementById("rescan-btn");
   const rescanStatus = document.getElementById("rescan-status");
-  const themeToggle = document.getElementById("theme-toggle");
+  const mastScanBadge = document.getElementById("mast-scan-badge");
+  const mastDedupBadge = document.getElementById("mast-dedup-badge");
 
   let lastSearchValue = "";
   let scansLoaded = false;
@@ -79,38 +79,6 @@
     const div = document.createElement("div");
     div.textContent = s;
     return div.innerHTML;
-  }
-
-  function currentTheme() {
-    return document.documentElement.getAttribute("data-theme") === "light"
-      ? "light"
-      : "dark";
-  }
-
-  function applyTheme(theme) {
-    document.documentElement.setAttribute("data-theme", theme);
-    if (themeToggle) {
-      themeToggle.setAttribute(
-        "aria-label",
-        theme === "light" ? "Включить тёмную тему" : "Включить светлую тему"
-      );
-    }
-  }
-
-  function initTheme() {
-    const stored = localStorage.getItem(THEME_KEY);
-    const theme =
-      stored ||
-      (window.matchMedia("(prefers-color-scheme: light)").matches
-        ? "light"
-        : "dark");
-    applyTheme(theme);
-  }
-
-  function toggleTheme() {
-    const next = currentTheme() === "dark" ? "light" : "dark";
-    localStorage.setItem(THEME_KEY, next);
-    applyTheme(next);
   }
 
   function setMainTab(tab) {
@@ -246,11 +214,12 @@
 
     const nodeClass =
       "tree-node" +
-      (depth === 0 ? " tree-commit" : "") +
+      (depth === 0 && node.group === "commit" ? " tree-commit" : "") +
+      (depth === 0 && node.group === "project" ? " tree-project" : "") +
       (children.length === 0 && files.length > 0 && depth > 0 ? " tree-leaf-dir" : "");
     const openAttr = expandAll ? " open" : "";
     const summaryTitle =
-      depth === 0 && node.path && node.path !== node.name
+      depth === 0 && node.group === "commit" && node.path && node.path !== node.name
         ? ' title="' + escapeHtml(node.path) + '"'
         : "";
 
@@ -333,13 +302,29 @@
       const data = await res.json();
       renderStats(data);
     } catch (err) {
-      statsGrid.innerHTML =
-        '<div class="stat-card loading"><span class="stat-label">Ошибка загрузки статистики</span></div>';
+      if (statsGrid) {
+        statsGrid.innerHTML =
+          '<div class="stat-card loading"><span class="stat-label">Ошибка загрузки статистики</span></div>';
+      }
+    }
+  }
+
+  function renderMastBadges(data) {
+    if (mastScanBadge) {
+      mastScanBadge.textContent = data.scan_enabled ? "scan on" : "scan off";
+      mastScanBadge.className =
+        "mast-badge " + (data.scan_enabled ? "mast-badge-on" : "mast-badge-off");
+    }
+    if (mastDedupBadge) {
+      mastDedupBadge.textContent = data.dedup_enabled ? "dedup on" : "dedup off";
+      mastDedupBadge.className =
+        "mast-badge " + (data.dedup_enabled ? "mast-badge-on" : "mast-badge-off");
     }
   }
 
   function renderStats(data) {
     uptimeEl.textContent = "uptime " + formatDuration(data.uptime_seconds);
+    renderMastBadges(data);
 
     let dedupValue;
     let dedupLabel = "Экономия dedup";
@@ -369,22 +354,24 @@
       { label: "Кэш", value: formatBytes(data.cache_bytes) },
     ];
 
-    statsGrid.innerHTML = cards
-      .map(function (c) {
-        const cls = c.highlight ? "stat-card highlight" : "stat-card";
-        const val =
-          typeof c.value === "number" ? formatNumber(c.value) : c.value;
-        return (
-          '<div class="' +
-          cls +
-          '"><span class="stat-value">' +
-          escapeHtml(String(val)) +
-          '</span><span class="stat-label">' +
-          escapeHtml(c.label) +
-          "</span></div>"
-        );
-      })
-      .join("");
+    if (statsGrid) {
+      statsGrid.innerHTML = cards
+        .map(function (c) {
+          const cls = c.highlight ? "stat-card highlight" : "stat-card";
+          const val =
+            typeof c.value === "number" ? formatNumber(c.value) : c.value;
+          return (
+            '<div class="' +
+            cls +
+            '"><span class="stat-value">' +
+            escapeHtml(String(val)) +
+            '</span><span class="stat-label">' +
+            escapeHtml(c.label) +
+            "</span></div>"
+          );
+        })
+        .join("");
+    }
 
     const scanParts = [
       "<span class='scan-item'><strong>" +
@@ -408,7 +395,9 @@
           "</strong> <span>завершено</span></span>"
       );
     }
-    scanInfo.innerHTML = scanParts.join("");
+    if (scanInfo) {
+      scanInfo.innerHTML = scanParts.join("");
+    }
 
     if (data.last_scan_finished_at) {
       lastScanFinishedAt = data.last_scan_finished_at;
@@ -704,16 +693,6 @@
     rescanBtn.addEventListener("click", triggerRescan);
   }
 
-  if (themeToggle) {
-    themeToggle.addEventListener("click", toggleTheme);
-  }
-
-  initTheme();
-  loadStats();
-  setInterval(loadStats, 30000);
-  setMainTab("dashboard");
-  doBrowse("");
-
   let debounce;
   searchInput.addEventListener("input", function () {
     clearTimeout(debounce);
@@ -721,4 +700,9 @@
       doBrowse(searchInput.value.trim());
     }, 250);
   });
+
+  loadStats();
+  setInterval(loadStats, 30000);
+  setMainTab("dashboard");
+  doBrowse("");
 })();
