@@ -51,6 +51,32 @@ func TestUIIndex(t *testing.T) {
 	if !contains(rec.Body.String(), "Файлы .debug") {
 		t.Fatal("expected browse section in UI")
 	}
+	if !contains(rec.Body.String(), "debuginfo_ico.png") || !contains(rec.Body.String(), "debuginfo_2x.png") {
+		t.Fatal("expected favicon and logo in HTML")
+	}
+}
+
+func TestUIStaticBrandingAssets(t *testing.T) {
+	mux, store := testMux(t)
+	defer store.Close()
+
+	for _, path := range []string{
+		"/ui/static/debuginfo_ico.png",
+		"/ui/static/debuginfo_2x.png",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status=%d", path, rec.Code)
+		}
+		if ct := rec.Header().Get("Content-Type"); ct != "image/png" {
+			t.Fatalf("%s content-type=%q", path, ct)
+		}
+		if rec.Body.Len() == 0 {
+			t.Fatalf("%s empty body", path)
+		}
+	}
 }
 
 func TestUIStats(t *testing.T) {
