@@ -106,7 +106,7 @@ func TestBuildUITreeGroupsByCommit(t *testing.T) {
 	if len(tree) != 2 {
 		t.Fatalf("commit groups=%d want 2", len(tree))
 	}
-	if tree[0].Path != commitA {
+	if tree[0].Group != "commit" || tree[0].Path != commitA {
 		t.Fatalf("first commit=%q", tree[0].Path)
 	}
 	if len(tree[0].Files) != 2 {
@@ -117,16 +117,48 @@ func TestBuildUITreeGroupsByCommit(t *testing.T) {
 	}
 }
 
-func TestBuildUITreeNoCommitBucket(t *testing.T) {
+func TestBuildUITreeNoCommitUsesProjectDirs(t *testing.T) {
+	scanRoot := "/home/ieme/debug_linux"
+	records := []ArtifactRecord{
+		{
+			BuildID: "a", Type: "debuginfo",
+			RelativePath: "Released/ProjA/build_1/sub/libfoo.so.debug",
+			Filename:     "libfoo.so.debug",
+		},
+		{
+			BuildID: "b", Type: "debuginfo",
+			RelativePath: "Released/ProjA/build_2/libbar.so.debug",
+			Filename:     "libbar.so.debug",
+		},
+		{
+			BuildID: "c", Type: "debuginfo", GitCommit: "abc123commit",
+			RelativePath: "Unsorted/Other/build_1/x.debug",
+			Filename:     "x.debug",
+		},
+	}
+
+	tree := BuildUITree([]string{scanRoot}, records)
+	if len(tree) != 2 {
+		t.Fatalf("top groups=%d want commit + project", len(tree))
+	}
+	if tree[0].Group != "commit" || tree[0].Path != "abc123commit" {
+		t.Fatalf("commit group=%+v", tree[0])
+	}
+	if tree[1].Group != "project" || tree[1].Name != "Released/ProjA" {
+		t.Fatalf("project group=%+v", tree[1])
+	}
+	if len(tree[1].Children) != 2 {
+		t.Fatalf("ProjA children=%d want 2 (build_1, build_2)", len(tree[1].Children))
+	}
+}
+
+func TestBuildUITreeNoCommitOnlyProjectDirs(t *testing.T) {
 	files := []UITreeFile{
-		{Filename: "a.debug", RelativePath: "p/a.debug"},
-		{Filename: "b.debug", RelativePath: "p/b.debug", GitCommit: "abc123"},
+		{Filename: "a.debug", RelativePath: "Released/Proj/a.debug"},
+		{Filename: "b.debug", RelativePath: "Released/Proj/b.debug"},
 	}
 	tree := BuildUITreeFromFiles(files)
-	if len(tree) != 2 {
-		t.Fatalf("groups=%d", len(tree))
-	}
-	if tree[1].Path != uiNoCommitLabel {
-		t.Fatalf("no-commit bucket last: %+v", tree[1])
+	if len(tree) != 1 || tree[0].Group != "project" || tree[0].Name != "Released/Proj" {
+		t.Fatalf("tree=%+v", tree)
 	}
 }
