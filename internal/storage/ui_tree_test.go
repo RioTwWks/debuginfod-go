@@ -80,21 +80,23 @@ func TestSearchDebugFilesForUI(t *testing.T) {
 	}
 }
 
-func TestBuildUITree(t *testing.T) {
+func TestBuildUITreeGroupsByCommit(t *testing.T) {
 	scanRoot := "/home/ieme/debug_linux"
+	commitA := "9ae10425c6bbb99c7ee1f71a3941fd7aee058227"
+	commitB := "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 	records := []ArtifactRecord{
 		{
-			BuildID: "a", Type: "debuginfo",
+			BuildID: "a", Type: "debuginfo", GitCommit: commitA,
 			RelativePath: "Released/ProjA/build_1/sub/libfoo.so.debug",
 			Filename:     "libfoo.so.debug",
 		},
 		{
-			BuildID: "b", Type: "debuginfo",
+			BuildID: "b", Type: "debuginfo", GitCommit: commitA,
 			RelativePath: "Released/ProjA/build_2/libbar.so.debug",
 			Filename:     "libbar.so.debug",
 		},
 		{
-			BuildID: "c", Type: "debuginfo",
+			BuildID: "c", Type: "debuginfo", GitCommit: commitB,
 			RelativePath: "Unsorted/Other/build_1/x.debug",
 			Filename:     "x.debug",
 		},
@@ -102,28 +104,29 @@ func TestBuildUITree(t *testing.T) {
 
 	tree := BuildUITree([]string{scanRoot}, records)
 	if len(tree) != 2 {
-		t.Fatalf("projects=%d", len(tree))
+		t.Fatalf("commit groups=%d want 2", len(tree))
 	}
-	if tree[0].Name != "Released/ProjA" {
-		t.Fatalf("project0=%q", tree[0].Name)
+	if tree[0].Path != commitA {
+		t.Fatalf("first commit=%q", tree[0].Path)
 	}
-	if len(tree[0].Children) != 2 {
-		t.Fatalf("ProjA children=%d want 2 (build_1, build_2)", len(tree[0].Children))
+	if len(tree[0].Files) != 2 {
+		t.Fatalf("commitA files=%d want 2", len(tree[0].Files))
 	}
-	var build1 *UITreeNode
-	for i := range tree[0].Children {
-		if tree[0].Children[i].Name == "build_1" {
-			build1 = &tree[0].Children[i]
-			break
-		}
+	if tree[1].Path != commitB || len(tree[1].Files) != 1 {
+		t.Fatalf("commitB=%+v", tree[1])
 	}
-	if build1 == nil {
-		t.Fatal("build_1 not found")
+}
+
+func TestBuildUITreeNoCommitBucket(t *testing.T) {
+	files := []UITreeFile{
+		{Filename: "a.debug", RelativePath: "p/a.debug"},
+		{Filename: "b.debug", RelativePath: "p/b.debug", GitCommit: "abc123"},
 	}
-	if len(build1.Children) != 1 || build1.Children[0].Name != "sub" {
-		t.Fatalf("build_1 children=%+v", build1.Children)
+	tree := BuildUITreeFromFiles(files)
+	if len(tree) != 2 {
+		t.Fatalf("groups=%d", len(tree))
 	}
-	if len(build1.Children[0].Files) != 1 || build1.Children[0].Files[0].Filename != "libfoo.so.debug" {
-		t.Fatalf("sub files=%+v", build1.Children[0].Files)
+	if tree[1].Path != uiNoCommitLabel {
+		t.Fatalf("no-commit bucket last: %+v", tree[1])
 	}
 }

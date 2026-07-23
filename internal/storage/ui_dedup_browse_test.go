@@ -67,7 +67,7 @@ func TestBrowseFilesForUIIncludesDedupOnly(t *testing.T) {
 	}
 
 	tree := BuildUITreeFromFiles(files)
-	if len(tree) != 1 || tree[0].Name != "Released/Qt_Library/qt" {
+	if len(tree) != 1 || tree[0].Path != "abc123commit" {
 		t.Fatalf("tree=%+v", tree)
 	}
 }
@@ -178,7 +178,10 @@ func TestBrowseFilesForUIUnlimitedIncludesAllProjects(t *testing.T) {
 		t.Fatalf("all: complete=%v len=%d want 51", complete, len(all))
 	}
 	tree := BuildUITreeFromFiles(all)
-	if len(tree) != 2 {
-		t.Fatalf("projects=%d want Released/Big + Unsorted/Late", len(tree))
+	if len(tree) != 1 || tree[0].Path != uiNoCommitLabel {
+		t.Fatalf("commit groups=%d want single (no commit) bucket", len(tree))
+	}
+	if len(tree[0].Files) != 51 {
+		t.Fatalf("files in bucket=%d want 51", len(tree[0].Files))
 	}
 }

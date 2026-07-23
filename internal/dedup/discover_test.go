@@ -183,6 +183,45 @@ func TestDiscoverNestedDebugInSubdirs(t *testing.T) {
 	}
 }
 
+func TestDiscoverSkipsUnchangedDone(t *testing.T) {
+	root := t.TempDir()
+	buildDir := filepath.Join(root, "proj", "build_1_2026-01-01")
+	if err := os.MkdirAll(buildDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	debugPath := filepath.Join(buildDir, "lib.so.1.0.0.1.debug")
+	content := []byte("fake-debug")
+	if err := os.WriteFile(debugPath, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := storage.New(filepath.Join(t.TempDir(), "incr.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	n1, err := Discover(store, []string{root}, nil)
+	if err != nil || n1 != 1 {
+		t.Fatalf("first discover n=%d err=%v", n1, err)
+	}
+	f, err := store.GetDedupFileByPath(debugPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkDedupFileDone(f.ID, storage.DedupKindFull, 0, "", "sha", int64(len(content))); err != nil {
+		t.Fatal(err)
+	}
+
+	n2, err := Discover(store, []string{root}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n2 != 0 {
+		t.Fatalf("second discover registered=%d want 0 unchanged", n2)
+	}
+}
+
 func TestProjectNameForBuildDir(t *testing.T) {
 	root := "/data/debug_linux"
 	build := "/data/debug_linux/Released/Quik/build_1_2026-01-01"
