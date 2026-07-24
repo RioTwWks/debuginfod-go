@@ -1,0 +1,12 @@
+# Proxy для Docker daemon (systemd) — Astra Linux / Docker < 23.
+# Скопируйте в /etc/systemd/system/docker.service.d/http-proxy.conf
+#
+#   sudo mkdir -p /etc/systemd/system/docker.service.d
+#   sudo cp deploy/docker-compose/http-proxy.conf.example /etc/systemd/system/docker.service.d/http-proxy.conf
+#   sudo nano /etc/systemd/system/docker.service.d/http-proxy.conf
+#   sudo systemctl daemon-reload && sudo systemctl restart docker
+
+[Service]
+Environment="HTTP_PROXY=http://192.168.250.193:3128"
+Environment="HTTPS_PROXY=http://192.168.250.193:3128"
+Environment="NO_PROXY=localhost,127.0.0.1"
