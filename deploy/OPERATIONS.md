@@ -220,7 +220,9 @@ curl -sf http://127.0.0.1:8002/healthz
 
 ## PostgreSQL
 
-Подробно: [postgresql/README.md](./postgresql/README.md).
+Подробно: [postgresql/README.md](./postgresql/README.md). **Тесты в Docker:** [docker-compose/README.md](./docker-compose/README.md) (`make postgres-test-up`).
+
+На Astra 1.8 proxy для `docker pull` — через `/etc/systemd/system/docker.service.d/http-proxy.conf`, не через `proxies` в `daemon.json` (ломает старый dockerd).
 
 ### Когда использовать
 

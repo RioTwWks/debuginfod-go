@@ -152,6 +152,16 @@ func TestBuildUITreeNoCommitUsesProjectDirs(t *testing.T) {
 	}
 }
 
+func TestUICommitLabelFull(t *testing.T) {
+	long := "9ae10425c6bbb99c7ee1f71a3941fd7aee058227"
+	if got := UICommitLabel(long); got != long {
+		t.Fatalf("UICommitLabel=%q want full commit", got)
+	}
+	if got := UICommitLabel(uiNoCommitLabel); got != uiNoCommitLabel {
+		t.Fatalf("no commit label=%q", got)
+	}
+}
+
 func TestBuildUITreeNoCommitOnlyProjectDirs(t *testing.T) {
 	files := []UITreeFile{
 		{Filename: "a.debug", RelativePath: "Released/Proj/a.debug"},

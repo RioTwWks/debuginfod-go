@@ -1336,6 +1336,9 @@ body {
   font-size: 0.95rem;
   letter-spacing: -0.01em;
   font-family: var(--font-mono, ui-monospace, monospace);
+  word-break: break-all;
+  white-space: normal;
+  line-height: 1.35;
 }
 
 .tree-commit > summary::before {
@@ -1486,6 +1489,8 @@ body {
 .file-commit {
   font-size: 0.75rem;
   color: var(--muted);
+  word-break: break-all;
+  white-space: normal;
 }
 
 .file-info-btn {

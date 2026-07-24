@@ -97,6 +97,19 @@ pgrep -a 'xdelta|objcopy|dwz' | wc -l
 
 Если SWAP растёт — снизить `DEBUGINFOD_DEDUP_WORKERS` и/или `DEBUGINFOD_DEDUP_FILE_WORKERS` до `2–4`. Увеличивать SWAP «для скорости» не имеет смысла.
 
+### Производительность (ориентир)
+
+На дереве ~40 GB `.debug` (Qt + Quik, ~2100 файлов):
+
+| Этап | Время (типично) |
+|------|-----------------|
+| Scan | ~4 мин |
+| Discover | &lt; 1 мин |
+| Dedup ingest (первый полный) | ~30–35 мин |
+| Dedup ingest (повтор, без изменений) | минуты |
+
+Ускорение vs ранних версий: параллельные targets в группе, batch discover, WAL SQLite / PostgreSQL, incremental skip `done` файлов.
+
 ### Discover и БД
 
 - **Discover** батчит upsert в одну транзакцию и пропускает файлы со статусом `done` и неизменным размером.

@@ -171,14 +171,8 @@ func UICommitKey(file UITreeFile) string {
 	return uiNoCommitLabel
 }
 
-// UICommitLabel — короткая подпись узла commit в дереве.
+// UICommitLabel — подпись узла commit в дереве (полный id/tag, без сокращения).
 func UICommitLabel(commit string) string {
-	if commit == uiNoCommitLabel {
-		return commit
-	}
-	if len(commit) > 16 {
-		return commit[:12] + "…"
-	}
 	return commit
 }
 
