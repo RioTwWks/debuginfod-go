@@ -1,6 +1,6 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Копирует доверенные CA и APT-ключи хоста в build context для Docker build.
-set -euo pipefail
+set -e
 
 ssl_dest=".docker-build/ssl-certs"
 apt_dest=".docker-build/apt-trust"

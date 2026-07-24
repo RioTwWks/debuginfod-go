@@ -11,7 +11,7 @@ func openTestPostgres(t *testing.T) *Storage {
 	t.Helper()
 	url := os.Getenv("DEBUGINFOD_TEST_DATABASE_URL")
 	if url == "" {
-		t.Skip("set DEBUGINFOD_TEST_DATABASE_URL (see docker-compose.postgres.yml)")
+		t.Skip("set DEBUGINFOD_TEST_DATABASE_URL (see deploy/docker-compose/README.md)")
 	}
 	store, err := Open("", url)
 	if err != nil {

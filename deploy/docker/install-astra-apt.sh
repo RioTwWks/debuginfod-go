@@ -1,6 +1,6 @@
 # install-astra-apt.sh — подключает sources.list Astra внутри Docker build.
 # Вызывается из Dockerfile при APT_PROFILE=astra.
-set -eu
+set -e
 
 if [ "${APT_PROFILE:-}" = "astra" ]; then
 	if [ ! -f /astra-sources.list ]; then

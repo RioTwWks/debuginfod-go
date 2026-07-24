@@ -26,49 +26,22 @@ Cache (`DEBUGINFOD_CACHE_DIR`) остаётся **локальным** на ка
 
 ## Тесты и локальная разработка (Docker)
 
-Образ **не тянет `postgres:16-alpine` с Docker Hub** — PostgreSQL ставится через **APT** (репозитории Astra, как `make docker-astra`). Прокси нужен только для `apt-get` внутри build.
+Как [PVS-Studio-Tracker](https://github.com/RioTwWks/PVS-Studio-Tracker/tree/main/deploy/docker-compose): образ `postgres:16-alpine`, proxy для **docker pull** в `/etc/docker/daemon.json`.
+
+Подробно: [deploy/docker-compose/README.md](../docker-compose/README.md).
 
 ```bash
-make docker-prep              # CA + GPG с хоста (обязательно на Astra)
-. deploy/docker/ensure-proxy-env.sh
+# 1) Proxy для Docker daemon (один раз)
+sudo cp deploy/docker-compose/daemon.json.example /etc/docker/daemon.json
+# httpProxy: http://192.168.250.193:3128
+sudo systemctl restart docker
+docker pull postgres:16-alpine
 
+# 2) Запуск
 make postgres-test-up
-# или
-deploy/docker/compose.sh -f docker-compose.postgres.yml up -d --build --wait
-
 export DEBUGINFOD_DATABASE_URL=postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable
 make test-postgres-integration
 ```
-
-Базовый слой `debian:buster-slim` — если уже собирали `make docker-astra`, он в кэше Docker. Иначе один раз нужен доступ к Hub **или** `docker load` с другой машины.
-
-Переменные (как для docker-astra):
-
-```bash
-DEBIAN_SUITE=buster
-APT_PROFILE=astra
-HTTP_PROXY=http://proxy.corp:3128
-HTTPS_PROXY=http://proxy.corp:3128
-APT_INSECURE=true    # если apt ругается на корпоративный SSL
-```
-
-Интеграционные тесты без compose:
-
-```bash
-DEBUGINFOD_TEST_DATABASE_URL=postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable \
-  go test -tags=integration -v ./internal/storage -run Postgres
-```
-
-### permission denied (Docker socket)
-
-Если `connect: permission denied` на `/var/run/docker.sock`:
-
-```bash
-sudo usermod -aG docker "$USER"
-newgrp docker   # или перелогиниться
-```
-
-Либо разово: `sudo deploy/docker/compose.sh -f docker-compose.postgres.yml up -d --build --wait`
 
 В проде контейнер не обязателен — достаточно системного PostgreSQL (ниже).
 

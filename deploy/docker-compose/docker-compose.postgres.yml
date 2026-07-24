@@ -1,0 +1,27 @@
+# PostgreSQL для интеграционных тестов debuginfod-go (как PVS-Studio-Tracker).
+#
+#   cd deploy/docker-compose
+#   cp .env.example .env
+#   ./compose.sh -f docker-compose.postgres.yml up -d
+#
+# docker pull postgres:16-alpine — через proxy в /etc/docker/daemon.json (см. README.md).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: debuginfod
+      POSTGRES_PASSWORD: debuginfod
+      POSTGRES_DB: debuginfod
+    ports:
+      - "5433:5432"
+    volumes:
+      - debuginfod_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U debuginfod -d debuginfod"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  debuginfod_pg_data:

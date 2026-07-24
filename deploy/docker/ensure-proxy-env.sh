@@ -1,9 +1,6 @@
 #!/bin/sh
-# Подхватывает системный прокси для docker compose build.
-# Безопасен для source из sh/dash и make (не использует pipefail / source всего /etc/environment).
-#
-#   . deploy/docker/ensure-proxy-env.sh
-#   deploy/docker/compose.sh -f docker-compose.postgres.yml up -d --build --wait
+# Подхватывает системный прокси для docker compose build (apt/pip в Dockerfile).
+# Для docker pull образов — /etc/docker/daemon.json (см. deploy/docker-compose/README.md).
 
 _read_env_var() {
 	_file="$1"
