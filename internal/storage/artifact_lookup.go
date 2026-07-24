@@ -136,7 +136,7 @@ func (s *Storage) UpsertDedupFilesBatch(files []DedupFile) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	n := 0
 	for _, f := range files {
