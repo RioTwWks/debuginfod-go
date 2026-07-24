@@ -29,7 +29,9 @@ Cache (`DEBUGINFOD_CACHE_DIR`) остаётся **локальным** на ка
 Для CI и разработки без системного PostgreSQL:
 
 ```bash
-docker compose -f docker-compose.postgres.yml up -d --wait
+deploy/postgresql/docker-up.sh
+# или
+make postgres-test-up
 export DEBUGINFOD_DATABASE_URL=postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable
 make test-postgres   # поднимает контейнер, гоняет integration-тесты, останавливает
 ```
@@ -39,6 +41,57 @@ make test-postgres   # поднимает контейнер, гоняет integ
 ```bash
 DEBUGINFOD_TEST_DATABASE_URL=postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable \
   go test -tags=integration -v ./internal/storage -run Postgres
+```
+
+### Корпоративный прокси (ошибка pull с Docker Hub)
+
+`docker compose pull` идёт через **демон Docker**, а не через `HTTP_PROXY` в shell. Если видите:
+
+```text
+Get "https://registry-1.docker.io/v2/": ... Client.Timeout exceeded
+```
+
+**Вариант 1 — прокси для демона Docker** (рекомендуется):
+
+```bash
+sudo mkdir -p /etc/systemd/system/docker.service.d
+sudo tee /etc/systemd/system/docker.service.d/http-proxy.conf <<'EOF'
+[Service]
+Environment="HTTP_PROXY=http://proxy.corp:3128"
+Environment="HTTPS_PROXY=http://proxy.corp:3128"
+Environment="NO_PROXY=localhost,127.0.0.1,.corp.local"
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+deploy/postgresql/docker-up.sh
+```
+
+Подробнее: [deploy/docker/README.md](../docker/README.md#3-прокси-для-демона-docker-pull-образов).
+
+**Вариант 2 — внутреннее зеркало registry:**
+
+```bash
+export POSTGRES_IMAGE=registry.corp.local/library/postgres:16-alpine
+deploy/postgresql/docker-up.sh
+```
+
+**Вариант 3 — оффлайн** (на машине с интернетом):
+
+```bash
+docker pull postgres:16-alpine
+docker save postgres:16-alpine -o postgres-16-alpine.tar
+# на Astra:
+docker load -i postgres-16-alpine.tar
+deploy/postgresql/docker-up.sh
+```
+
+**Вариант 4 — без Docker** (системный PostgreSQL на Astra):
+
+```bash
+sudo apt install postgresql
+sudo deploy/postgresql/setup-local-test-db.sh
+export DEBUGINFOD_TEST_DATABASE_URL=postgres://debuginfod:debuginfod@127.0.0.1:5432/debuginfod?sslmode=disable
+make test-postgres-integration
 ```
 
 В проде контейнер не обязателен — достаточно системного PostgreSQL (ниже).

@@ -1,14 +1,20 @@
 # PostgreSQL для интеграционных тестов и локальной разработки.
 #
-#   docker compose -f docker-compose.postgres.yml up -d --wait
+#   deploy/postgresql/docker-up.sh          # с подсказками по прокси
+#   make postgres-test-up
 #   make test-postgres
 #
-# В .env или для приложения:
-#   DEBUGINFOD_DATABASE_URL=postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable
+# Корпоративное зеркало образа:
+#   export POSTGRES_IMAGE=registry.corp.local/library/postgres:16-alpine
+#
+# Без Docker (системный PostgreSQL):
+#   sudo deploy/postgresql/setup-local-test-db.sh
+#
+# DEBUGINFOD_DATABASE_URL=postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     environment:
       POSTGRES_USER: debuginfod
       POSTGRES_PASSWORD: debuginfod

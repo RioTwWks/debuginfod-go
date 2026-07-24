@@ -102,7 +102,7 @@ pgrep -a 'xdelta|objcopy|dwz' | wc -l
 - **Discover** батчит upsert в одну транзакцию и пропускает файлы со статусом `done` и неизменным размером.
 - **git_commit** для discover берётся из таблицы `artifacts` (после scan), без повторного чтения ELF `.comment`.
 - SQLite: режим WAL + `synchronous=NORMAL` для меньшей блокировки при dedup.
-- PostgreSQL: `DEBUGINFOD_DATABASE_URL` — для тестов `docker compose -f docker-compose.postgres.yml up -d`, затем `make test-postgres`; в проде — системный PostgreSQL ([deploy/postgresql/README.md](../deploy/postgresql/README.md)).
+- PostgreSQL: `DEBUGINFOD_DATABASE_URL` — для тестов `deploy/postgresql/docker-up.sh` или системный PG (`setup-local-test-db.sh`); см. [deploy/postgresql/README.md](../deploy/postgresql/README.md#корпоративный-прокси-ошибка-pull-с-docker-hub).
 
 Зависимости: `xdelta3`, `dwz`, `binutils` (`objcopy`).
 
