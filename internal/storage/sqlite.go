@@ -73,6 +73,10 @@ func openSQLite(dbPath string) (*Storage, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := configureSQLite(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 
 	if err := migrateSQLite(db); err != nil {
 		db.Close()
@@ -80,6 +84,20 @@ func openSQLite(dbPath string) (*Storage, error) {
 	}
 
 	return &Storage{db: db, dialect: DialectSQLite}, nil
+}
+
+func configureSQLite(db *sql.DB) error {
+	for _, stmt := range []string{
+		"PRAGMA journal_mode=WAL",
+		"PRAGMA synchronous=NORMAL",
+		"PRAGMA busy_timeout=5000",
+		"PRAGMA foreign_keys=ON",
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("sqlite pragma %q: %w", stmt, err)
+		}
+	}
+	return nil
 }
 
 func migrateSQLite(db *sql.DB) error {

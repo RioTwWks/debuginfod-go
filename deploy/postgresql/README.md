@@ -24,6 +24,25 @@
 
 Cache (`DEBUGINFOD_CACHE_DIR`) остаётся **локальным** на каждом инстансе — в PostgreSQL хранится только индекс.
 
+## Тесты и локальная разработка (Docker)
+
+Для CI и разработки без системного PostgreSQL:
+
+```bash
+docker compose -f docker-compose.postgres.yml up -d --wait
+export DEBUGINFOD_DATABASE_URL=postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable
+make test-postgres   # поднимает контейнер, гоняет integration-тесты, останавливает
+```
+
+Или вручную:
+
+```bash
+DEBUGINFOD_TEST_DATABASE_URL=postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable \
+  go test -tags=integration -v ./internal/storage -run Postgres
+```
+
+В проде контейнер не обязателен — достаточно системного PostgreSQL (ниже).
+
 ## Настройка PostgreSQL
 
 ### Debian / Ubuntu / Astra

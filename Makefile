@@ -4,7 +4,7 @@ GO=go
 GOPATH?=$(shell go env GOPATH)
 SQLITE_DB=debuginfod.sqlite
 
-.PHONY: all build build-find build-bench-dedup bench-dedup test vet run run-env clean lint fmt docker \
+.PHONY: all build build-find build-bench-dedup bench-dedup test test-postgres postgres-test-up postgres-test-down vet run run-env clean lint fmt docker \
 	docker-prep docker-prebuilt docker-up-prebuilt docker-astra docker-up-astra \
 	package package-deb package-rpm \
 	offline-download-deb offline-download-rpm \
@@ -30,6 +30,18 @@ bench-dedup: build-bench-dedup
 
 test:
 	$(GO) test -v ./...
+
+POSTGRES_TEST_URL ?= postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable
+
+postgres-test-up:
+	docker compose -f docker-compose.postgres.yml up -d --wait
+
+postgres-test-down:
+	docker compose -f docker-compose.postgres.yml down -v
+
+test-postgres: postgres-test-up
+	DEBUGINFOD_TEST_DATABASE_URL=$(POSTGRES_TEST_URL) $(GO) test -tags=integration -v ./internal/storage -run 'Postgres'
+	$(MAKE) postgres-test-down
 
 vet:
 	$(GO) vet ./...

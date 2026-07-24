@@ -76,13 +76,15 @@ DEBUGINFOD_OBJCOPY_PATH=objcopy
 ```
 
 Группы `(project, file_stem)` обрабатываются параллельно (`DEBUGINFOD_DEDUP_WORKERS`).
+Внутри группы targets сжимаются параллельно (`DEBUGINFOD_DEDUP_FILE_WORKERS`, по умолчанию `8`).
 
 ### Подбор воркеров (RAM ~10 ГБ, Qt + Quik)
 
 | Переменная | Рекомендация | Комментарий |
 |------------|--------------|-------------|
 | `DEBUGINFOD_SCAN_WORKERS` | `8` | Индексация ELF — в основном I/O, можно держать высоким |
-| `DEBUGINFOD_DEDUP_WORKERS` | `4` | Каждый воркер — `xdelta3`/`dwz`/`objcopy` на крупных `.debug`; 8 параллельно даёт SWAP |
+| `DEBUGINFOD_DEDUP_WORKERS` | `4` | Параллельные **группы**; каждая — `xdelta3`/`dwz`/`objcopy` на base |
+| `DEBUGINFOD_DEDUP_FILE_WORKERS` | `8` | Параллельные **targets** внутри группы; общий пул с группами |
 
 При `DEDUP_WORKERS=8` на 10 ГБ RAM типично: несколько процессов `xdelta3`/`dwz` по ~100% CPU и рост SWAP (3+ ГБ). С `DEDUP_WORKERS=4` dedup часто **быстрее** за счёт меньшего thrashing.
 
@@ -90,10 +92,17 @@ DEBUGINFOD_OBJCOPY_PATH=objcopy
 
 ```bash
 watch -n2 'free -h; echo; ps aux --sort=-%mem | head -15'
-pgrep -a 'xdelta|objcopy|dwz'
+pgrep -a 'xdelta|objcopy|dwz' | wc -l
 ```
 
-Если SWAP растёт — снизить `DEBUGINFOD_DEDUP_WORKERS` до `2–3`. Увеличивать SWAP «для скорости» не имеет смысла.
+Если SWAP растёт — снизить `DEBUGINFOD_DEDUP_WORKERS` и/или `DEBUGINFOD_DEDUP_FILE_WORKERS` до `2–4`. Увеличивать SWAP «для скорости» не имеет смысла.
+
+### Discover и БД
+
+- **Discover** батчит upsert в одну транзакцию и пропускает файлы со статусом `done` и неизменным размером.
+- **git_commit** для discover берётся из таблицы `artifacts` (после scan), без повторного чтения ELF `.comment`.
+- SQLite: режим WAL + `synchronous=NORMAL` для меньшей блокировки при dedup.
+- PostgreSQL: `DEBUGINFOD_DATABASE_URL` — для тестов `docker compose -f docker-compose.postgres.yml up -d`, затем `make test-postgres`; в проде — системный PostgreSQL ([deploy/postgresql/README.md](../deploy/postgresql/README.md)).
 
 Зависимости: `xdelta3`, `dwz`, `binutils` (`objcopy`).
 
