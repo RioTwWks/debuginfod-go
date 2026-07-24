@@ -1,0 +1,27 @@
+# PostgreSQL для интеграционных тестов и локальной разработки.
+#
+#   docker compose -f docker-compose.postgres.yml up -d --wait
+#   make test-postgres
+#
+# В .env или для приложения:
+#   DEBUGINFOD_DATABASE_URL=postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: debuginfod
+      POSTGRES_PASSWORD: debuginfod
+      POSTGRES_DB: debuginfod
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U debuginfod -d debuginfod"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    volumes:
+      - debuginfod-pg-test:/var/lib/postgresql/data
+
+volumes:
+  debuginfod-pg-test:

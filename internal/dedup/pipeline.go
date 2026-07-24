@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/your-username/debuginfod-go/internal/storage"
 )
@@ -19,6 +20,7 @@ type Options struct {
 	CompressBase bool
 	Projects     []string
 	Workers      int
+	FileWorkers  int
 	DryRun       bool
 }
 
@@ -245,7 +247,7 @@ func markSingletonFull(opts Options, f storage.DedupFile) error {
 	return opts.Store.MarkDedupFileDone(f.ID, storage.DedupKindFull, 0, "", sha, 0)
 }
 
-func processGroup(opts Options, group []storage.DedupFile) (compressed int, bytesBefore, bytesAfter int64, groupErr error) {
+func processGroup(opts Options, group []storage.DedupFile, pool *compressPool) (compressed int, bytesBefore, bytesAfter int64, groupErr error) {
 	for _, f := range group {
 		bytesBefore += f.OriginalSize
 	}
@@ -274,16 +276,8 @@ func processGroup(opts Options, group []storage.DedupFile) (compressed int, byte
 	}
 	bytesAfter += baseSize
 
-	for _, target := range group[1:] {
-		after, err := compressOne(opts, base, target)
-		if err != nil {
-			slog.Warn("dedup compress", "target", target.FilePath, "err", err)
-			_ = opts.Store.MarkDedupFileError(target.ID, err.Error())
-			groupErr = err
-			continue
-		}
-		compressed++
-		bytesAfter += after
+	if len(group) > 1 {
+		compressed, bytesAfter, groupErr = compressGroupTargets(opts, base, group[1:], pool, bytesAfter, groupErr)
 	}
 
 	if opts.CompressBase && opts.ObjcopyZstd != nil && opts.ObjcopyZstd.Available() {
@@ -299,6 +293,52 @@ func processGroup(opts Options, group []storage.DedupFile) (compressed int, byte
 	}
 
 	return compressed, bytesBefore, bytesAfter, groupErr
+}
+
+func compressGroupTargets(
+	opts Options,
+	base storage.DedupFile,
+	targets []storage.DedupFile,
+	pool *compressPool,
+	bytesAfter int64,
+	groupErr error,
+) (compressed int, outBytesAfter int64, outErr error) {
+	outBytesAfter = bytesAfter
+	if len(targets) == 0 {
+		return 0, outBytesAfter, groupErr
+	}
+
+	type targetResult struct {
+		after int64
+		err   error
+	}
+
+	results := make([]targetResult, len(targets))
+	var wg sync.WaitGroup
+	for i, target := range targets {
+		wg.Add(1)
+		go func(idx int, t storage.DedupFile) {
+			defer wg.Done()
+			pool.acquire()
+			defer pool.release()
+			after, err := compressOne(opts, base, t)
+			results[idx] = targetResult{after: after, err: err}
+		}(i, target)
+	}
+	wg.Wait()
+
+	for i, target := range targets {
+		res := results[i]
+		if res.err != nil {
+			slog.Warn("dedup compress", "target", target.FilePath, "err", res.err)
+			_ = opts.Store.MarkDedupFileError(target.ID, res.err.Error())
+			outErr = res.err
+			continue
+		}
+		compressed++
+		outBytesAfter += res.after
+	}
+	return compressed, outBytesAfter, outErr
 }
 
 func compressOne(opts Options, base, target storage.DedupFile) (deltaSize int64, err error) {

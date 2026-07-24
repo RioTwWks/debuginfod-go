@@ -48,6 +48,8 @@ func processGroups(opts Options, groups map[string][]storage.DedupFile) (compres
 		jobs = append(jobs, groupJob{files: sorted})
 	}
 
+	pool := newCompressPool(fileWorkersFor(opts))
+
 	workers := opts.Workers
 	if workers <= 0 {
 		workers = 4
@@ -55,7 +57,7 @@ func processGroups(opts Options, groups map[string][]storage.DedupFile) (compres
 	if opts.DryRun || workers == 1 || len(jobs) <= 1 {
 		var total groupTotals
 		for _, job := range jobs {
-			total.add(runGroupJob(opts, job))
+			total.add(runGroupJob(opts, job, pool))
 		}
 		return total.compressed, total.skipped, total.errors, total.bytesBefore, total.bytesAfter
 	}
@@ -73,7 +75,7 @@ func processGroups(opts Options, groups map[string][]storage.DedupFile) (compres
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			result := runGroupJob(opts, job)
+			result := runGroupJob(opts, job, pool)
 			mu.Lock()
 			total.add(result)
 			mu.Unlock()
@@ -92,7 +94,7 @@ func sortGroupFiles(group []storage.DedupFile) {
 	})
 }
 
-func runGroupJob(opts Options, job groupJob) groupTotals {
+func runGroupJob(opts Options, job groupJob, pool *compressPool) groupTotals {
 	var total groupTotals
 	group := job.files
 	if len(group) == 0 {
@@ -143,7 +145,7 @@ func runGroupJob(opts Options, job groupJob) groupTotals {
 		return total
 	}
 
-	c, bBefore, bAfter, err := processGroup(opts, group)
+	c, bBefore, bAfter, err := processGroup(opts, group, pool)
 	total.compressed += c
 	total.bytesBefore += bBefore
 	total.bytesAfter += bAfter

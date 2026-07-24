@@ -47,6 +47,7 @@ type DedupConfig struct {
 	Enabled      bool
 	Projects     []string
 	Workers      int
+	FileWorkers  int
 	BlobDir      string // legacy zstd CAS; не используется xdelta-пайплайном
 	Strategy     string
 	CompressBase bool
@@ -91,6 +92,7 @@ func Load() Config {
 			Enabled:      envBool("DEBUGINFOD_DEDUP_ENABLED", false),
 			Projects:     splitPaths(envOr("DEBUGINFOD_DEDUP_PROJECTS", "")),
 			Workers:      envInt("DEBUGINFOD_DEDUP_WORKERS", 4),
+			FileWorkers:  envInt("DEBUGINFOD_DEDUP_FILE_WORKERS", 8),
 			BlobDir:      envOr("DEBUGINFOD_DEDUP_BLOB_DIR", ""),
 			Strategy:     envOr("DEBUGINFOD_DEDUP_STRATEGY", "xdelta-decompress-dwz"),
 			CompressBase: envBool("DEBUGINFOD_DEDUP_COMPRESS_BASE", true),

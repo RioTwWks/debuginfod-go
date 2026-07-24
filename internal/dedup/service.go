@@ -32,6 +32,7 @@ func NewService(store *storage.Storage, cfg config.DedupConfig, scanPaths []stri
 			CompressBase: cfg.CompressBase,
 			Projects:     cfg.Projects,
 			Workers:      cfg.Workers,
+			FileWorkers:  cfg.FileWorkers,
 		},
 		restoreOpts: RestoreOptions{
 			Xdelta:       NewXdelta(cfg.XdeltaPath),

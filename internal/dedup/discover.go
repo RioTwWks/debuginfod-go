@@ -115,8 +115,14 @@ func matchesProjectFilter(projectName string, allowed map[string]struct{}) bool 
 	return ok
 }
 
+type discoverCandidate struct {
+	path string
+	size int64
+	meta debugfilename.Info
+}
+
 func registerDebugFiles(store *storage.Storage, buildDirID int64, dirPath string) (int, error) {
-	count := 0
+	candidates := make([]discoverCandidate, 0, 64)
 	err := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			slog.Debug("dedup walk build dir", "path", path, "err", walkErr)
@@ -140,40 +146,79 @@ func registerDebugFiles(store *storage.Storage, buildDirID int64, dirPath string
 		if err != nil {
 			return nil
 		}
-		snap, exists, err := store.GetDedupFileSnapshotByPath(path)
-		if err != nil {
-			return err
-		}
-		if exists && snap.Status == storage.DedupStatusDone && snap.OriginalSize == info.Size() {
-			return nil
-		}
 		meta, err := debugfilename.MetadataFromName(name)
 		if err != nil {
 			slog.Debug("dedup skip file", "path", path, "err", err)
 			return nil
 		}
-		tag, err := elfcomment.FromPath(path)
-		if err != nil {
-			slog.Debug("dedup no commit tag", "path", path, "err", err)
-			tag = ""
-		}
-		_, err = store.UpsertDedupFile(storage.DedupFile{
-			BuildDirID:   buildDirID,
-			FilePath:     path,
-			Filename:     meta.Filename,
-			FileStem:     meta.Stem,
-			Version:      meta.Version,
-			FileBuildNum: meta.BuildNum,
-			CommitTag:    tag,
-			OriginalSize: info.Size(),
+		candidates = append(candidates, discoverCandidate{
+			path: path,
+			size: info.Size(),
+			meta: meta,
 		})
-		if err != nil {
-			return err
-		}
-		count++
 		return nil
 	})
-	return count, err
+	if err != nil {
+		return 0, err
+	}
+	if len(candidates) == 0 {
+		return 0, nil
+	}
+
+	paths := make([]string, len(candidates))
+	for i, c := range candidates {
+		paths[i] = c.path
+	}
+
+	snapshots, err := store.DedupSnapshotsByPaths(paths)
+	if err != nil {
+		return 0, err
+	}
+
+	pending := make([]discoverCandidate, 0, len(candidates))
+	for _, c := range candidates {
+		if snap, ok := snapshots[c.path]; ok &&
+			snap.Status == storage.DedupStatusDone &&
+			snap.OriginalSize == c.size {
+			continue
+		}
+		pending = append(pending, c)
+	}
+	if len(pending) == 0 {
+		return 0, nil
+	}
+
+	pendingPaths := make([]string, len(pending))
+	for i, c := range pending {
+		pendingPaths[i] = c.path
+	}
+	commits, err := store.GitCommitsByFilePaths(pendingPaths)
+	if err != nil {
+		return 0, err
+	}
+
+	records := make([]storage.DedupFile, 0, len(pending))
+	for _, c := range pending {
+		tag := commits[c.path]
+		if tag == "" {
+			tag = elfcomment.FromPathOrEmpty(c.path)
+			if tag == "" {
+				slog.Debug("dedup no commit tag", "path", c.path, "err", elfcomment.ErrNotFound)
+			}
+		}
+		records = append(records, storage.DedupFile{
+			BuildDirID:   buildDirID,
+			FilePath:     c.path,
+			Filename:     c.meta.Filename,
+			FileStem:     c.meta.Stem,
+			Version:      c.meta.Version,
+			FileBuildNum: c.meta.BuildNum,
+			CommitTag:    tag,
+			OriginalSize: c.size,
+		})
+	}
+
+	return store.UpsertDedupFilesBatch(records)
 }
 
 // GroupKey возвращает ключ группировки (метаданные; на pipeline не влияет).
