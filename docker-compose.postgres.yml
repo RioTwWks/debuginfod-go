@@ -1,14 +1,25 @@
 # PostgreSQL для интеграционных тестов и локальной разработки.
 #
-#   docker compose -f docker-compose.postgres.yml up -d --wait
+# Корпоративный прокси (как PVS-Studio-Tracker):
+#   source deploy/docker/ensure-proxy-env.sh
+#   docker compose -f docker-compose.postgres.yml up -d --build --wait
 #   make test-postgres
 #
-# В .env или для приложения:
-#   DEBUGINFOD_DATABASE_URL=postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable
+# DEBUGINFOD_DATABASE_URL=postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable
+
+x-postgres-build: &postgres-build
+  context: .
+  dockerfile: deploy/postgresql/Dockerfile
+  network: host
+  args:
+    HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
+    HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
+    NO_PROXY: ${NO_PROXY:-${no_proxy:-}}
 
 services:
   postgres:
-    image: postgres:16-alpine
+    build: *postgres-build
+    image: debuginfod-postgres:16
     environment:
       POSTGRES_USER: debuginfod
       POSTGRES_PASSWORD: debuginfod

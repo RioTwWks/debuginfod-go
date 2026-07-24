@@ -26,15 +26,29 @@ Cache (`DEBUGINFOD_CACHE_DIR`) остаётся **локальным** на ка
 
 ## Тесты и локальная разработка (Docker)
 
-Для CI и разработки без системного PostgreSQL:
+Образ собирается из `deploy/postgresql/Dockerfile` (как [PVS-Studio-Tracker](https://github.com/RioTwWks/PVS-Studio-Tracker) — proxy в `build.args`).
 
 ```bash
-docker compose -f docker-compose.postgres.yml up -d --wait
+# Прокси с хоста (из /etc/environment или вручную)
+source deploy/docker/ensure-proxy-env.sh
+
+docker compose -f docker-compose.postgres.yml up -d --build --wait
+# или
+make postgres-test-up
+
 export DEBUGINFOD_DATABASE_URL=postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable
-make test-postgres   # поднимает контейнер, гоняет integration-тесты, останавливает
+make test-postgres
 ```
 
-Или вручную:
+Переменные в `.env` рядом с compose или в shell:
+
+```bash
+HTTP_PROXY=http://proxy.corp:3128
+HTTPS_PROXY=http://proxy.corp:3128
+NO_PROXY=localhost,127.0.0.1,.corp.local
+```
+
+Интеграционные тесты без compose:
 
 ```bash
 DEBUGINFOD_TEST_DATABASE_URL=postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable \
