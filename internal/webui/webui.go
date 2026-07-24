@@ -56,12 +56,27 @@ type StatsResponse struct {
 	LastScanErrors      int    `json:"last_scan_errors"`
 	LastScanFinishedAt  string `json:"last_scan_finished_at,omitempty"`
 	HTTPRequestsTotal   uint64 `json:"http_requests_total"`
-	CacheBytes          int64   `json:"cache_bytes"`
-	IndexBytesOnDisk    int64   `json:"index_bytes_on_disk"`
-	ScanEnabled         bool    `json:"scan_enabled"`
-	DedupEnabled        bool    `json:"dedup_enabled"`
-	DedupBytesSaved     int64   `json:"dedup_bytes_saved"`
+	CacheBytes          int64  `json:"cache_bytes"`
+	IndexBytesOnDisk    int64  `json:"index_bytes_on_disk"`
+	ScanEnabled         bool   `json:"scan_enabled"`
+	DedupEnabled        bool   `json:"dedup_enabled"`
+	DedupBytesSaved     int64  `json:"dedup_bytes_saved"`
 	DedupSavedPercent   float64 `json:"dedup_saved_percent"`
+
+	ScanRunning              bool   `json:"scan_running"`
+	ScanPhase                string `json:"scan_phase,omitempty"`
+	ScanStartedAt            string `json:"scan_started_at,omitempty"`
+	ScanIndexed              int64  `json:"scan_indexed"`
+	ScanSkipped              int64  `json:"scan_skipped"`
+	ScanErrors               int64  `json:"scan_errors"`
+	ScanCurrentPath          string `json:"scan_current_path,omitempty"`
+	DedupGroupsTotal         int    `json:"dedup_groups_total"`
+	DedupGroupsProcessed     int    `json:"dedup_groups_processed"`
+	DedupFilesCompressed     int    `json:"dedup_files_compressed"`
+	DedupFilesSkipped        int    `json:"dedup_files_skipped"`
+	DedupProgressErrors      int    `json:"dedup_progress_errors"`
+	DedupProgressBytesBefore int64  `json:"dedup_progress_bytes_before"`
+	DedupProgressBytesAfter  int64  `json:"dedup_progress_bytes_after"`
 }
 
 // SearchResponse — JSON результатов поиска.
@@ -186,6 +201,26 @@ func statsHandler(opts Opts) http.HandlerFunc {
 				resp.DedupBytesSaved = totals.BytesSaved
 				resp.DedupSavedPercent = totals.SavedPercent
 			}
+		}
+
+		progress := opts.Metrics.ScanProgress()
+		resp.ScanRunning = progress.Running
+		if progress.Running {
+			resp.ScanPhase = string(progress.Phase)
+			if !progress.StartedAt.IsZero() {
+				resp.ScanStartedAt = progress.StartedAt.UTC().Format(time.RFC3339)
+			}
+			resp.ScanIndexed = progress.Indexed
+			resp.ScanSkipped = progress.Skipped
+			resp.ScanErrors = progress.Errors
+			resp.ScanCurrentPath = progress.CurrentPath
+			resp.DedupGroupsTotal = progress.DedupGroupsTotal
+			resp.DedupGroupsProcessed = progress.DedupGroupsProcessed
+			resp.DedupFilesCompressed = progress.DedupFilesCompressed
+			resp.DedupFilesSkipped = progress.DedupFilesSkipped
+			resp.DedupProgressErrors = progress.DedupErrors
+			resp.DedupProgressBytesBefore = progress.DedupBytesBefore
+			resp.DedupProgressBytesAfter = progress.DedupBytesAfter
 		}
 
 		w.Header().Set("Content-Type", "application/json")

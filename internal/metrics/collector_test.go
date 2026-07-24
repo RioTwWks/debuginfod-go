@@ -32,3 +32,47 @@ func TestCollectorScan(t *testing.T) {
 		t.Fatal("expected ready after RecordScan")
 	}
 }
+
+func TestCollectorScanProgress(t *testing.T) {
+	c := New()
+	p := c.ScanProgress()
+	if p.Running {
+		t.Fatal("expected not running initially")
+	}
+
+	c.BeginScan(ScanPhaseIndexing)
+	c.UpdateIndexingProgress(3, 7, 1)
+	c.SetScanCurrentPath("/tmp/foo.so")
+
+	p = c.ScanProgress()
+	if !p.Running || p.Phase != ScanPhaseIndexing {
+		t.Fatalf("progress=%+v", p)
+	}
+	if p.Indexed != 3 || p.Skipped != 7 || p.Errors != 1 {
+		t.Fatalf("counters=%+v", p)
+	}
+	if p.CurrentPath != "/tmp/foo.so" {
+		t.Fatalf("path=%q", p.CurrentPath)
+	}
+
+	c.SetScanPhase(ScanPhaseDedup)
+	c.SetDedupGroupsTotal(10)
+	c.UpdateDedupProgress(4, 2, 1, 0, 1000, 400)
+
+	p = c.ScanProgress()
+	if p.Phase != ScanPhaseDedup {
+		t.Fatalf("phase=%q", p.Phase)
+	}
+	if p.DedupGroupsTotal != 10 || p.DedupGroupsProcessed != 4 {
+		t.Fatalf("dedup groups=%+v", p)
+	}
+	if p.DedupBytesBefore != 1000 || p.DedupBytesAfter != 400 {
+		t.Fatalf("dedup bytes=%+v", p)
+	}
+
+	c.EndScan()
+	p = c.ScanProgress()
+	if p.Running {
+		t.Fatal("expected not running after EndScan")
+	}
+}

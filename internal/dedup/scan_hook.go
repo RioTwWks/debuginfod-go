@@ -4,20 +4,22 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/your-username/debuginfod-go/internal/metrics"
 	"github.com/your-username/debuginfod-go/internal/storage"
 )
 
 // ScanHook адаптирует Service к scanrunner.DedupAfterScan.
 type ScanHook struct {
-	svc *Service
+	svc     *Service
+	metrics *metrics.Collector
 }
 
 // NewScanHook создаёт hook или nil.
-func NewScanHook(svc *Service) *ScanHook {
+func NewScanHook(svc *Service, m *metrics.Collector) *ScanHook {
 	if svc == nil || !svc.Enabled() {
 		return nil
 	}
-	return &ScanHook{svc: svc}
+	return &ScanHook{svc: svc, metrics: m}
 }
 
 // RunIngestAfterScan запускает ingest после scan.
@@ -26,7 +28,7 @@ func (h *ScanHook) RunIngestAfterScan() error {
 		return nil
 	}
 	start := time.Now()
-	result, err := h.svc.RunIngestAfterScan()
+	result, err := h.svc.RunIngestAfterScanWithMetrics(h.metrics)
 	if err != nil {
 		return err
 	}
