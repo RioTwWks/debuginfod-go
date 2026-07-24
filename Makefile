@@ -33,11 +33,14 @@ test:
 
 POSTGRES_TEST_URL ?= postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable
 
-postgres-test-up: docker-prep
-	@deploy/docker/compose.sh -f docker-compose.postgres.yml up -d --build --wait
+POSTGRES_COMPOSE_DIR=deploy/docker-compose
+POSTGRES_COMPOSE=$(POSTGRES_COMPOSE_DIR)/docker-compose.postgres.yml
+
+postgres-test-up:
+	@cd $(POSTGRES_COMPOSE_DIR) && ./compose.sh -f docker-compose.postgres.yml up -d
 
 postgres-test-down:
-	@deploy/docker/compose.sh -f docker-compose.postgres.yml down -v
+	@cd $(POSTGRES_COMPOSE_DIR) && ./compose.sh -f docker-compose.postgres.yml down -v
 
 test-postgres: postgres-test-up
 	DEBUGINFOD_TEST_DATABASE_URL=$(POSTGRES_TEST_URL) $(GO) test -tags=integration -v ./internal/storage -run 'Postgres'
@@ -100,8 +103,7 @@ offline-bundle-rpm:
 
 .PHONY: docker-prep
 docker-prep:
-	bash deploy/docker/prepare-build-certs.sh
-	@deploy/docker/ensure-proxy-env.sh
+	sh deploy/docker/prepare-build-certs.sh
 
 docker-prebuilt: build docker-prep
 	@deploy/docker/compose.sh -f docker-compose.yml -f docker-compose.prebuilt.yml up --build

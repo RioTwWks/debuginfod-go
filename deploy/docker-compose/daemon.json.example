@@ -1,0 +1,9 @@
+{
+  "proxies": {
+    "default": {
+      "httpProxy": "http://proxy.corp:3128",
+      "httpsProxy": "http://proxy.corp:3128",
+      "noProxy": "localhost,127.0.0.1,.corp.local"
+    }
+  }
+}
