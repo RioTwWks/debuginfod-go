@@ -1,24 +1,42 @@
-#!/usr/bin/env bash
-# Подхватывает системный прокси для docker compose build (из /etc/environment и profile.d).
-set -euo pipefail
+#!/bin/sh
+# Подхватывает системный прокси для docker compose build.
+# Безопасен для source из sh/dash и make (не использует pipefail / source всего /etc/environment).
+#
+#   . deploy/docker/ensure-proxy-env.sh
+#   deploy/docker/compose.sh -f docker-compose.postgres.yml up -d --build --wait
 
-if [ -z "${HTTP_PROXY:-}" ] && [ -z "${http_proxy:-}" ] && [ -f /etc/environment ]; then
-	set -a
-	# shellcheck disable=SC1091
-	source /etc/environment
-	set +a
+_read_env_var() {
+	_file="$1"
+	_key="$2"
+	[ -f "$_file" ] || return 0
+	_line=$(grep -E "^[[:space:]]*${_key}=" "$_file" 2>/dev/null | tail -1) || return 0
+	_val=${_line#*=}
+	# trim spaces and optional quotes
+	_val=$(printf '%s' "$_val" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+		-e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
+	[ -n "$_val" ] || return 0
+	export "$_key=$_val"
+}
+
+_load_proxy_from_file() {
+	_file="$1"
+	_read_env_var "$_file" HTTP_PROXY
+	_read_env_var "$_file" http_proxy
+	_read_env_var "$_file" HTTPS_PROXY
+	_read_env_var "$_file" https_proxy
+	_read_env_var "$_file" NO_PROXY
+	_read_env_var "$_file" no_proxy
+}
+
+if [ -z "${HTTP_PROXY:-}" ] && [ -z "${http_proxy:-}" ]; then
+	_load_proxy_from_file /etc/environment
 fi
 
-for f in /etc/profile.d/*.sh; do
-	[ -f "$f" ] || continue
-	case "$f" in
-		*/proxy.sh|*/proxies.sh|*/http_proxy.sh) ;;
-		*) continue ;;
-	esac
-	set -a
-	# shellcheck disable=SC1090
-	source "$f"
-	set +a
+for _f in /etc/profile.d/proxy.sh /etc/profile.d/proxies.sh /etc/profile.d/http_proxy.sh; do
+	if [ -f "$_f" ]; then
+		# shellcheck disable=SC1090
+		. "$_f" 2>/dev/null || true
+	fi
 done
 
 export HTTP_PROXY="${HTTP_PROXY:-${http_proxy:-}}"

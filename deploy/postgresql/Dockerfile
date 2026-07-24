@@ -1,8 +1,8 @@
 # PostgreSQL 16 для тестов debuginfod-go.
 #
 # Корпоративный proxy в build (pull базового образа). Как PVS-Studio-Tracker:
-#   source deploy/docker/ensure-proxy-env.sh
-#   docker compose -f docker-compose.postgres.yml up -d --build --wait
+#   . deploy/docker/ensure-proxy-env.sh
+#   deploy/docker/compose.sh -f docker-compose.postgres.yml up -d --build --wait
 #
 # Или: make postgres-test-up
 

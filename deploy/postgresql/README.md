@@ -29,10 +29,10 @@ Cache (`DEBUGINFOD_CACHE_DIR`) остаётся **локальным** на ка
 Образ собирается из `deploy/postgresql/Dockerfile` (как [PVS-Studio-Tracker](https://github.com/RioTwWks/PVS-Studio-Tracker) — proxy в `build.args`).
 
 ```bash
-# Прокси с хоста (из /etc/environment или вручную)
-source deploy/docker/ensure-proxy-env.sh
+# Прокси из /etc/environment (без source всего файла — совместимо с dash на Astra)
+. deploy/docker/ensure-proxy-env.sh
 
-docker compose -f docker-compose.postgres.yml up -d --build --wait
+deploy/docker/compose.sh -f docker-compose.postgres.yml up -d --build --wait
 # или
 make postgres-test-up
 
@@ -54,6 +54,17 @@ NO_PROXY=localhost,127.0.0.1,.corp.local
 DEBUGINFOD_TEST_DATABASE_URL=postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable \
   go test -tags=integration -v ./internal/storage -run Postgres
 ```
+
+### permission denied (Docker socket)
+
+Если `connect: permission denied` на `/var/run/docker.sock`:
+
+```bash
+sudo usermod -aG docker "$USER"
+newgrp docker   # или перелогиниться
+```
+
+Либо разово: `sudo deploy/docker/compose.sh -f docker-compose.postgres.yml up -d --build --wait`
 
 В проде контейнер не обязателен — достаточно системного PostgreSQL (ниже).
 
