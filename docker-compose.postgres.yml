@@ -1,9 +1,7 @@
-# PostgreSQL для интеграционных тестов и локальной разработки.
+# PostgreSQL для интеграционных тестов (APT / Astra — без Docker Hub postgres:*).
 #
-# Корпоративный прокси (как PVS-Studio-Tracker):
-#   . deploy/docker/ensure-proxy-env.sh
-#   deploy/docker/compose.sh -f docker-compose.postgres.yml up -d --build --wait
-#   make test-postgres
+#   make docker-prep          # CA + GPG с хоста (как docker-astra)
+#   make postgres-test-up
 #
 # DEBUGINFOD_DATABASE_URL=postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable
 
@@ -12,6 +10,10 @@ x-postgres-build: &postgres-build
   dockerfile: deploy/postgresql/Dockerfile
   network: host
   args:
+    DEBIAN_SUITE: ${DEBIAN_SUITE:-buster}
+    APT_PROFILE: ${APT_PROFILE:-astra}
+    APT_MIRROR: ${APT_MIRROR:-}
+    APT_INSECURE: ${APT_INSECURE:-false}
     HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
     HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
     NO_PROXY: ${NO_PROXY:-${no_proxy:-}}
@@ -19,7 +21,7 @@ x-postgres-build: &postgres-build
 services:
   postgres:
     build: *postgres-build
-    image: debuginfod-postgres:16
+    image: debuginfod-postgres:apt
     environment:
       POSTGRES_USER: debuginfod
       POSTGRES_PASSWORD: debuginfod
