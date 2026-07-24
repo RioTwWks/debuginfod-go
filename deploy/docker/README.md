@@ -41,7 +41,7 @@ APT proxy: http://proxy.corp:3128
 Для ручного `docker compose`:
 
 ```bash
-source deploy/docker/ensure-proxy-env.sh   # или export вручную
+source deploy/docker/ensure-proxy-env.sh   # POSIX: . deploy/docker/ensure-proxy-env.sh
 make build
 make docker-astra
 ```

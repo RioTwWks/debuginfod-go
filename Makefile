@@ -34,11 +34,10 @@ test:
 POSTGRES_TEST_URL ?= postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable
 
 postgres-test-up:
-	bash deploy/docker/ensure-proxy-env.sh
-	docker compose -f docker-compose.postgres.yml up -d --build --wait
+	@deploy/docker/compose.sh -f docker-compose.postgres.yml up -d --build --wait
 
 postgres-test-down:
-	docker compose -f docker-compose.postgres.yml down -v
+	@deploy/docker/compose.sh -f docker-compose.postgres.yml down -v
 
 test-postgres: postgres-test-up
 	DEBUGINFOD_TEST_DATABASE_URL=$(POSTGRES_TEST_URL) $(GO) test -tags=integration -v ./internal/storage -run 'Postgres'
@@ -102,19 +101,19 @@ offline-bundle-rpm:
 .PHONY: docker-prep
 docker-prep:
 	bash deploy/docker/prepare-build-certs.sh
-	bash deploy/docker/ensure-proxy-env.sh
+	@deploy/docker/ensure-proxy-env.sh
 
 docker-prebuilt: build docker-prep
-	docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up --build
+	@deploy/docker/compose.sh -f docker-compose.yml -f docker-compose.prebuilt.yml up --build
 
 docker-up-prebuilt: build docker-prep
-	docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up -d --build
+	@deploy/docker/compose.sh -f docker-compose.yml -f docker-compose.prebuilt.yml up -d --build
 
 docker-astra: build docker-prep
-	docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml -f docker-compose.astra.yml up --build
+	@deploy/docker/compose.sh -f docker-compose.yml -f docker-compose.prebuilt.yml -f docker-compose.astra.yml up --build
 
 docker-up-astra: build docker-prep
-	docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml -f docker-compose.astra.yml up -d --build
+	@deploy/docker/compose.sh -f docker-compose.yml -f docker-compose.prebuilt.yml -f docker-compose.astra.yml up -d --build
 
 docker: build docker-prep
 	docker build -t debuginfod-go .
