@@ -1,3 +1,5 @@
+# Только Docker Engine 23.0+ (НЕ Astra 1.7 — сломает docker.service).
+# На Astra используйте http-proxy.conf.example + systemd (см. README.md).
 {
   "proxies": {
     "default": {

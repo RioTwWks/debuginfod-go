@@ -26,22 +26,20 @@ Cache (`DEBUGINFOD_CACHE_DIR`) остаётся **локальным** на ка
 
 ## Тесты и локальная разработка (Docker)
 
-Как [PVS-Studio-Tracker](https://github.com/RioTwWks/PVS-Studio-Tracker/tree/main/deploy/docker-compose): образ `postgres:16-alpine`, proxy для **docker pull** в `/etc/docker/daemon.json`.
-
-Подробно: [deploy/docker-compose/README.md](../docker-compose/README.md).
+Как PVS-Studio-Tracker: `postgres:16-alpine`. Proxy для **docker pull** — через **systemd** на Astra (не `daemon.json`).
 
 ```bash
-# 1) Proxy для Docker daemon (один раз)
-sudo cp deploy/docker-compose/daemon.json.example /etc/docker/daemon.json
-# httpProxy: http://192.168.250.193:3128
-sudo systemctl restart docker
+# Если docker.service упал после daemon.json:
+sudo rm -f /etc/docker/daemon.json && sudo systemctl restart docker
+
+# Proxy (Astra)
+sudo deploy/docker-compose/setup-docker-proxy.sh http://192.168.250.193:3128
 docker pull postgres:16-alpine
 
-# 2) Запуск
 make postgres-test-up
-export DEBUGINFOD_DATABASE_URL=postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable
-make test-postgres-integration
 ```
+
+Подробно: [deploy/docker-compose/README.md](../docker-compose/README.md).
 
 В проде контейнер не обязателен — достаточно системного PostgreSQL (ниже).
 
