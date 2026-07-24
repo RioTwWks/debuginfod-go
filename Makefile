@@ -34,7 +34,8 @@ test:
 POSTGRES_TEST_URL ?= postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable
 
 postgres-test-up:
-	docker compose -f docker-compose.postgres.yml up -d --wait
+	bash deploy/docker/ensure-proxy-env.sh
+	docker compose -f docker-compose.postgres.yml up -d --build --wait
 
 postgres-test-down:
 	docker compose -f docker-compose.postgres.yml down -v
