@@ -26,26 +26,30 @@ Cache (`DEBUGINFOD_CACHE_DIR`) остаётся **локальным** на ка
 
 ## Тесты и локальная разработка (Docker)
 
-Образ собирается из `deploy/postgresql/Dockerfile` (как [PVS-Studio-Tracker](https://github.com/RioTwWks/PVS-Studio-Tracker) — proxy в `build.args`).
+Образ **не тянет `postgres:16-alpine` с Docker Hub** — PostgreSQL ставится через **APT** (репозитории Astra, как `make docker-astra`). Прокси нужен только для `apt-get` внутри build.
 
 ```bash
-# Прокси из /etc/environment (без source всего файла — совместимо с dash на Astra)
+make docker-prep              # CA + GPG с хоста (обязательно на Astra)
 . deploy/docker/ensure-proxy-env.sh
 
-deploy/docker/compose.sh -f docker-compose.postgres.yml up -d --build --wait
-# или
 make postgres-test-up
+# или
+deploy/docker/compose.sh -f docker-compose.postgres.yml up -d --build --wait
 
 export DEBUGINFOD_DATABASE_URL=postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable
-make test-postgres
+make test-postgres-integration
 ```
 
-Переменные в `.env` рядом с compose или в shell:
+Базовый слой `debian:buster-slim` — если уже собирали `make docker-astra`, он в кэше Docker. Иначе один раз нужен доступ к Hub **или** `docker load` с другой машины.
+
+Переменные (как для docker-astra):
 
 ```bash
+DEBIAN_SUITE=buster
+APT_PROFILE=astra
 HTTP_PROXY=http://proxy.corp:3128
 HTTPS_PROXY=http://proxy.corp:3128
-NO_PROXY=localhost,127.0.0.1,.corp.local
+APT_INSECURE=true    # если apt ругается на корпоративный SSL
 ```
 
 Интеграционные тесты без compose:

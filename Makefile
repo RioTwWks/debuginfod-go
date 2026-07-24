@@ -33,7 +33,7 @@ test:
 
 POSTGRES_TEST_URL ?= postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable
 
-postgres-test-up:
+postgres-test-up: docker-prep
 	@deploy/docker/compose.sh -f docker-compose.postgres.yml up -d --build --wait
 
 postgres-test-down:
