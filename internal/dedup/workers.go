@@ -56,8 +56,9 @@ func processGroups(opts Options, groups map[string][]storage.DedupFile) (compres
 	}
 	if opts.DryRun || workers == 1 || len(jobs) <= 1 {
 		var total groupTotals
-		for _, job := range jobs {
+		for i, job := range jobs {
 			total.add(runGroupJob(opts, job, pool))
+			reportDedupProgress(opts, i+1, total)
 		}
 		return total.compressed, total.skipped, total.errors, total.bytesBefore, total.bytesAfter
 	}
@@ -66,6 +67,7 @@ func processGroups(opts Options, groups map[string][]storage.DedupFile) (compres
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var total groupTotals
+	groupsDone := 0
 
 	for _, job := range jobs {
 		job := job
@@ -78,11 +80,27 @@ func processGroups(opts Options, groups map[string][]storage.DedupFile) (compres
 			result := runGroupJob(opts, job, pool)
 			mu.Lock()
 			total.add(result)
+			groupsDone++
+			reportDedupProgress(opts, groupsDone, total)
 			mu.Unlock()
 		}()
 	}
 	wg.Wait()
 	return total.compressed, total.skipped, total.errors, total.bytesBefore, total.bytesAfter
+}
+
+func reportDedupProgress(opts Options, groupsDone int, total groupTotals) {
+	if opts.Metrics == nil {
+		return
+	}
+	opts.Metrics.UpdateDedupProgress(
+		groupsDone,
+		total.compressed,
+		total.skipped,
+		total.errors,
+		total.bytesBefore,
+		total.bytesAfter,
+	)
 }
 
 func sortGroupFiles(group []storage.DedupFile) {

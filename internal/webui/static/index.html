@@ -126,6 +126,48 @@
           <p class="page-lead">Сводка индекса, dedup и история прогонов.</p>
         </div>
 
+        <section class="panel scan-progress-panel" id="scan-progress-panel" hidden>
+          <h2>Текущее сканирование</h2>
+          <div class="scan-progress-status">
+            <span class="scan-progress-spinner" aria-hidden="true"></span>
+            <span id="scan-progress-phase" class="scan-progress-phase">—</span>
+            <span id="scan-progress-elapsed" class="scan-progress-elapsed muted"></span>
+          </div>
+          <div class="scan-progress-grid" id="scan-progress-indexing">
+            <div class="scan-progress-metric">
+              <span class="scan-progress-value" id="scan-progress-indexed">0</span>
+              <span class="scan-progress-label">проиндексировано</span>
+            </div>
+            <div class="scan-progress-metric">
+              <span class="scan-progress-value" id="scan-progress-skipped">0</span>
+              <span class="scan-progress-label">пропущено</span>
+            </div>
+            <div class="scan-progress-metric">
+              <span class="scan-progress-value" id="scan-progress-errors">0</span>
+              <span class="scan-progress-label">ошибок</span>
+            </div>
+          </div>
+          <div class="scan-progress-grid" id="scan-progress-dedup" hidden>
+            <div class="scan-progress-metric">
+              <span class="scan-progress-value" id="scan-progress-dedup-groups">0 / 0</span>
+              <span class="scan-progress-label">групп</span>
+            </div>
+            <div class="scan-progress-metric">
+              <span class="scan-progress-value" id="scan-progress-dedup-compressed">0</span>
+              <span class="scan-progress-label">сжато</span>
+            </div>
+            <div class="scan-progress-metric">
+              <span class="scan-progress-value" id="scan-progress-dedup-saved">—</span>
+              <span class="scan-progress-label">экономия</span>
+            </div>
+            <div class="scan-progress-metric">
+              <span class="scan-progress-value" id="scan-progress-dedup-errors">0</span>
+              <span class="scan-progress-label">ошибок</span>
+            </div>
+          </div>
+          <p class="scan-progress-path mono" id="scan-progress-path" hidden></p>
+        </section>
+
         <div class="scans-grid">
           <section class="panel">
             <h2>Сводка индекса</h2>

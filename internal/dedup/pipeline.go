@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/your-username/debuginfod-go/internal/metrics"
 	"github.com/your-username/debuginfod-go/internal/storage"
 )
 
@@ -22,6 +23,7 @@ type Options struct {
 	Workers      int
 	FileWorkers  int
 	DryRun       bool
+	Metrics      *metrics.Collector
 }
 
 // BackfillResult — итог backfill/ingest.
@@ -130,6 +132,9 @@ func RunIngestAll(opts Options) (BackfillResult, error) {
 
 	groups := GroupFiles(files)
 	total.GroupsProcessed = len(groups)
+	if opts.Metrics != nil {
+		opts.Metrics.SetDedupGroupsTotal(len(groups))
+	}
 	compressed, skipped, errs, bytesBefore, bytesAfter := processGroups(opts, groups)
 	total.FilesCompressed = compressed
 	total.FilesSkipped = skipped

@@ -82,6 +82,44 @@ func TestUIStaticBrandingAssets(t *testing.T) {
 	}
 }
 
+func TestUIStatsScanProgress(t *testing.T) {
+	mux, store := testMux(t)
+	defer store.Close()
+
+	collector := metrics.New()
+	collector.BeginScan(metrics.ScanPhaseIndexing)
+	collector.UpdateIndexingProgress(42, 100, 2)
+
+	mux2 := http.NewServeMux()
+	Register(mux2, Opts{
+		Store:      store,
+		Metrics:    collector,
+		CacheBytes: func() int64 { return 0 },
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/api/stats", nil)
+	rec := httptest.NewRecorder()
+	mux2.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d", rec.Code)
+	}
+
+	var payload StatsResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if !payload.ScanRunning {
+		t.Fatal("expected scan_running=true")
+	}
+	if payload.ScanPhase != "indexing" {
+		t.Fatalf("scan_phase=%q", payload.ScanPhase)
+	}
+	if payload.ScanIndexed != 42 || payload.ScanSkipped != 100 || payload.ScanErrors != 2 {
+		t.Fatalf("counters indexed=%d skipped=%d errors=%d", payload.ScanIndexed, payload.ScanSkipped, payload.ScanErrors)
+	}
+	_ = mux
+}
+
 func TestUIStats(t *testing.T) {
 	mux, store := testMux(t)
 	defer store.Close()

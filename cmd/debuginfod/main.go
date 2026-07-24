@@ -72,7 +72,7 @@ func main() {
 		Interval:   cfg.RescanInterval,
 		Enabled:    cfg.ScanEnabled,
 		WebhookURL: cfg.ScanWebhookURL,
-		Dedup:      dedup.NewScanHook(dedupSvc),
+		Dedup:      dedup.NewScanHook(dedupSvc, collector),
 	})
 
 	scanCtx, cancelScan := context.WithCancel(context.Background())

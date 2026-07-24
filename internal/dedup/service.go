@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/your-username/debuginfod-go/internal/config"
+	"github.com/your-username/debuginfod-go/internal/metrics"
 	"github.com/your-username/debuginfod-go/internal/storage"
 )
 
@@ -86,6 +87,13 @@ func (s *Service) RunBackfill(project string, batch int, dryRun bool) (BackfillR
 // RunIngestAfterScan вызывается после успешного scan.
 func (s *Service) RunIngestAfterScan() (BackfillResult, error) {
 	return RunIngestAll(s.opts)
+}
+
+// RunIngestAfterScanWithMetrics запускает ingest с публикацией прогресса.
+func (s *Service) RunIngestAfterScanWithMetrics(m *metrics.Collector) (BackfillResult, error) {
+	opts := s.opts
+	opts.Metrics = m
+	return RunIngestAll(opts)
 }
 
 // Store возвращает хранилище.

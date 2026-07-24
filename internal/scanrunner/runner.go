@@ -131,10 +131,17 @@ func (r *Runner) executeScan() {
 	r.mu.Unlock()
 
 	defer func() {
+		if r.metrics != nil {
+			r.metrics.EndScan()
+		}
 		r.mu.Lock()
 		r.scanning = false
 		r.mu.Unlock()
 	}()
+
+	if r.metrics != nil {
+		r.metrics.BeginScan(metrics.ScanPhaseIndexing)
+	}
 
 	if err := r.indexer.Scan(); err != nil {
 		slog.Error("index scan", "err", err)
@@ -142,6 +149,9 @@ func (r *Runner) executeScan() {
 	}
 
 	if r.dedup != nil {
+		if r.metrics != nil {
+			r.metrics.SetScanPhase(metrics.ScanPhaseDedup)
+		}
 		if err := r.dedup.RunIngestAfterScan(); err != nil {
 			slog.Warn("dedup ingest", "err", err)
 		}

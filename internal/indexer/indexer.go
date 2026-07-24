@@ -73,6 +73,24 @@ func (i *Indexer) Scan() error {
 	start := time.Now()
 	var indexed, skipped, errorsCount atomic.Int64
 
+	stopProgress := make(chan struct{})
+	if i.metrics != nil {
+		defer close(stopProgress)
+		go func() {
+			ticker := time.NewTicker(500 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-stopProgress:
+					i.metrics.UpdateIndexingProgress(indexed.Load(), skipped.Load(), errorsCount.Load())
+					return
+				case <-ticker.C:
+					i.metrics.UpdateIndexingProgress(indexed.Load(), skipped.Load(), errorsCount.Load())
+				}
+			}
+		}()
+	}
+
 	jobs := make(chan scanJob, i.workers*2)
 	var wg sync.WaitGroup
 
@@ -81,6 +99,9 @@ func (i *Indexer) Scan() error {
 		go func() {
 			defer wg.Done()
 			for job := range jobs {
+				if i.metrics != nil {
+					i.metrics.SetScanCurrentPath(job.path)
+				}
 				var err error
 				switch job.kind {
 				case "archive":
