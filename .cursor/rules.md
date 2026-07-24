@@ -56,7 +56,7 @@ deploy/                  # systemd unit, Zabbix docs, OPERATIONS.md
 | `GET /zabbix` | JSON-метрики для Zabbix HTTP agent |
 | `GET /ui/` | Web UI: статистика + поиск по build-id |
 | `GET /ui/api/stats` | JSON счётчиков для UI |
-| `GET /ui/api/search?q=` | Поиск по префиксу build-id |
+| `GET /ui/api/search?q=` | Поиск по пути, имени, commit id (дерево группируется по полному commit) |
 
 **Middleware:** gzip, CORS, rate limit, Basic Auth, HTTP metrics (2xx/4xx/5xx), federation fallback на 404.
 
@@ -108,6 +108,7 @@ deploy/                  # systemd unit, Zabbix docs, OPERATIONS.md
 | `DEBUGINFOD_SCAN_WORKERS` | `4` | Параллельные воркеры индексации |
 | `DEBUGINFOD_DEDUP_ENABLED` | `false` | Quik dedup ingest |
 | `DEBUGINFOD_DEDUP_WORKERS` | `4` | Параллельные воркеры dedup (группы file_stem) |
+| `DEBUGINFOD_DEDUP_FILE_WORKERS` | `8` | Параллельные targets внутри группы (xdelta/dwz) |
 | `DEBUGINFOD_DEDUP_STRATEGY` | `xdelta-decompress-dwz` | `xdelta` — без dwz |
 | `DEBUGINFOD_DEDUP_COMPRESS_BASE` | `true` | objcopy zstd на base после дельт |
 | `DEBUGINFOD_URLS` | — | Upstream для федерации |
@@ -119,6 +120,10 @@ deploy/                  # systemd unit, Zabbix docs, OPERATIONS.md
 | `DEBUGINFOD_METADATA_PAGE_SIZE` | `100` | Размер страницы metadata |
 
 Quik dedup: [docs/QUIK_DEDUP.md](../docs/QUIK_DEDUP.md), сравнение стратегий: [docs/DEDUP_STRATEGY_COMPARISON.md](../docs/DEDUP_STRATEGY_COMPARISON.md).
+
+**Производительность dedup (ориентир ~40 GB Qt/Quik):** полный ingest ~30–35 мин при `DEDUP_WORKERS=10`, `FILE_WORKERS=8`; повторный прогон без изменений — минуты (incremental skip). Discover батчит upsert и берёт `git_commit` из индекса.
+
+**PostgreSQL:** prod — системный PG ([deploy/postgresql/README.md](../deploy/postgresql/README.md)); тесты — Docker Compose ([deploy/docker-compose/README.md](../deploy/docker-compose/README.md)). На Astra proxy для `docker pull` — через systemd (`http-proxy.conf`), не `daemon.json` с `proxies`.
 
 ## Документация для операторов
 

@@ -150,8 +150,8 @@
     const commit = file.git_commit || (file.comment && file.comment.git_commit);
     const commitHtml = commit
       ? '<span class="file-commit mono" title="git commit">' +
-        escapeHtml(commit.slice(0, 12)) +
-        "…</span>"
+        escapeHtml(commit) +
+        "</span>"
       : "";
     const rowKey = file.dedup_id
       ? "dedup-" + file.dedup_id
@@ -206,8 +206,12 @@
     const files = node.files || [];
     const children = node.children || [];
     const fileCount = countTreeFiles(node);
+    const displayName =
+      depth === 0 && node.group === "commit" && node.path
+        ? node.path
+        : node.name;
     const label =
-      escapeHtml(node.name) +
+      escapeHtml(displayName) +
       ' <span class="tree-count">' +
       formatNumber(fileCount) +
       "</span>";

@@ -112,6 +112,10 @@ flowchart TB
 
 Backend: SQLite (`DEBUGINFOD_DB_PATH`) или PostgreSQL (`DEBUGINFOD_DATABASE_URL`).
 
+**Тесты PostgreSQL:** `make postgres-test-up` + `make test-postgres-integration` (см. [deploy/docker-compose/README.md](../deploy/docker-compose/README.md)). Integration-тег: `go test -tags=integration ./internal/storage -run Postgres`.
+
+**Web UI:** дерево `.debug` группируется по полному commit id (без сокращения в заголовках групп).
+
 ## Реализованные эндпоинты
 
 | Маршрут | Статус |

@@ -143,6 +143,23 @@ make offline-bundle-deb         # bundle для переноса (online build-�
 
 Полный пример: [.env.example](./.env.example).
 
+### PostgreSQL
+
+**Продакшен:** системный PostgreSQL — [deploy/postgresql/README.md](deploy/postgresql/README.md).
+
+**Тесты / разработка:** контейнер `postgres:16-alpine` — [deploy/docker-compose/README.md](deploy/docker-compose/README.md).
+
+```bash
+# Astra: proxy для docker pull через systemd (см. README)
+make postgres-test-up
+export DEBUGINFOD_DATABASE_URL=postgres://debuginfod:debuginfod@127.0.0.1:5433/debuginfod?sslmode=disable
+make test-postgres-integration
+```
+
+### Quik dedup
+
+Включение: `DEBUGINFOD_DEDUP_ENABLED=true`. Параллелизм: `DEBUGINFOD_DEDUP_WORKERS` (группы) и `DEBUGINFOD_DEDUP_FILE_WORKERS` (targets внутри группы). Подробно: [docs/QUIK_DEDUP.md](docs/QUIK_DEDUP.md).
+
 ## HTTP API
 
 ### Артефакты
@@ -286,6 +303,8 @@ scan paths ──► indexer (workers) ──► SQLite/PostgreSQL ◄── web
 | [deploy/offline/README.md](./deploy/offline/README.md) | Оффлайн bundle `.deb`/`.rpm` |
 | [deploy/backup/README.md](./deploy/backup/README.md) | Backup и restore |
 | [deploy/postgresql/README.md](./deploy/postgresql/README.md) | PostgreSQL в проде |
+| [deploy/docker-compose/README.md](./deploy/docker-compose/README.md) | PostgreSQL в Docker для тестов (Astra + proxy) |
+| [docs/QUIK_DEDUP.md](./docs/QUIK_DEDUP.md) | Quik dedup: воркеры, производительность |
 | [deploy/OPERATIONS.md](./deploy/OPERATIONS.md) | Руководство по эксплуатации |
 | [deploy/security/README.md](./deploy/security/README.md) | Path traversal, IMA, systemd hardening |
 
