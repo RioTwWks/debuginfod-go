@@ -2,6 +2,8 @@
 
 Демонстрация работы сервера с **GDB**, **Delve** и **docker compose**.
 
+Полное руководство по тестированию (ELF, HTTP API, GDB как у upstream debuginfod): [docs/TESTING.md](../docs/TESTING.md).
+
 Сценарии:
 
 - **GDB** — stripped C `hello` + отдельный `hello.debug`

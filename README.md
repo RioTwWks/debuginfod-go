@@ -215,6 +215,7 @@ export DEBUGINFOD_URLS="http://localhost:8002"
 gdb /path/to/binary
 ```
 
+Пошаговая проверка (ELF, HTTP, GDB, Quik): [docs/TESTING.md](docs/TESTING.md).  
 Демо: [examples/gdb/](examples/gdb/).
 
 ## Использование с Delve (Go)
@@ -305,6 +306,7 @@ scan paths ──► indexer (workers) ──► SQLite/PostgreSQL ◄── web
 | [deploy/postgresql/README.md](./deploy/postgresql/README.md) | PostgreSQL в проде |
 | [deploy/docker-compose/README.md](./deploy/docker-compose/README.md) | PostgreSQL в Docker для тестов (Astra + proxy) |
 | [docs/QUIK_DEDUP.md](./docs/QUIK_DEDUP.md) | Quik dedup: воркеры, производительность |
+| [docs/TESTING.md](./docs/TESTING.md) | Тестирование: ELF, HTTP API, GDB, debuginfod-find |
 | [deploy/OPERATIONS.md](./deploy/OPERATIONS.md) | Руководство по эксплуатации |
 | [deploy/security/README.md](./deploy/security/README.md) | Path traversal, IMA, systemd hardening |
 
