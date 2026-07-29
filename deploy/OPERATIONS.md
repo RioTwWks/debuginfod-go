@@ -380,6 +380,7 @@ Ansible для конфигурации: [ansible/README.md](./ansible/README.md
 | [zabbix/README.md](./zabbix/README.md) | Мониторинг |
 | [security/README.md](./security/README.md) | Hardening, IMA |
 | [examples/README.md](../examples/README.md) | GDB demo |
+| [docs/TESTING.md](../docs/TESTING.md) | Тестирование ELF / HTTP / GDB |
 
 ---
 

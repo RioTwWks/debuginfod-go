@@ -157,6 +157,8 @@ Backend: SQLite (`DEBUGINFOD_DB_PATH`) или PostgreSQL (`DEBUGINFOD_DATABASE_U
 
 См. полное руководство: [docs/GO_ECOSYSTEM.md](docs/GO_ECOSYSTEM.md).
 
+Ручная проверка сервера (ELF, `curl`, GDB): [docs/TESTING.md](docs/TESTING.md).
+
 Go записывает `.note.go.buildid` (owner `Go`, type `4`). Строка вида `action/module/sum` содержит `/` и **не подходит** для URL.
 
 Канонический ID:
