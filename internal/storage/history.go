@@ -157,10 +157,7 @@ func (s *Storage) InsertScanRun(rec ScanRunRecord) error {
 
 // InsertDedupRun сохраняет результат dedup.
 func (s *Storage) InsertDedupRun(rec DedupRunRecord) error {
-	dry := 0
-	if rec.DryRun {
-		dry = 1
-	}
+	dryArg := dedupRunDryArg(s.dialect, rec.DryRun)
 	_, err := s.db.Exec(rebind(`
 		INSERT INTO dedup_runs (
 			finished_at, duration_ms, project, dry_run,
@@ -168,11 +165,21 @@ func (s *Storage) InsertDedupRun(rec DedupRunRecord) error {
 			files_dedup_ref, files_skipped, errors, bytes_before, bytes_after
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, s.dialect),
-		rec.FinishedAt.Unix(), rec.DurationMs, rec.Project, dry,
+		rec.FinishedAt.Unix(), rec.DurationMs, rec.Project, dryArg,
 		rec.BuildDirsProcessed, rec.FilesRegistered, rec.FilesCompressed,
 		rec.FilesDedupRef, rec.FilesSkipped, rec.Errors, rec.BytesBefore, rec.BytesAfter,
 	)
 	return err
+}
+
+func dedupRunDryArg(dialect Dialect, dry bool) any {
+	if dialect == DialectPostgres {
+		return dry
+	}
+	if dry {
+		return 1
+	}
+	return 0
 }
 
 // ListScanRuns возвращает последние проходы индексатора.
@@ -207,7 +214,7 @@ func (s *Storage) ListDedupRuns(limit int) ([]DedupRunRecord, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	return scanDedupRuns(rows)
+	return s.scanDedupRuns(rows)
 }
 
 // DedupStorageTotals — суммарная экономия dedup по всем обработанным файлам.
@@ -282,21 +289,31 @@ func scanScanRuns(rows *sql.Rows) ([]ScanRunRecord, error) {
 	return out, rows.Err()
 }
 
-func scanDedupRuns(rows *sql.Rows) ([]DedupRunRecord, error) {
+func (s *Storage) scanDedupRuns(rows *sql.Rows) ([]DedupRunRecord, error) {
 	var out []DedupRunRecord
 	for rows.Next() {
 		var r DedupRunRecord
 		var finished int64
-		var dry int
-		if err := rows.Scan(
-			&r.ID, &finished, &r.DurationMs, &r.Project, &dry,
-			&r.BuildDirsProcessed, &r.FilesRegistered, &r.FilesCompressed,
-			&r.FilesDedupRef, &r.FilesSkipped, &r.Errors, &r.BytesBefore, &r.BytesAfter,
-		); err != nil {
-			return nil, err
+		if s.dialect == DialectPostgres {
+			if err := rows.Scan(
+				&r.ID, &finished, &r.DurationMs, &r.Project, &r.DryRun,
+				&r.BuildDirsProcessed, &r.FilesRegistered, &r.FilesCompressed,
+				&r.FilesDedupRef, &r.FilesSkipped, &r.Errors, &r.BytesBefore, &r.BytesAfter,
+			); err != nil {
+				return nil, err
+			}
+		} else {
+			var dry int
+			if err := rows.Scan(
+				&r.ID, &finished, &r.DurationMs, &r.Project, &dry,
+				&r.BuildDirsProcessed, &r.FilesRegistered, &r.FilesCompressed,
+				&r.FilesDedupRef, &r.FilesSkipped, &r.Errors, &r.BytesBefore, &r.BytesAfter,
+			); err != nil {
+				return nil, err
+			}
+			r.DryRun = dry != 0
 		}
 		r.FinishedAt = time.Unix(finished, 0)
-		r.DryRun = dry != 0
 		if r.BytesBefore > 0 && r.BytesAfter < r.BytesBefore {
 			r.BytesSaved = r.BytesBefore - r.BytesAfter
 			r.SavedPercent = float64(r.BytesSaved) / float64(r.BytesBefore) * 100

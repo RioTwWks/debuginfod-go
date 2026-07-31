@@ -5,6 +5,7 @@ package storage
 import (
 	"os"
 	"testing"
+	"time"
 )
 
 func openTestPostgres(t *testing.T) *Storage {
@@ -67,5 +68,37 @@ func TestPostgresDedupCRUD(t *testing.T) {
 	commits, err := store.GitCommitsByFilePaths([]string{path})
 	if err != nil || commits[path] != "tag:from-index" {
 		t.Fatalf("commits=%v err=%v", commits, err)
+	}
+}
+
+func TestPostgresDedupRunHistory(t *testing.T) {
+	store := openTestPostgres(t)
+
+	rec := DedupRunRecord{
+		FinishedAt:         time.Now(),
+		DurationMs:         1234,
+		FilesRegistered:    10,
+		FilesCompressed:    8,
+		FilesSkipped:       2,
+		BytesBefore:        1000,
+		BytesAfter:         400,
+	}
+	if err := store.InsertDedupRun(rec); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	runs, err := store.ListDedupRuns(5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) == 0 {
+		t.Fatal("expected dedup runs")
+	}
+	got := runs[0]
+	if got.FilesCompressed != 8 || got.BytesBefore != 1000 || got.BytesAfter != 400 {
+		t.Fatalf("run=%+v", got)
+	}
+	if got.BytesSaved != 600 {
+		t.Fatalf("bytes_saved=%d", got.BytesSaved)
 	}
 }
