@@ -21,23 +21,26 @@
 
 | Компонент | Назначение |
 |-----------|------------|
-| `debuginfod-go` | Сервер, порт по умолчанию `8002` |
+| `debuginfod-go` | **Сервер** — индексирует и отдаёт артефакты (`:8002`) |
 | `readelf` | Build ID из ELF (`binutils`) |
 | `curl` | Проверка HTTP API |
-| `debuginfod-find` | CLI-клиент (elfutils или `make build-find`) |
-| `gdb` | Отладчик с поддержкой debuginfod (`gdb` + `debuginfod` / `elfutils`) |
+| `debuginfod-find` | **Клиент** CLI (`make build-find` или пакет elfutils) |
+| `gdb` + `libdebuginfod` | Отладчик; ходит на **ваш** сервер по `DEBUGINFOD_URLS` |
 
-На **Astra / Ubuntu**:
+На **Astra / Ubuntu** — клиентские утилиты, **не** upstream-демон elfutils:
 
 ```bash
-sudo apt install binutils curl gdb debuginfod
+sudo apt install binutils curl gdb
+make build-find    # debuginfod-find из этого репозитория
+export PATH="$PWD:$PATH"
 ```
 
-Сборка клиента из репозитория (опционально):
+Пакет `sudo apt install debuginfod` **не обязателен**: в нём есть и **сервер** elfutils (`/usr/bin/debuginfod`), и `debuginfod-find`. Сервер запускать **не нужно** — порт `:8002` занимает ваш `./debuginfod`. Если `make build-find` не используете, можно поставить пакет только ради `debuginfod-find` и **не** включать `debuginfod.service`.
+
+Проверка поддержки debuginfod в GDB:
 
 ```bash
-make build-find
-export PATH="$PWD:$PATH"
+gdb -batch -ex 'show debuginfod enabled'
 ```
 
 ---
@@ -298,7 +301,7 @@ make demo-delve
 |---------|----------------|
 | `404` на `/buildid/.../debuginfo` | Scan завершён? `curl readyz`. Есть `.debug` с тем же build-id? Путь в `DEBUGINFOD_SCAN_PATH`? |
 | `readyz` → 503 | Дождаться `scan complete` в логе или Web UI → Сканирования |
-| GDB не обращается к серверу | `echo $DEBUGINFOD_URLS`; `show debuginfod urls`; GDB собран с debuginfod (`apt install debuginfod`) |
+| GDB не обращается к серверу | `echo $DEBUGINFOD_URLS`; `show debuginfod urls`; `show debuginfod enabled` (GDB + libdebuginfod) |
 | Символы `??` в backtrace | Неверный build-id; debuginfo не проиндексирован; кэш клиента — `rm -rf ~/.cache/debuginfod` |
 | `metadata` пустой | Имя/путь не совпадает с индексом; попробовать `key=glob` или префикс build-id |
 | Медленный первый запрос | Dedup restore / lazy extract из архива — нормально для больших `.debug` |
