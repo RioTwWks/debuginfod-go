@@ -45,24 +45,34 @@ strip --strip-debug "$WORKDIR/libcore.so"
 
 readelf --notes "$WORKDIR/libcore.so" | grep -E 'Build ID|ID сборки'
 
-# 2. Адрес из «лога» (взяли из полного debuginfo)
+# 2. Адрес из «лога» (grep 0x — не зависит от локали GDB)
 ADDR=$(gdb -batch -nx \
   -ex "file $WORKDIR/libcore.full" \
   -ex "info address quik::Class::GetCode" \
-  2>/dev/null | awk '/is at/ {print $2; exit}')
+  2>/dev/null | grep -oE '0x[0-9a-f]+' | head -1)
 echo "Симулированный PC из лога: $ADDR"
 
-# 3. Разработчик БЕЗ debuginfod — символ неизвестен
+# 3. Разработчик БЕЗ символов
 gdb -batch -nx -ex "file $WORKDIR/libcore.so" -ex "info symbol $ADDR"
 
-# 4. Разработчик С debuginfod-go
-export DEBUGINFOD_URLS
+# 4. С распакованным debuginfo с сервера (надёжно на GDB 10.1)
+unset DEBUGINFOD_URLS   # не смешивать с libdebuginfod-кэшем
 gdb -batch -nx \
-  -ex "set debuginfod enabled on" \
   -ex "file $WORKDIR/libcore.so" \
+  -ex "symbol-file $WORKDIR/libcore.full" \
   -ex "info symbol $ADDR" \
   -ex "info functions quik::Class::"
+
+# 5. libdebuginfod: кэш только для чтения — копировать, затем objcopy
+# rm -rf ~/.cache/debuginfod_client/$BUILDID
+# export DEBUGINFOD_URLS=http://127.0.0.1:8002
+# gdb -batch -nx -ex "set debuginfod enabled on" -ex "file $WORKDIR/libcore.so"
+# cp ~/.cache/debuginfod_client/$BUILDID/debuginfo /tmp/from-cache.debug
+# objcopy --decompress-debug-sections /tmp/from-cache.debug
+# gdb -batch -nx -ex "file $WORKDIR/libcore.so" -ex "symbol-file /tmp/from-cache.debug" -ex "info symbol $ADDR"
 ```
+
+**GDB 10.1 + Quik:** libdebuginfod кладёт в `~/.cache/debuginfod_client/<buildid>/debuginfo` **сжатый** ELF (часто **0444**). `objcopy` на кэш in-place даёт «Отказано в доступе» — копируйте в `/tmp` и распаковывайте копию. При ручном `symbol-file` сделайте `unset DEBUGINFOD_URLS`, иначе GDB параллельно лезет в битый кэш и печатает BFD warnings.
 
 Ожидание: в шаге 3 — `no symbol` или только offset; в шаге 4 — имя `quik::Class::GetCode` и список методов.
 
