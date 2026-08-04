@@ -56,20 +56,23 @@ echo "Симулированный PC из лога: $ADDR"
 gdb -batch -nx -ex "file $WORKDIR/libcore.so" -ex "info symbol $ADDR"
 
 # 4. С распакованным debuginfo с сервера (надёжно на GDB 10.1)
+unset DEBUGINFOD_URLS   # не смешивать с libdebuginfod-кэшем
 gdb -batch -nx \
   -ex "file $WORKDIR/libcore.so" \
   -ex "symbol-file $WORKDIR/libcore.full" \
   -ex "info symbol $ADDR" \
   -ex "info functions quik::Class::"
 
-# 5. libdebuginfod: после авто-скачивания — objcopy на кэш
+# 5. libdebuginfod: кэш только для чтения — копировать, затем objcopy
 # rm -rf ~/.cache/debuginfod_client/$BUILDID
+# export DEBUGINFOD_URLS=http://127.0.0.1:8002
 # gdb -batch -nx -ex "set debuginfod enabled on" -ex "file $WORKDIR/libcore.so"
-# objcopy --decompress-debug-sections ~/.cache/debuginfod_client/$BUILDID/debuginfo
-# gdb ... info symbol $ADDR
+# cp ~/.cache/debuginfod_client/$BUILDID/debuginfo /tmp/from-cache.debug
+# objcopy --decompress-debug-sections /tmp/from-cache.debug
+# gdb -batch -nx -ex "file $WORKDIR/libcore.so" -ex "symbol-file /tmp/from-cache.debug" -ex "info symbol $ADDR"
 ```
 
-**GDB 10.1 + Quik:** `~/.cache/debuginfod_client/<buildid>/debuginfo` приходит **сжатый**; без `objcopy --decompress-debug-sections` — ошибка `.debug_aranges`. После распаковки кэша или `symbol-file` на распакованную копию символы работают.
+**GDB 10.1 + Quik:** libdebuginfod кладёт в `~/.cache/debuginfod_client/<buildid>/debuginfo` **сжатый** ELF (часто **0444**). `objcopy` на кэш in-place даёт «Отказано в доступе» — копируйте в `/tmp` и распаковывайте копию. При ручном `symbol-file` сделайте `unset DEBUGINFOD_URLS`, иначе GDB параллельно лезет в битый кэш и печатает BFD warnings.
 
 Ожидание: в шаге 3 — `no symbol` или только offset; в шаге 4 — имя `quik::Class::GetCode` и список методов.
 

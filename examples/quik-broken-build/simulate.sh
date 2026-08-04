@@ -105,13 +105,16 @@ echo "--- 5. БЕЗ символов: только stripped .so ---"
 
 echo
 echo "--- 6. С debuginfo с сервера (распакованный, как после curl+objcopy) ---"
-echo "GDB 10.1 не читает zlib DWARF из ~/.cache/debuginfod_client без objcopy."
-"$GDB" -batch -nx \
-	-ex "file $STRIPPED" \
-	-ex "symbol-file $UNPACKED" \
-	-ex "info symbol $ADDR" \
-	-ex "info functions quik::Class::" \
-	2>/dev/null | sed '/^$/d' | head -40
+echo "unset DEBUGINFOD_URLS — чтобы GDB не тянул сжатый кэш libdebuginfod поверх symbol-file"
+(
+	unset DEBUGINFOD_URLS
+	"$GDB" -batch -nx \
+		-ex "file $STRIPPED" \
+		-ex "symbol-file $UNPACKED" \
+		-ex "info symbol $ADDR" \
+		-ex "info functions quik::Class::" \
+		2>/dev/null | sed '/^$/d' | head -40
+)
 
 echo
 echo "--- 7. libdebuginfod: кэш + objcopy на клиенте ---"
@@ -123,11 +126,14 @@ export DEBUGINFOD_URLS="$DEBUGINFOD_URL"
 	-ex "file $STRIPPED" \
 	2>/dev/null | sed '/^$/d' || true
 if [[ -f "$CACHE" ]]; then
-	objcopy --decompress-debug-sections "$CACHE"
-	echo "кэш распакован: $CACHE"
+	tmp="$WORKDIR/debuginfo-from-cache"
+	cp "$CACHE" "$tmp"
+	objcopy --decompress-debug-sections "$tmp"
+	echo "кэш скопирован и распакован: $tmp (оригинал в кэше часто только для чтения)"
 	"$GDB" -batch -nx \
 		-ex "set debuginfod enabled on" \
 		-ex "file $STRIPPED" \
+		-ex "symbol-file $tmp" \
 		-ex "info symbol $ADDR" \
 		2>/dev/null | sed '/^$/d' || true
 else
