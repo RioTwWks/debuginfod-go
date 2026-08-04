@@ -255,6 +255,21 @@ gdb "$QUik"
 
 Подробнее о хранении: [QUIK_DEDUP.md](./QUIK_DEDUP.md).
 
+### Симуляция: разработчик и сломанная сборка
+
+Сценарий: на машине разработчика только **stripped** `libcore.so` из проблемного билда, `.debug` локально нет. Символы — с debuginfod-go по build-id (разбор адреса из лога краша).
+
+```bash
+export DEBUGINFOD_URLS=http://127.0.0.1:8002
+export BUILDID=296f131912a8e43b35aa294f7d08b91c1b76014a   # ваш libcore 16.0.0.1
+
+./examples/quik-broken-build/simulate.sh
+```
+
+Скрипт: скачивает `debuginfo`, делает `strip` (имитация дистрибутива), сравнивает `info symbol` без и с `DEBUGINFOD_URLS`. Подробности: [examples/quik-broken-build/README.md](../examples/quik-broken-build/README.md).
+
+На сервере Quik stripped `.so` уже в установке — там не нужен `strip`, только `DEBUGINFOD_URLS` и GDB/core.
+
 ---
 
 ## Демо из репозитория
