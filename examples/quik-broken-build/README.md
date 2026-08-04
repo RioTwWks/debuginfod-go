@@ -45,24 +45,31 @@ strip --strip-debug "$WORKDIR/libcore.so"
 
 readelf --notes "$WORKDIR/libcore.so" | grep -E 'Build ID|ID сборки'
 
-# 2. Адрес из «лога» (взяли из полного debuginfo)
+# 2. Адрес из «лога» (grep 0x — не зависит от локали GDB)
 ADDR=$(gdb -batch -nx \
   -ex "file $WORKDIR/libcore.full" \
   -ex "info address quik::Class::GetCode" \
-  2>/dev/null | awk '/is at/ {print $2; exit}')
+  2>/dev/null | grep -oE '0x[0-9a-f]+' | head -1)
 echo "Симулированный PC из лога: $ADDR"
 
-# 3. Разработчик БЕЗ debuginfod — символ неизвестен
+# 3. Разработчик БЕЗ символов
 gdb -batch -nx -ex "file $WORKDIR/libcore.so" -ex "info symbol $ADDR"
 
-# 4. Разработчик С debuginfod-go
-export DEBUGINFOD_URLS
+# 4. С распакованным debuginfo с сервера (надёжно на GDB 10.1)
 gdb -batch -nx \
-  -ex "set debuginfod enabled on" \
   -ex "file $WORKDIR/libcore.so" \
+  -ex "symbol-file $WORKDIR/libcore.full" \
   -ex "info symbol $ADDR" \
   -ex "info functions quik::Class::"
+
+# 5. libdebuginfod: после авто-скачивания — objcopy на кэш
+# rm -rf ~/.cache/debuginfod_client/$BUILDID
+# gdb -batch -nx -ex "set debuginfod enabled on" -ex "file $WORKDIR/libcore.so"
+# objcopy --decompress-debug-sections ~/.cache/debuginfod_client/$BUILDID/debuginfo
+# gdb ... info symbol $ADDR
 ```
+
+**GDB 10.1 + Quik:** `~/.cache/debuginfod_client/<buildid>/debuginfo` приходит **сжатый**; без `objcopy --decompress-debug-sections` — ошибка `.debug_aranges`. После распаковки кэша или `symbol-file` на распакованную копию символы работают.
 
 Ожидание: в шаге 3 — `no symbol` или только offset; в шаге 4 — имя `quik::Class::GetCode` и список методов.
 
