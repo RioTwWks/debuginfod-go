@@ -21,6 +21,28 @@ need strip
 need readelf
 need "$GDB"
 
+# Адрес символа из ELF (локаль GDB/Russian не важны — ищем 0x…).
+symbol_addr() {
+	local elf=$1 sym=$2
+	local addr
+	addr=$("$GDB" -batch -nx \
+		-ex "file $elf" \
+		-ex "info address $sym" \
+		2>/dev/null | grep -oE '0x[0-9a-f]+' | head -1)
+	if [[ -n "$addr" ]]; then
+		echo "$addr"
+		return 0
+	fi
+	if command -v nm >/dev/null 2>&1; then
+		addr=$(nm -D "$elf" 2>/dev/null | awk '/GetCode/ {printf "0x%s\n", $1; exit}')
+		if [[ -n "$addr" ]]; then
+			echo "$addr"
+			return 0
+		fi
+	fi
+	return 1
+}
+
 mkdir -p "$WORKDIR"
 FULL="$WORKDIR/libcore.full.debug"
 STRIPPED="$WORKDIR/libcore.so"
@@ -41,13 +63,13 @@ code=$(curl -s -o /dev/null -w '%{http_code}' "${DEBUGINFOD_URL}/readyz")
 echo "readyz: HTTP $code (200 = индекс готов)"
 
 echo
-echo "--- 2. Скачивание debuginfo (как делает libdebuginfod) ---"
+echo "--- 2. Скачивание debuginfo (curl / debuginfod-find) ---"
 curl -sf "${DEBUGINFOD_URL}/buildid/${BUILDID}/debuginfo" -o "$FULL"
 echo "получено: $(wc -c <"$FULL") байт → $FULL"
 
 objcopy --decompress-debug-sections "$FULL"
 cp "$FULL" "$UNPACKED"
-echo "распакованы DWARF-секции → $UNPACKED"
+echo "objcopy --decompress-debug-sections (обязательно для Quik zlib DWARF)"
 
 echo
 echo "--- 3. «Сломанная сборка»: только stripped runtime на диске разработчика ---"
@@ -63,42 +85,57 @@ else
 fi
 
 echo
-echo "--- 4. «Лог краша»: адрес PC (взяли из полного debuginfo) ---"
-ADDR=$("$GDB" -batch -nx \
-	-ex "file $UNPACKED" \
-	-ex "info address quik::Class::GetCode" \
-	2>/dev/null | awk '/is at/ {print $2; exit}')
+echo "--- 4. «Лог краша»: адрес PC ---"
+ADDR=$(symbol_addr "$UNPACKED" 'quik::Class::GetCode' || true)
 if [[ -z "$ADDR" ]]; then
-	ADDR=$("$GDB" -batch -nx \
-		-ex "file $UNPACKED" \
-		-ex "info address quik::Exception::what" \
-		2>/dev/null | awk '/is at/ {print $2; exit}')
+	ADDR=$(symbol_addr "$UNPACKED" 'quik::Exception::what' || true)
 fi
 if [[ -z "$ADDR" ]]; then
-	echo "не удалось получить адрес quik::Class::GetCode — проверьте символы в $UNPACKED" >&2
+	echo "не удалось получить адрес — проверьте $UNPACKED" >&2
 	exit 1
 fi
 echo "Симулированный PC: $ADDR"
 
 echo
-echo "--- 5. БЕЗ debuginfod: разработчик не видит символ ---"
+echo "--- 5. БЕЗ символов: только stripped .so ---"
 "$GDB" -batch -nx \
 	-ex "file $STRIPPED" \
 	-ex "info symbol $ADDR" \
 	2>/dev/null | sed '/^$/d' || true
 
 echo
-echo "--- 6. С DEBUGINFOD_URLS: запрос символов с сервера ---"
-export DEBUGINFOD_URLS="$DEBUGINFOD_URL"
+echo "--- 6. С debuginfo с сервера (распакованный, как после curl+objcopy) ---"
+echo "GDB 10.1 не читает zlib DWARF из ~/.cache/debuginfod_client без objcopy."
 "$GDB" -batch -nx \
-	-ex "set debuginfod enabled on" \
 	-ex "file $STRIPPED" \
+	-ex "symbol-file $UNPACKED" \
 	-ex "info symbol $ADDR" \
 	-ex "info functions quik::Class::" \
 	2>/dev/null | sed '/^$/d' | head -40
 
 echo
-echo "--- 7. debuginfod-find (опционально) ---"
+echo "--- 7. libdebuginfod: кэш + objcopy на клиенте ---"
+CACHE="${HOME}/.cache/debuginfod_client/${BUILDID}/debuginfo"
+rm -rf "${HOME}/.cache/debuginfod_client/${BUILDID}"
+export DEBUGINFOD_URLS="$DEBUGINFOD_URL"
+"$GDB" -batch -nx \
+	-ex "set debuginfod enabled on" \
+	-ex "file $STRIPPED" \
+	2>/dev/null | sed '/^$/d' || true
+if [[ -f "$CACHE" ]]; then
+	objcopy --decompress-debug-sections "$CACHE"
+	echo "кэш распакован: $CACHE"
+	"$GDB" -batch -nx \
+		-ex "set debuginfod enabled on" \
+		-ex "file $STRIPPED" \
+		-ex "info symbol $ADDR" \
+		2>/dev/null | sed '/^$/d' || true
+else
+	echo "кэш не создан (libdebuginfod не скачал debuginfo)"
+fi
+
+echo
+echo "--- 8. debuginfod-find (опционально) ---"
 if command -v debuginfod-find >/dev/null 2>&1; then
 	out="$WORKDIR/from-find.debug"
 	DEBUGINFOD_URLS="$DEBUGINFOD_URL" debuginfod-find debuginfo "$BUILDID" -o "$out"
@@ -111,5 +148,5 @@ fi
 echo
 echo "=== Готово ==="
 echo "Рабочая директория: $WORKDIR"
-echo "Для ручного GDB: export DEBUGINFOD_URLS=$DEBUGINFOD_URL"
-echo "  $GDB $STRIPPED"
+echo "Ручной GDB (надёжный путь для Quik на GDB 10.1):"
+echo "  $GDB $STRIPPED -ex \"symbol-file $UNPACKED\""
