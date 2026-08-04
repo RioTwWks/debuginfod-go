@@ -8,6 +8,7 @@
 
 - **GDB** — stripped C `hello` + отдельный `hello.debug`
 - **Delve** — stripped Go `hello` + `hello.debug` (GNU build-id через external linker)
+- **Quik broken build** — симуляция разработчика со stripped `libcore.so` и символами с сервера ([quik-broken-build/README.md](./quik-broken-build/README.md))
 
 Оба клиента загружают символы с `debuginfod-go` по `DEBUGINFOD_URLS`.
 
