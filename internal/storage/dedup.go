@@ -845,6 +845,30 @@ func (s *Storage) GetDedupFileSnapshotByPath(filePath string) (DedupFileSnapshot
 	return snap, true, err
 }
 
+// ListDedupFullsByStem возвращает full-файлы для file_stem (самые ранние сборки первыми).
+func (s *Storage) ListDedupFullsByStem(fileStem string, limit int) ([]DedupFile, error) {
+	if limit <= 0 {
+		limit = 32
+	}
+	rows, err := s.db.Query(rebind(`
+		SELECT f.id, f.build_dir_id, p.name, f.file_path, f.filename,
+			f.file_stem, f.version, f.file_build_num, f.commit_tag,
+			f.storage_kind, f.base_file_id, f.delta_path, f.sha256,
+			f.original_size, f.compressed_size, f.status, f.error_msg
+		FROM dedup_files f
+		JOIN dedup_build_dirs b ON b.id = f.build_dir_id
+		JOIN dedup_projects p ON p.id = b.project_id
+		WHERE f.file_stem = ? AND f.storage_kind = 'full' AND f.status = 'done'
+		ORDER BY f.file_build_num ASC, f.id ASC
+		LIMIT ?
+	`, s.dialect), fileStem, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanDedupFiles(rows)
+}
+
 // ListDedupBasesByStem возвращает base-файлы для file_stem (новые первыми).
 func (s *Storage) ListDedupBasesByStem(fileStem string, limit int) ([]DedupFile, error) {
 	if limit <= 0 {

@@ -36,7 +36,7 @@ DEBUGINFOD_SCAN_PATH/
 2. Для каждого target: preprocess → `xdelta3 -e` → verify decode → удалить оригинал.
 3. Опционально: `objcopy --compress-debug-sections=zstd` на base (`DEBUGINFOD_DEDUP_COMPRESS_BASE=true`).
 
-Singleton-группы: `storage_kind=full` без изменений.
+Singleton-группы: если в БД уже есть более ранняя `base` или `full` с тем же `(project, file_stem)`, новый файл сжимается как delta; иначе `storage_kind=full`.
 
 ### Ingest (после scan)
 
