@@ -124,6 +124,12 @@ func runGroupJob(opts Options, job groupJob, pool *compressPool) groupTotals {
 		if !opts.DryRun {
 			existing, baseErr := findGroupBase(opts.Store, base)
 			if baseErr == nil {
+				existing, baseErr = prepareBaseForDelta(opts, existing)
+				if baseErr != nil {
+					_ = opts.Store.MarkDedupFileError(base.ID, baseErr.Error())
+					total.errors++
+					return total
+				}
 				after, compressErr := compressOne(opts, existing, base)
 				if compressErr != nil {
 					_ = opts.Store.MarkDedupFileError(base.ID, compressErr.Error())
