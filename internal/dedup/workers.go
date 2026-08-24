@@ -5,6 +5,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/your-username/debuginfod-go/internal/logging"
 	"github.com/your-username/debuginfod-go/internal/storage"
 )
 
@@ -113,11 +114,17 @@ func sortGroupFiles(group []storage.DedupFile) {
 }
 
 func runGroupJob(opts Options, job groupJob, pool *compressPool) groupTotals {
+	log := logging.WithComponent("dedup.workers")
 	var total groupTotals
 	group := job.files
 	if len(group) == 0 {
 		return total
 	}
+	log.Debug("group job started",
+		"project", group[0].ProjectName,
+		"stem", group[0].FileStem,
+		"files", len(group),
+	)
 
 	base := group[0]
 	if len(group) == 1 {

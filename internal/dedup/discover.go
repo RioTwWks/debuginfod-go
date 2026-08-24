@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/your-username/debuginfod-go/internal/logging"
 	"github.com/your-username/debuginfod-go/internal/storage"
 	"github.com/your-username/debuginfod-go/pkg/debugfilename"
 	"github.com/your-username/debuginfod-go/pkg/elfcomment"
@@ -17,8 +18,11 @@ import (
 // Имя «проекта» — относительный путь от scan root до родителя build_* (например Released/QuikServer_16.0).
 // projectFilter пустой — все найденные папки; иначе только точное совпадение пути проекта.
 func Discover(store *storage.Storage, scanRoots []string, projectFilter []string) (int, error) {
+	log := logging.WithComponent("dedup.discover")
 	allowed := projectFilterSet(projectFilter)
 	registered := 0
+
+	log.Debug("discover started", "roots", scanRoots, "project_filter", projectFilter)
 
 	for _, root := range scanRoots {
 		rootAbs, err := filepath.Abs(root)
@@ -32,6 +36,7 @@ func Discover(store *storage.Storage, scanRoots []string, projectFilter []string
 			return registered, err
 		}
 	}
+	log.Debug("discover complete", "registered", registered)
 	return registered, nil
 }
 
@@ -69,6 +74,11 @@ func discoverUnderRoot(store *storage.Storage, rootAbs string, allowed map[strin
 		if err != nil {
 			return err
 		}
+		logging.WithComponent("dedup.discover").Debug("build dir found",
+			"project", projectName,
+			"path", path,
+			"build_num", dirNum,
+		)
 		n, err := registerDebugFiles(store, buildDirID, path)
 		registered += n
 		if err != nil {
@@ -185,8 +195,15 @@ func registerDebugFiles(store *storage.Storage, buildDirID int64, dirPath string
 		pending = append(pending, c)
 	}
 	if len(pending) == 0 {
+		logging.WithComponent("dedup.discover").Debug("all files up to date", "build_dir", dirPath)
 		return 0, nil
 	}
+
+	logging.WithComponent("dedup.discover").Debug("register pending files",
+		"build_dir", dirPath,
+		"pending", len(pending),
+		"skipped", len(candidates)-len(pending),
+	)
 
 	pendingPaths := make([]string, len(pending))
 	for i, c := range pending {

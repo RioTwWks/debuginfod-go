@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/your-username/debuginfod-go/internal/indexer"
+	"github.com/your-username/debuginfod-go/internal/logging"
 	"github.com/your-username/debuginfod-go/internal/metrics"
 )
 
@@ -71,7 +72,7 @@ func (r *Runner) Run(ctx context.Context) {
 		return
 	}
 
-	r.executeScan()
+	r.executeScan("startup")
 
 	if r.interval <= 0 {
 		slog.Info("periodic rescan disabled", "interval", r.interval)
@@ -84,10 +85,10 @@ func (r *Runner) Run(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				r.executeScan()
+				r.executeScan("interval")
 			case <-r.trigger:
 				r.drainTriggers()
-				r.executeScan()
+				r.executeScan("trigger")
 			}
 		}
 	}
@@ -98,7 +99,7 @@ func (r *Runner) Run(ctx context.Context) {
 			return
 		case <-r.trigger:
 			r.drainTriggers()
-			r.executeScan()
+			r.executeScan("trigger")
 		}
 	}
 }
@@ -120,15 +121,18 @@ func (r *Runner) drainTriggers() {
 	}
 }
 
-func (r *Runner) executeScan() {
+func (r *Runner) executeScan(reason string) {
+	log := logging.WithComponent("scanrunner")
 	r.mu.Lock()
 	if r.scanning {
 		r.mu.Unlock()
-		slog.Info("scan already in progress, skipping")
+		slog.Info("scan already in progress, skipping", "reason", reason)
 		return
 	}
 	r.scanning = true
 	r.mu.Unlock()
+
+	log.Debug("scan started", "reason", reason)
 
 	defer func() {
 		if r.metrics != nil {
@@ -137,6 +141,7 @@ func (r *Runner) executeScan() {
 		r.mu.Lock()
 		r.scanning = false
 		r.mu.Unlock()
+		log.Debug("scan finished", "reason", reason)
 	}()
 
 	if r.metrics != nil {
@@ -144,16 +149,17 @@ func (r *Runner) executeScan() {
 	}
 
 	if err := r.indexer.Scan(); err != nil {
-		slog.Error("index scan", "err", err)
+		slog.Error("index scan", "reason", reason, "err", err)
 		return
 	}
 
 	if r.dedup != nil {
+		log.Debug("dedup ingest starting", "reason", reason)
 		if r.metrics != nil {
 			r.metrics.SetScanPhase(metrics.ScanPhaseDedup)
 		}
 		if err := r.dedup.RunIngestAfterScan(); err != nil {
-			slog.Warn("dedup ingest", "err", err)
+			slog.Warn("dedup ingest", "reason", reason, "err", err)
 		}
 	}
 

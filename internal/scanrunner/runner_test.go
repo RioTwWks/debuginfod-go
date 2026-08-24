@@ -111,10 +111,10 @@ func TestTriggerCoalesces(t *testing.T) {
 		Enabled:  true,
 	})
 
-	r.executeScan()
+	r.executeScan("test")
 	r.Trigger()
 	r.Trigger()
 	r.Trigger()
 	r.drainTriggers()
-	r.executeScan()
+	r.executeScan("test")
 }
