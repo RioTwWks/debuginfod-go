@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/your-username/debuginfod-go/internal/logging"
 	"github.com/your-username/debuginfod-go/internal/metrics"
 	"github.com/your-username/debuginfod-go/internal/storage"
 )
@@ -42,11 +43,14 @@ type BackfillResult struct {
 
 // RunBackfill обрабатывает pending build dirs порциями.
 func RunBackfill(opts Options, project string, batch int) (BackfillResult, error) {
+	log := logging.WithComponent("dedup.pipeline")
 	if batch <= 0 {
 		batch = 50
 	}
 	var result BackfillResult
 	result.DryRun = opts.DryRun
+
+	log.Debug("backfill started", "project", project, "batch", batch, "dry_run", opts.DryRun)
 
 	n, err := Discover(opts.Store, opts.ScanPaths, filterProjects(opts.Projects, project))
 	if err != nil {
@@ -77,6 +81,7 @@ func RunBackfill(opts Options, project string, batch int) (BackfillResult, error
 
 	groups := GroupFiles(files)
 	result.GroupsProcessed = len(groups)
+	log.Debug("backfill groups", "build_dirs", len(dirs), "groups", len(groups), "files", len(files))
 	compressed, skipped, errs, bytesBefore, bytesAfter := processGroups(opts, groups)
 	result.FilesCompressed = compressed
 	result.FilesSkipped = skipped
@@ -112,8 +117,11 @@ func RunIngestForProject(opts Options, project string) (BackfillResult, error) {
 
 // RunIngestAll запускает ingest для всех обнаруженных проектов.
 func RunIngestAll(opts Options) (BackfillResult, error) {
+	log := logging.WithComponent("dedup.pipeline")
 	var total BackfillResult
 	total.DryRun = opts.DryRun
+
+	log.Debug("ingest all started", "dry_run", opts.DryRun, "projects", opts.Projects)
 
 	n, err := Discover(opts.Store, opts.ScanPaths, opts.Projects)
 	if err != nil {
@@ -132,6 +140,7 @@ func RunIngestAll(opts Options) (BackfillResult, error) {
 
 	groups := GroupFiles(files)
 	total.GroupsProcessed = len(groups)
+	log.Debug("ingest groups", "groups", len(groups), "files", len(files))
 	if opts.Metrics != nil {
 		opts.Metrics.SetDedupGroupsTotal(len(groups))
 	}
@@ -253,6 +262,17 @@ func markSingletonFull(opts Options, f storage.DedupFile) error {
 }
 
 func processGroup(opts Options, group []storage.DedupFile, pool *compressPool) (compressed int, bytesBefore, bytesAfter int64, groupErr error) {
+	log := logging.WithComponent("dedup.pipeline")
+	if len(group) == 0 {
+		return 0, 0, 0, nil
+	}
+	log.Debug("process group",
+		"project", group[0].ProjectName,
+		"stem", group[0].FileStem,
+		"files", len(group),
+		"base", group[0].FilePath,
+	)
+
 	for _, f := range group {
 		bytesBefore += f.OriginalSize
 	}
@@ -347,9 +367,17 @@ func compressGroupTargets(
 }
 
 func compressOne(opts Options, base, target storage.DedupFile) (deltaSize int64, err error) {
+	log := logging.WithComponent("dedup.pipeline")
 	if _, err := os.Stat(target.FilePath); err != nil {
 		return 0, fmt.Errorf("target missing: %w", err)
 	}
+
+	log.Debug("compress delta",
+		"base", base.FilePath,
+		"target", target.FilePath,
+		"base_build", base.FileBuildNum,
+		"target_build", target.FileBuildNum,
+	)
 
 	workDir, err := os.MkdirTemp(filepath.Dir(target.FilePath), "dedup-prep-")
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/your-username/debuginfod-go/internal/logging"
 	"github.com/your-username/debuginfod-go/internal/metrics"
 	"github.com/your-username/debuginfod-go/internal/storage"
 )
@@ -27,6 +28,7 @@ func (h *ScanHook) RunIngestAfterScan() error {
 	if h == nil || h.svc == nil {
 		return nil
 	}
+	logging.WithComponent("dedup").Debug("ingest after scan started")
 	start := time.Now()
 	result, err := h.svc.RunIngestAfterScanWithMetrics(h.metrics)
 	if err != nil {

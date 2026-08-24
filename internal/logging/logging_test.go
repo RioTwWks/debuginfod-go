@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,7 +51,6 @@ func TestSetupFileDebugConsoleInfo(t *testing.T) {
 	old := slog.Default()
 	defer slog.SetDefault(old)
 
-	// Перехватим stdout через подмену только file path; проще проверить файл.
 	_, closer := Setup(Options{Level: "info", LogDir: dir})
 	if closer == nil {
 		t.Fatal("expected file closer")
@@ -80,12 +81,15 @@ func TestSetupWithoutLogDir(t *testing.T) {
 	if closer != nil {
 		t.Fatalf("closer=%v", closer)
 	}
+	if !DebugEnabled() {
+		t.Fatal("expected debug enabled")
+	}
 }
 
 func TestMultiHandler(t *testing.T) {
 	var a, b bytes.Buffer
-	ha := slog.NewJSONHandler(&a, &slog.HandlerOptions{Level: slog.LevelDebug})
-	hb := slog.NewJSONHandler(&b, &slog.HandlerOptions{Level: slog.LevelInfo})
+	ha := slog.NewJSONHandler(&a, handlerOptions(slog.LevelDebug))
+	hb := slog.NewJSONHandler(&b, handlerOptions(slog.LevelInfo))
 	logger := slog.New(newMultiHandler(ha, hb))
 	logger.Debug("x")
 	if a.Len() == 0 || b.Len() != 0 {
@@ -94,6 +98,50 @@ func TestMultiHandler(t *testing.T) {
 	logger.Info("y")
 	if a.Len() == 0 || b.Len() == 0 {
 		t.Fatalf("info: a=%d b=%d", a.Len(), b.Len())
+	}
+}
+
+func TestWithComponent(t *testing.T) {
+	var buf bytes.Buffer
+	old := slog.Default()
+	defer slog.SetDefault(old)
+
+	logger := slog.New(slog.NewJSONHandler(&buf, handlerOptions(slog.LevelDebug)))
+	slog.SetDefault(logger)
+
+	WithComponent("indexer").Debug("queued", "path", "/tmp/a")
+	if !strings.Contains(buf.String(), `"component":"indexer"`) {
+		t.Fatalf("missing component: %s", buf.String())
+	}
+}
+
+func TestRequestMiddlewareSkipsUI(t *testing.T) {
+	var buf bytes.Buffer
+	old := slog.Default()
+	defer slog.SetDefault(old)
+
+	logger := slog.New(slog.NewJSONHandler(&buf, handlerOptions(slog.LevelDebug)))
+	slog.SetDefault(logger)
+
+	handler := RequestMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	for _, path := range []string{"/ui/api/stats", "/buildid/deadbeef/debuginfo"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+	}
+
+	if strings.Count(buf.String(), `"msg":"request"`) != 1 {
+		t.Fatalf("request logs=%q", buf.String())
+	}
+}
+
+func TestRequestIDFromContext(t *testing.T) {
+	ctx := WithContext(contextBackground(), "abc123")
+	if got := RequestIDFromContext(ctx); got != "abc123" {
+		t.Fatalf("request_id=%q", got)
 	}
 }
 

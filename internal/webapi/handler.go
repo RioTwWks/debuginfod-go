@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/your-username/debuginfod-go/internal/federation"
+	"github.com/your-username/debuginfod-go/internal/logging"
 	"github.com/your-username/debuginfod-go/internal/metrics"
 	"github.com/your-username/debuginfod-go/internal/pathsafe"
 	"github.com/your-username/debuginfod-go/internal/storage"
@@ -179,8 +180,12 @@ func parseMetadataPagination(r *http.Request, defaultLimit int) (offset, limit i
 }
 
 func (h *Handler) serveArtifact(w http.ResponseWriter, r *http.Request, buildID, artifactType string) {
+	log := logging.LoggerFromContext(r.Context(), "webapi")
+	log.Debug("serve artifact", "build_id", buildID, "type", artifactType)
+
 	loc, err := h.store.GetArtifactLocation(buildID, artifactType)
 	if errors.Is(err, storage.ErrNotFound) {
+		log.Debug("artifact not found locally, trying federation", "build_id", buildID, "type", artifactType)
 		h.tryFederation(w, r)
 		return
 	}
@@ -314,12 +319,16 @@ func (h *Handler) serveSection(w http.ResponseWriter, r *http.Request, buildID, 
 }
 
 func (h *Handler) tryFederation(w http.ResponseWriter, r *http.Request) {
+	log := logging.LoggerFromContext(r.Context(), "webapi")
 	if h.federation == nil || !h.federation.Enabled() {
+		log.Debug("federation disabled", "path", r.URL.Path)
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
+	log.Debug("federation fetch", "path", r.URL.Path)
 	resp, err := h.federation.Fetch(r.URL.Path)
 	if err != nil {
+		log.Debug("federation miss", "path", r.URL.Path, "err", err)
 		if h.metrics != nil {
 			h.metrics.RecordFederationMiss()
 		}
@@ -330,6 +339,7 @@ func (h *Handler) tryFederation(w http.ResponseWriter, r *http.Request) {
 	if h.metrics != nil {
 		h.metrics.RecordFederationHit()
 	}
+	log.Debug("federation hit", "path", r.URL.Path, "status", resp.StatusCode)
 	if _, err := federation.ProxyResponse(w, resp); err != nil {
 		slog.Error("federation proxy", "err", err)
 	}
@@ -370,6 +380,7 @@ func NewMux(opts ServerOpts) http.Handler {
 	}
 
 	var handler http.Handler = mux
+	handler = logging.RequestMiddleware(handler)
 	if opts.Metrics != nil {
 		handler = MetricsMiddleware(opts.Metrics, handler)
 	}

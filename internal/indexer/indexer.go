@@ -16,6 +16,7 @@ import (
 
 	"github.com/your-username/debuginfod-go/internal/archive"
 	"github.com/your-username/debuginfod-go/internal/cache"
+	"github.com/your-username/debuginfod-go/internal/logging"
 	"github.com/your-username/debuginfod-go/internal/metrics"
 	"github.com/your-username/debuginfod-go/internal/storage"
 	"github.com/your-username/debuginfod-go/pkg/buildid"
@@ -70,6 +71,14 @@ func NewIndexer(opts Options) *Indexer {
 
 // Scan обходит пути и индексирует ELF/архивы с параллельными воркерами.
 func (i *Indexer) Scan() error {
+	log := logging.WithComponent("indexer")
+	log.Debug("scan started",
+		"paths", i.paths,
+		"workers", i.workers,
+		"lazy_extract", i.lazyExtract,
+		"cache_dir", i.cacheDir,
+	)
+
 	start := time.Now()
 	var indexed, skipped, errorsCount atomic.Int64
 
@@ -110,6 +119,7 @@ func (i *Indexer) Scan() error {
 					if err == nil {
 						indexed.Add(int64(count))
 						_ = i.storage.MarkScanned(job.path, job.mtime, job.size, "archive")
+						log.Debug("indexed archive", "path", job.path, "members", count)
 					}
 				case "sourcepkg":
 					var count int
@@ -117,12 +127,14 @@ func (i *Indexer) Scan() error {
 					if err == nil {
 						indexed.Add(int64(count))
 						_ = i.storage.MarkScanned(job.path, job.mtime, job.size, "sourcepkg")
+						log.Debug("indexed source package", "path", job.path, "members", count)
 					}
 				case "elf":
 					err = i.indexELF(job.path, job.mtime, "", "")
 					if err == nil {
 						indexed.Add(1)
 						_ = i.storage.MarkScanned(job.path, job.mtime, job.size, "elf")
+						log.Debug("indexed elf", "path", job.path, "size", job.size)
 					} else if errors.Is(err, buildid.ErrNotFound) {
 						// Qt и часть .debug без GNU build-id: не индексируем, но помечаем,
 						// чтобы не спамить WARN на каждом scan.
@@ -173,9 +185,11 @@ func (i *Indexer) Scan() error {
 				slog.Warn("NeedsScan", "path", path, "err", err)
 			} else if !needs {
 				skipped.Add(1)
+				log.Debug("skip unchanged", "path", path, "kind", kind, "mtime_ns", mtime, "size", size)
 				return nil
 			}
 
+			log.Debug("queue file", "path", path, "kind", kind, "size", size)
 			jobs <- scanJob{path: path, mtime: mtime, size: size, kind: kind}
 			return nil
 		})
@@ -358,6 +372,14 @@ func (i *Indexer) indexELF(path string, mtimeNS int64, archivePath, memberPath s
 	if err := i.storage.AddArtifact(row, mtimeNS); err != nil {
 		return err
 	}
+	logging.WithComponent("indexer").Debug("artifact stored",
+		"path", path,
+		"build_id", result.Value,
+		"type", artifactType,
+		"kind", result.Kind,
+		"archive", archivePath,
+		"member", memberPath,
+	)
 
 	return i.indexSourcesFromDWARF(result.Value, elfFile, path, mtimeNS)
 }

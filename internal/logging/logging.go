@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -21,33 +22,81 @@ type Options struct {
 // Возвращает logger и closer для файла (может быть nil).
 func Setup(opts Options) (*slog.Logger, io.Closer) {
 	consoleLevel := parseLevel(opts.Level)
-	consoleHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: consoleLevel})
+	consoleHandler := slog.NewJSONHandler(os.Stdout, handlerOptions(consoleLevel))
 
 	var handlers []slog.Handler
 	handlers = append(handlers, consoleHandler)
 
 	var closer io.Closer
-	if dir := strings.TrimSpace(opts.LogDir); dir != "" {
+	logDir := strings.TrimSpace(opts.LogDir)
+	if logDir != "" {
 		prefix := strings.TrimSpace(opts.FilePrefix)
 		if prefix == "" {
 			prefix = "debuginfod"
 		}
-		writer, err := newDailyWriter(dir, prefix)
+		writer, err := newDailyWriter(logDir, prefix)
 		if err != nil {
-			// fallback: только stdout, ошибку залогируем после SetDefault
 			logger := slog.New(consoleHandler)
 			slog.SetDefault(logger)
-			slog.Error("file logging disabled", "dir", dir, "err", err)
+			slog.Error("file logging disabled", "dir", logDir, "err", err)
 			return logger, nil
 		}
 		closer = writer
-		fileHandler := slog.NewJSONHandler(writer, &slog.HandlerOptions{Level: slog.LevelDebug})
+		fileHandler := slog.NewJSONHandler(writer, handlerOptions(slog.LevelDebug))
 		handlers = append(handlers, fileHandler)
 	}
 
 	logger := slog.New(newMultiHandler(handlers...))
 	slog.SetDefault(logger)
+	slog.Info("logging configured",
+		"console_level", opts.Level,
+		"log_dir", logDir,
+		"file_level", fileLogLevel(logDir),
+	)
 	return logger, closer
+}
+
+// WithComponent возвращает логгер с полем component.
+func WithComponent(name string) *slog.Logger {
+	return slog.Default().With("component", name)
+}
+
+// DebugEnabled возвращает true, если глобальный логгер пишет DEBUG.
+func DebugEnabled() bool {
+	return slog.Default().Enabled(contextBackground(), slog.LevelDebug)
+}
+
+func handlerOptions(level slog.Level) *slog.HandlerOptions {
+	return &slog.HandlerOptions{
+		Level:     level,
+		AddSource: true,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.SourceKey {
+				if src, ok := a.Value.Any().(*slog.Source); ok && src != nil {
+					a.Value = slog.StringValue(shortSource(src.File, src.Line))
+				}
+			}
+			return a
+		},
+	}
+}
+
+func shortSource(file string, line int) string {
+	if idx := strings.LastIndex(file, "/internal/"); idx >= 0 {
+		file = file[idx+len("/internal/"):]
+	} else if idx := strings.LastIndex(file, "/pkg/"); idx >= 0 {
+		file = file[idx+len("/pkg/"):]
+	} else if idx := strings.LastIndex(file, "/cmd/"); idx >= 0 {
+		file = file[idx+len("/cmd/"):]
+	}
+	return fmt.Sprintf("%s:%d", file, line)
+}
+
+func fileLogLevel(logDir string) string {
+	if logDir == "" {
+		return "disabled"
+	}
+	return "debug"
 }
 
 func parseLevel(level string) slog.Level {

@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/your-username/debuginfod-go/internal/logging"
 )
 
 // Client запрашивает артефакты у upstream debuginfod-серверов.
@@ -38,17 +40,22 @@ func (c *Client) Fetch(path string) (*http.Response, error) {
 	path = strings.TrimPrefix(path, "/")
 
 	var lastErr error
+	log := logging.WithComponent("federation")
 	for _, base := range c.urls {
 		base = strings.TrimRight(base, "/")
 		url := base + "/" + path
+		log.Debug("upstream request", "url", url)
 		resp, err := c.client.Get(url)
 		if err != nil {
+			log.Debug("upstream error", "url", url, "err", err)
 			lastErr = err
 			continue
 		}
 		if resp.StatusCode == http.StatusOK {
+			log.Debug("upstream hit", "url", url, "status", resp.StatusCode)
 			return resp, nil
 		}
+		log.Debug("upstream miss", "url", url, "status", resp.StatusCode)
 		resp.Body.Close()
 		lastErr = fmt.Errorf("upstream %s: status %d", base, resp.StatusCode)
 	}
